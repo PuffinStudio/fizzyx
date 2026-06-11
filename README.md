@@ -6,8 +6,23 @@ AI workflow CLI for Fizzy boards.
 
 ## Install
 
+Install globally with Bun:
+
+```bash
+bun add -g @puffinstudio/fizzyx
+```
+
+Then verify the CLI is available:
+
+```bash
+fizzyx --help
+```
+
+For local development from this repository:
+
 ```bash
 bun install
+bun run build
 ```
 
 ## Setup

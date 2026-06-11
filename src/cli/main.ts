@@ -20,6 +20,7 @@ import {
 	syncBoard,
 } from "../use-cases/flow-service";
 import { printCardDetail, printCards, printSteps, renderTable } from "./render";
+import { withSpinner } from "./spinner";
 
 export const runCli = (args: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
@@ -38,7 +39,7 @@ export const runCli = (args: ReadonlyArray<string>) =>
 
 				const input = parseSetup(rest);
 				if (input.list) {
-					const boards = yield* listBoards();
+					const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
 					if (boards.length === 0) {
 						console.log("(no boards)");
 						return;
@@ -53,7 +54,7 @@ export const runCli = (args: ReadonlyArray<string>) =>
 					return;
 				}
 
-				const config = yield* setup(input);
+				const config = yield* withSpinner("Initializing Fizzy workflow...", setup(input));
 				console.log(`created ${config.configPath}`);
 				return;
 			}
@@ -105,8 +106,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					console.log(flowSyncUsage());
 					return;
 				}
-				const env = yield* makeFlowEnv;
-				const cache = yield* syncBoard(env);
+				const cache = yield* withSpinner(
+					"Syncing Fizzy board...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* syncBoard(env);
+					}),
+				);
 				console.error(`synced cards=${cache.cards.length} not_now=${cache.notNow.length}`);
 				return;
 			}
@@ -115,10 +121,15 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					console.log(flowMineUsage());
 					return;
 				}
-				const env = yield* makeFlowEnv;
 				const fresh = rest.includes("--fresh");
 				const user = firstNonFlag(rest);
-				const result = yield* mine(env, { fresh, user });
+				const result = yield* withSpinner(
+					"Loading my tasks...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* mine(env, { fresh, user });
+					}),
+				);
 				console.log(`# ${result.name}: ${result.userId}`);
 				console.log(printCards(result.cards));
 				return;
@@ -128,8 +139,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					console.log(flowStatusUsage());
 					return;
 				}
-				const env = yield* makeFlowEnv;
-				const result = yield* status(env, { fresh: rest.includes("--fresh") });
+				const result = yield* withSpinner(
+					"Loading board status...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* status(env, { fresh: rest.includes("--fresh") });
+					}),
+				);
 				console.log(`# board cache age: ${result.age}s`);
 				console.log("");
 				console.log(
@@ -150,8 +166,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					console.log(flowNextUsage());
 					return;
 				}
-				const env = yield* makeFlowEnv;
-				const result = yield* next(env, { fresh: rest.includes("--fresh") });
+				const result = yield* withSpinner(
+					"Loading next task...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* next(env, { fresh: rest.includes("--fresh") });
+					}),
+				);
 				if (!result.card) {
 					console.log(`no TODO card for ${result.user.name}`);
 					return;
@@ -166,8 +187,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					return;
 				}
 				const number = parseNumber(rest[0]);
-				const env = yield* makeFlowEnv;
-				const result = yield* show(env, number);
+				const result = yield* withSpinner(
+					"Loading card details...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* show(env, number);
+					}),
+				);
 				console.log(printCardDetail(result.card, result.comments));
 				return;
 			}
@@ -177,8 +203,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					return;
 				}
 				const number = parseNumber(rest[0]);
-				const env = yield* makeFlowEnv;
-				yield* start(env, number);
+				yield* withSpinner(
+					"Starting card...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* start(env, number);
+					}),
+				);
 				console.log(`started #${number}`);
 				return;
 			}
@@ -193,8 +224,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					.filter((arg) => !isHelpCommand(arg))
 					.join(" ");
 				const ref = explicitRef ? explicitRef : yield* resolveDoneRefFromGit();
-				const env = yield* makeFlowEnv;
-				const result = yield* done(env, number, ref);
+				const result = yield* withSpinner(
+					"Closing card...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* done(env, number, ref);
+					}),
+				);
 				console.log(`closed #${result.number} (${result.ref})`);
 				return;
 			}
@@ -205,8 +241,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				}
 				const number = parseNumber(rest[0]);
 				const reason = rest.slice(1).join(" ");
-				const env = yield* makeFlowEnv;
-				const result = yield* block(env, number, reason);
+				const result = yield* withSpinner(
+					"Marking card blocked...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* block(env, number, reason);
+					}),
+				);
 				console.log(`blocked #${result.number}: ${result.reason}`);
 				return;
 			}
@@ -221,9 +262,14 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				if (!user || !title || !descPath) {
 					throw new Error(flowAddUsage());
 				}
-				const description = yield* readDescription(descPath);
-				const env = yield* makeFlowEnv;
-				const number = yield* add(env, { user, title, description });
+				const number = yield* withSpinner(
+					"Creating card...",
+					Effect.gen(function* () {
+						const description = yield* readDescription(descPath);
+						const env = yield* makeFlowEnv;
+						return yield* add(env, { user, title, description });
+					}),
+				);
 				console.log(number);
 				return;
 			}
@@ -233,8 +279,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					return;
 				}
 				const number = parseNumber(rest[0]);
-				const env = yield* makeFlowEnv;
-				const steps = yield* stepsFromDescription(env, number);
+				const steps = yield* withSpinner(
+					"Syncing Done When steps...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* stepsFromDescription(env, number);
+					}),
+				);
 				console.log(printSteps(steps));
 				return;
 			}
@@ -243,7 +294,7 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					console.log(flowInitUsage());
 					return;
 				}
-				const env = yield* makeFlowEnv;
+				const env = yield* withSpinner("Initializing workflow config...", makeFlowEnv);
 				console.log(
 					`flow configured with todo=${env.config.flow.columns.todo} in_progress=${env.config.flow.columns.inProgress}`,
 				);
@@ -273,7 +324,7 @@ const runAuth = (args: ReadonlyArray<string>) =>
 				if (hasHelp(rest) || !rest[0]) {
 					throw new Error(authLoginUsage());
 				}
-				const account = yield* authLogin(rest[0]);
+				const account = yield* withSpinner("Saving credentials...", authLogin(rest[0]));
 				console.log(`token saved for ${account}`);
 				return;
 			}
@@ -282,7 +333,7 @@ const runAuth = (args: ReadonlyArray<string>) =>
 					console.log(authStatusUsage());
 					return;
 				}
-				const result = yield* authStatus;
+				const result = yield* withSpinner("Checking auth status...", authStatus);
 				console.log(`account: ${result.account}`);
 				console.log(`board: ${result.board}`);
 				console.log(`authenticated: ${result.authenticated}`);
@@ -300,7 +351,7 @@ const runAuth = (args: ReadonlyArray<string>) =>
 					console.log(authLogoutUsage());
 					return;
 				}
-				const account = yield* authLogout;
+				const account = yield* withSpinner("Clearing credentials...", authLogout);
 				console.log(`token removed for ${account}`);
 				return;
 			}
