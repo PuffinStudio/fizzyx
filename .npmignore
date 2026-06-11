@@ -1,0 +1,28 @@
+# Source code
+src/
+
+# Tests
+tests/
+
+# Tooling and lock/config files
+tsconfig.json
+tsconfig.*.json
+bun.lock
+bun.lockb
+.gitignore
+.env
+.env.*
+CLAUDE.md
+
+# Runtime/build artifacts not needed in package
+node_modules/
+coverage/
+.cache/
+
+# Logs and local state
+logs
+*.log
+*.tgz
+
+# TypeScript/build metadata
+*.tsbuildinfo
