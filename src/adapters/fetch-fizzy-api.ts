@@ -18,7 +18,7 @@ import type {
 import type { FizzyApi } from "../ports/fizzy-api";
 
 type JsonObject = Record<string, unknown>;
-type HttpMethod = "GET" | "POST";
+type HttpMethod = "GET" | "POST" | "PATCH";
 type JsonValue = unknown;
 
 export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyApi => {
@@ -439,6 +439,8 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 				title: input.title,
 				description: input.description,
 			}).pipe(Effect.flatMap(decodeCard)),
+		updateCardDescription: (number, description) =>
+			requestVoid("PATCH", `/cards/${number}.json`, { description }),
 		assignCard: (number, userId) =>
 			requestVoid("POST", `/cards/${number}/assignments.json`, { assignee_id: userId }),
 		selfAssignCard: (number) => requestVoid("POST", `/cards/${number}/self_assignment.json`),
@@ -451,6 +453,10 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 			requestVoid("POST", `/cards/${number}/steps.json`, {
 				content,
 				completed: Boolean(completed),
+			}),
+		updateStep: (number, stepId, input) =>
+			requestVoid("PATCH", `/cards/${number}/steps/${stepId}.json`, {
+				completed: Boolean(input.completed),
 			}),
 	};
 };

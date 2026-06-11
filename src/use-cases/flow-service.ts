@@ -4,6 +4,8 @@ import type {
 	BoardCache,
 	BoardColumn,
 	Card,
+	FlowCardLanguage,
+	Step,
 	Identity,
 	InitializedProjectConfig,
 	ProjectConfig,
@@ -29,6 +31,70 @@ export interface InitializedEnv extends Env {
 const DEFAULT_ACCOUNT = "1";
 const DEFAULT_API_URL = "https://fizzy.puffin.studio";
 const CONFIG_FILE = ".fizzy.yaml";
+
+type StandardizedCommentKind = "done" | "blocked" | "unblocked" | "handoff" | "note";
+
+const escapeHtml = (value: string): string =>
+	value
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#39;");
+
+const standardizedCommentTemplate = (
+	language: FlowCardLanguage,
+	kind: StandardizedCommentKind,
+): string => {
+	if (language === "en") {
+		return {
+			done: "done: ",
+			blocked: "blocked: ",
+			unblocked: "unblocked: ",
+			handoff: "handoff: ",
+			note: "note: ",
+		}[kind];
+	}
+
+	return {
+		done: "完成：",
+		blocked: "阻塞：",
+		unblocked: "已解锁：",
+		handoff: "交接：",
+		note: "备注：",
+	}[kind];
+};
+
+export const buildStandardizedCommentBody = (
+	language: FlowCardLanguage,
+	kind: StandardizedCommentKind,
+	value: string,
+): string => `<p>${standardizedCommentTemplate(language, kind)}${escapeHtml(value)}</p>`;
+
+export const getStandardizedCommentTemplate = (
+	language: FlowCardLanguage,
+	kind: StandardizedCommentKind,
+): string => {
+	if (kind === "done") {
+		return language === "en" ? `done: commit <sha>: <subject>` : `完成：commit <sha>: <subject>`;
+	}
+
+	if (kind === "blocked") {
+		return language === "en"
+			? "blocked: <reason; owner/decision needed>"
+			: "阻塞：<原因；需要谁/什么决策>";
+	}
+
+	if (kind === "unblocked") {
+		return language === "en" ? "unblocked: <resource/decision ready>" : "已解锁：<资源/决策已就绪>";
+	}
+
+	if (kind === "handoff") {
+		return language === "en" ? "handoff: <current state; next step>" : "交接：<当前状态；下一步>";
+	}
+
+	return language === "en" ? "note: <brief note>" : "备注：<简短说明>";
+};
 
 export const makeEnv = Effect.gen(function* () {
 	const configRepo = makeBunConfigRepository();
@@ -243,12 +309,16 @@ const makeFlowApiWithAuthRetry = (
 		listColumns: () => withAuthRetry((api) => api.listColumns()),
 		createColumn: (name) => withAuthRetry((api) => api.createColumn(name)),
 		createCard: (input) => withAuthRetry((api) => api.createCard(input)),
+		updateCardDescription: (number, description) =>
+			withAuthRetry((api) => api.updateCardDescription(number, description)),
 		assignCard: (number, userId) => withAuthRetry((api) => api.assignCard(number, userId)),
 		selfAssignCard: (number) => withAuthRetry((api) => api.selfAssignCard(number)),
 		moveCard: (number, columnId) => withAuthRetry((api) => api.moveCard(number, columnId)),
 		comment: (number, body) => withAuthRetry((api) => api.comment(number, body)),
 		closeCard: (number) => withAuthRetry((api) => api.closeCard(number)),
 		postponeCard: (number) => withAuthRetry((api) => api.postponeCard(number)),
+		updateStep: (number, stepId, input) =>
+			withAuthRetry((api) => api.updateStep(number, stepId, input)),
 		createStep: (number, content, completed) =>
 			withAuthRetry((api) => api.createStep(number, content, completed)),
 	} satisfies FizzyApi;
@@ -400,8 +470,20 @@ export const start = (env: InitializedEnv, number: number) =>
 
 export const done = (env: InitializedEnv, number: number, ref?: string) =>
 	Effect.gen(function* () {
+		const card = yield* env.api.showCard(number);
+		const unfinished = (card.steps || []).filter((step) => !step.completed);
+		if (unfinished.length > 0) {
+			const formatted = unfinished.map((step) => `- ${step.content || "(no content)"}`).join("\n");
+			return yield* new ValidationError({
+				message: `Cannot close #${number}: unfinished steps remain\n${formatted}`,
+			});
+		}
+
 		const finalRef = ref || "done";
-		yield* env.api.comment(number, `<p>✓ Done. ${finalRef}. All Done When satisfied.</p>`);
+		yield* env.api.comment(
+			number,
+			buildStandardizedCommentBody(env.config.flow.card.language, "done", finalRef),
+		);
 		yield* env.api.closeCard(number);
 		yield* syncBoard(env);
 		return { number, ref: finalRef };
@@ -427,7 +509,8 @@ export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
 export const block = (env: InitializedEnv, number: number, reason: string) =>
 	Effect.gen(function* () {
 		if (!reason.trim()) return yield* new ValidationError({ message: "Block reason is required" });
-		yield* env.api.comment(number, `<p>Blocked: ${reason}</p>`);
+		const language = env.config.flow.card.language;
+		yield* env.api.comment(number, buildStandardizedCommentBody(language, "blocked", reason));
 		yield* env.api.postponeCard(number);
 		yield* syncBoard(env);
 		return { number, reason };
@@ -442,25 +525,76 @@ export const add = (
 			return yield* new ValidationError({ message: "board is required" });
 		}
 
+		const parsed = parseTemplateDescription(input.description);
 		const userId = resolveUser(env.config, input.user);
 		const card = yield* env.api.createCard({
 			title: input.title,
-			description: input.description,
+			description: convertDescription(parsed.cardDescription),
 			board: env.config.board,
 		});
 		yield* env.api.assignCard(card.number, userId);
 		yield* env.api.moveCard(card.number, env.config.flow.columns.todo);
+		yield* Effect.forEach(parsed.templateSteps, (step) =>
+			env.api.createStep(card.number, step.content, step.completed),
+		);
 		yield* syncBoard(env);
 		return card.number;
+	});
+
+export const repairMarkdownDescription = (env: InitializedEnv, number: number) =>
+	Effect.gen(function* () {
+		const card = yield* env.api.showCard(number);
+		const description = convertDescription(card.description || "");
+		const original = card.description || "";
+		if (description !== original) {
+			yield* env.api.updateCardDescription(number, description);
+		}
+		yield* syncBoard(env);
+		return number;
+	});
+
+export const completeSteps = (env: InitializedEnv, number: number) =>
+	Effect.gen(function* () {
+		const card = yield* env.api.showCard(number);
+		const pending = (card.steps || []).filter((step) => !step.completed);
+		const missingIds = pending.filter((step) => !step.id);
+		if (missingIds.length > 0) {
+			const steps = missingIds.map((step) => `- ${step.content || "(no content)"}`).join("\n");
+			return yield* new ValidationError({
+				message: `Cannot complete steps for #${number}: missing step id for:\n${steps}`,
+			});
+		}
+
+		const toComplete = pending.filter(
+			(step): step is Step & { id: string } => typeof step.id === "string",
+		);
+		yield* Effect.forEach(toComplete, (step) =>
+			env.api.updateStep(number, step.id, {
+				completed: true,
+			}),
+		);
+
+		yield* syncBoard(env);
+		return {
+			number,
+			updatedCount: toComplete.length,
+			contents: toComplete.map((step) => step.content),
+		};
 	});
 
 export const stepsFromDescription = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);
 		const existing = new Set((card.steps || []).map((step) => step.content));
-		const steps = parseDoneWhen(card.description || "").filter(
-			(step) => !existing.has(step.content),
-		);
+		const parsed = parseDoneWhen(card.description || "");
+		const unique = new Set<string>();
+		const steps = parsed.filter((step) => {
+			if (existing.has(step.content) || unique.has(step.content)) {
+				return false;
+			}
+			unique.add(step.content);
+			return true;
+		});
 		yield* Effect.forEach(steps, (step) =>
 			env.api.createStep(number, step.content, step.completed),
 		);
@@ -584,11 +718,146 @@ const findUserName = (cache: BoardCache, userId: string): string | undefined =>
 	Object.entries(cache.users).find(([, id]) => id === userId)?.[0];
 
 const parseDoneWhen = (description: string): Array<{ content: string; completed: boolean }> =>
+	parseMarkdownTaskList(description)
+		.concat(parseHtmlTaskList(description))
+		.filter(
+			(step, index, array) => array.findIndex((next) => next.content === step.content) === index,
+		);
+
+const normalizeStepContent = (value: string): string => {
+	return decodeTextEntities(
+		value
+			.replace(/`([^`]+)`/g, "$1")
+			.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+			.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+			.replace(/~~([^~]+)~~/g, "$1")
+			.replace(/\*\*([^*]+)\*\*/g, "$1")
+			.replace(/__([^_]+)__/g, "$1")
+			.replace(/\*([^*]+)\*/g, "$1")
+			.replace(/_([^_]+)_/g, "$1")
+			.trim(),
+	);
+};
+
+const stripTaskListHtmlText = (value: string): string =>
+	value
+		.replace(/<img\b[^>]*\balt=(?:"([^"]*)"|'([^']*)')/gi, (_, d1, d2) => d1 ?? d2 ?? "")
+		.replace(/<img\b[^>]*>/gi, "")
+		.replace(/<input[^>]*>/gi, " ")
+		.replace(/<[^>]*>/g, "");
+
+const parseTemplateDescription = (
+	description: string,
+): {
+	cardDescription: string;
+	templateSteps: Array<{ content: string; completed: boolean }>;
+} => {
+	const lines = description.split(/\r?\n/);
+	const cardLines: string[] = [];
+	const templateLines: string[] = [];
+	let inTemplate = false;
+	let sawTemplate = false;
+
+	for (const line of lines) {
+		if (!inTemplate && /^##\s+Steps\s*$/i.test(line)) {
+			inTemplate = true;
+			sawTemplate = true;
+			continue;
+		}
+
+		if (inTemplate && /^##\s+/.test(line)) {
+			inTemplate = false;
+		}
+
+		if (inTemplate) {
+			templateLines.push(line);
+		} else {
+			cardLines.push(line);
+		}
+	}
+
+	if (!sawTemplate) {
+		return {
+			cardDescription: description,
+			templateSteps: [],
+		};
+	}
+
+	return {
+		cardDescription: cardLines.join("\n"),
+		templateSteps: parseDoneWhen(templateLines.join("\n")),
+	};
+};
+
+const parseMarkdownTaskList = (description: string) =>
 	description.split(/\r?\n/).flatMap((line) => {
 		const match = line.match(/^\s*-\s*\[([ xX])]\s*(.+)$/);
 		if (!match) return [];
-		return [{ content: match[2]!.trim(), completed: match[1]!.toLowerCase() === "x" }];
+		const content = normalizeStepContent(match[2]!.trim());
+		if (!content) return [];
+		return [{ content, completed: match[1]!.toLowerCase() === "x" }];
 	});
+
+const parseHtmlTaskList = (description: string): Array<{ content: string; completed: boolean }> => {
+	const matches = description.matchAll(
+		/<li[^>]*class=["'][^"']*task-list-item[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+	);
+
+	const steps: Array<{ content: string; completed: boolean }> = [];
+	for (const match of matches) {
+		const html = match[1] || "";
+		const completed = /<input[^>]*\bchecked\b[^>]*>/i.test(html);
+		const text = normalizeStepContent(stripTaskListHtmlText(html));
+		if (!text) continue;
+		steps.push({ content: text, completed });
+	}
+
+	return steps;
+};
+
+const htmlEntityMap: Record<string, string> = {
+	apos: "'",
+	amp: "&",
+	copy: "©",
+	gt: ">",
+	lt: "<",
+	ldquo: "“",
+	rdquo: "”",
+	reg: "®",
+	quot: '"',
+	nbsp: " ",
+	trade: "™",
+	hellip: "…",
+	ndash: "–",
+	mdash: "—",
+};
+
+const decodeTextEntities = (value: string): string =>
+	value
+		.replace(/&([a-zA-Z]+);/g, (match, name) => {
+			if (!name) return match;
+			const entity =
+				name in htmlEntityMap ? htmlEntityMap[name as keyof typeof htmlEntityMap] : undefined;
+			return entity ?? match;
+		})
+		.replace(/&#x([0-9A-Fa-f]+);/g, (match, hexCode: string | undefined) => {
+			if (!hexCode) return match;
+			const code = Number.parseInt(hexCode, 16);
+			if (Number.isNaN(code)) return match;
+			return String.fromCodePoint(code);
+		})
+		.replace(/&#(\d+);/g, (match, decimal: string | undefined) => {
+			if (!decimal) return match;
+			const code = Number.parseInt(decimal, 10);
+			if (Number.isNaN(code)) return match;
+			return String.fromCodePoint(code);
+		});
+
+const richTextSignature =
+	/(<[^>]+>|`|^#{1,6}\s+.+|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|~~[^~]+~~|\b_[^_]+_\b|^\s{0,3}[-+*]\s+\[[ xX]\]|^\s{0,3}\d+\.\s+|^\s{0,3}>\s+|^```)/m;
+
+export const convertDescription = (input: string): string =>
+	richTextSignature.test(input) ? Bun.markdown.html(input) : input;
 
 const gitCommandOutput = (cwd: string, args: ReadonlyArray<string>) =>
 	Effect.tryPromise({

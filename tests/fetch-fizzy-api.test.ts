@@ -20,6 +20,9 @@ const makeConfig = (): ProjectConfig => ({
 			inProgress: "inprogress-column",
 		},
 		users: {},
+		card: {
+			language: "zh-CN",
+		},
 		wipLimit: 1,
 		cacheTtlSeconds: 60,
 	},
@@ -171,6 +174,44 @@ test("createCard sends JSON body and auth/accept headers", async () => {
 		board_id: "board-1",
 		title: "Implement",
 		description: "Task details",
+	});
+});
+
+test("updateCardDescription uses PATCH and sends description body", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(
+			makeFetchFizzyApi(config, "token").updateCardDescription(12, "New description"),
+		),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("PATCH");
+	expect(summary.url).toContain("/acme/cards/12.json");
+	expect(JSON.parse(summary.bodyText)).toEqual({
+		description: "New description",
+	});
+});
+
+test("updateStep uses PATCH and sends completed boolean", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(
+			makeFetchFizzyApi(config, "token").updateStep(42, "step-1", { completed: false }),
+		),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("PATCH");
+	expect(summary.url).toContain("/acme/cards/42/steps/step-1.json");
+	expect(JSON.parse(summary.bodyText)).toEqual({
+		completed: false,
 	});
 });
 

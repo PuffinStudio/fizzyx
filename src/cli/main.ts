@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { DEFAULT_FLOW_CARD_LANGUAGE, type FlowCardLanguage } from "../domain/models";
+import { makeBunConfigRepository } from "../adapters/bun-config-repository";
 import type { SetupProjectConfigInput } from "../ports/config-repository";
 import {
 	add,
@@ -6,10 +8,13 @@ import {
 	authLogout,
 	authStatus,
 	block,
+	getStandardizedCommentTemplate,
+	completeSteps,
 	done,
 	makeFlowEnv,
 	mine,
 	next,
+	repairMarkdownDescription,
 	resolveDoneRefFromGit,
 	listBoards,
 	setup,
@@ -80,6 +85,11 @@ const legacyFlowCommands = {
 	block: "block",
 	add: "add",
 	"steps-from-desc": "steps-from-desc",
+	"repair-markdown": "repair-markdown",
+	"complete-steps": "complete-steps",
+	"comment-template": "comment-template",
+	workflow: "workflow",
+	skill: "skill",
 } as const;
 
 const legacyCommandErrorMessage = (command: string) => {
@@ -251,6 +261,73 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				console.log(`blocked #${result.number}: ${result.reason}`);
 				return;
 			}
+			case "comment-template": {
+				if (hasHelp(rest)) {
+					console.log(flowCommentTemplateUsage());
+					return;
+				}
+				const [kind] = rest;
+				if (!isValidCommentTemplateKind(kind)) {
+					throw new Error(flowCommentTemplateUsage());
+				}
+				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
+				console.log(getStandardizedCommentTemplate(language, kind));
+				return;
+			}
+			case "workflow": {
+				if (hasHelp(rest)) {
+					console.log(flowWorkflowUsage());
+					return;
+				}
+				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
+				console.log(flowWorkflow(language));
+				return;
+			}
+			case "skill": {
+				if (hasHelp(rest)) {
+					console.log(flowSkillUsage());
+					return;
+				}
+				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
+				console.log(flowSkill(language));
+				return;
+			}
+			case "repair-markdown": {
+				if (hasHelp(rest)) {
+					console.log(flowRepairMarkdownUsage());
+					return;
+				}
+				const number = parseNumber(rest[0]);
+				const repaired = yield* withSpinner(
+					"Repairing card description...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* repairMarkdownDescription(env, number);
+					}),
+				);
+				console.log(`repaired #${repaired}`);
+				return;
+			}
+			case "complete-steps": {
+				if (hasHelp(rest)) {
+					console.log(flowCompleteStepsUsage());
+					return;
+				}
+				const number = parseNumber(rest[0]);
+				const result = yield* withSpinner(
+					"Completing pending steps...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* completeSteps(env, number);
+					}),
+				);
+				const plural = result.updatedCount === 1 ? "" : "s";
+				console.log(`completed ${result.updatedCount} step${plural} for #${result.number}`);
+				if (result.contents.length > 0) {
+					console.log(result.contents.map((content) => `- ${content}`).join("\n"));
+				}
+				return;
+			}
 			case "add": {
 				if (hasHelp(rest)) {
 					console.log(flowAddUsage());
@@ -287,6 +364,15 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					}),
 				);
 				console.log(printSteps(steps));
+				return;
+			}
+			case "template": {
+				if (hasHelp(rest)) {
+					console.log(flowTemplateUsage());
+					return;
+				}
+				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
+				console.log(flowTemplate(language));
 				return;
 			}
 			case "init": {
@@ -407,6 +493,165 @@ const readDescription = (path: string) =>
 				catch: (cause) => new Error(`failed to read ${path}: ${String(cause)}`),
 			});
 
+type FlowCommentTemplateKind = "done" | "blocked" | "unblocked" | "handoff" | "note";
+
+const isValidCommentTemplateKind = (value: string | undefined): value is FlowCommentTemplateKind =>
+	value === "done" ||
+	value === "blocked" ||
+	value === "unblocked" ||
+	value === "handoff" ||
+	value === "note";
+
+const loadFlowCardLanguage = () => {
+	const configRepo = makeBunConfigRepository();
+	return configRepo.loadProjectConfigOptional().pipe(
+		Effect.catchDefect(() => Effect.succeed(undefined)),
+		Effect.catch(() => Effect.succeed(undefined)),
+		Effect.map((projectConfig) => projectConfig?.flow?.card?.language || DEFAULT_CARD_LANGUAGE),
+	);
+};
+
+const flowWorkflow = (language: FlowCardLanguage): string => {
+	if (language === "en") {
+		return `## Workflow
+
+## Setup
+- fizzyx setup <board-id>
+- fizzyx auth login <token>
+- fizzyx auth status
+
+## Create
+- fizzyx flow template > /tmp/card.md
+- edit card content and steps in /tmp/card.md
+- fizzyx flow add <user> "<title>" --desc /tmp/card.md
+
+## Daily
+- fizzyx flow mine --fresh
+- fizzyx flow start <card>
+- fizzyx flow show <card>
+
+## Work
+- Inspect task goal and constraints
+- Draft clear implementation steps
+- Implement changes
+- Verify tests and acceptance criteria
+
+## Complete
+- fizzyx flow complete-steps <card>
+- fizzyx flow done <card> "commit <sha>: <subject>"
+- fizzyx flow done writes the standardized done comment and closes the card, so no separate close/comment step is needed.
+
+## Block
+- fizzyx flow block <card> "<reason>"
+- Use \`fizzyx flow comment-template <kind>\` for manual comments, and keep comments concise.
+
+## Card structure
+- Description stores context
+- Steps become Fizzy checklist items`;
+	}
+
+	if (language === "mixed") {
+		return `## Workflow / 工作流
+
+## Setup / 准备
+- fizzyx setup <board-id>
+- fizzyx auth login <token>
+- fizzyx auth status
+
+## Create / 创建
+- fizzyx flow template > /tmp/card.md
+- 编辑卡片描述和步骤后提交
+- fizzyx flow add <user> "<title>" --desc /tmp/card.md
+
+## Daily / 日常
+- fizzyx flow mine --fresh
+- fizzyx flow start <card>
+- fizzyx flow show <card>
+
+## Work / 进行中
+- 明确目标与约束
+- 复现并拆分实现步骤
+- 执行变更
+- 验收测试与自检
+
+## Done / 完成
+- fizzyx flow complete-steps <card>
+- fizzyx flow done <card> "commit <sha>: <subject>"
+- \`flow done\` 会写入标准完成评论并关闭卡片，无需额外进行 close/comment 操作。
+
+## Block / 阻塞
+- fizzyx flow block <card> "<reason>"
+- 使用 \`fizzyx flow comment-template <kind>\` 进行手动注释，保持内容简洁。
+
+## 卡片结构 / Card structure
+- Description = 卡片背景与上下文
+- Steps = 任务清单`;
+	}
+
+	return `## 工作流
+
+## 准备
+- fizzyx setup <board-id>
+- fizzyx auth login <token>
+- fizzyx auth status
+
+## 创建
+- fizzyx flow template > /tmp/card.md
+- 编辑模板并补充内容
+- fizzyx flow add <user> "<title>" --desc /tmp/card.md
+
+## 每日
+- fizzyx flow mine --fresh
+- fizzyx flow start <card>
+- fizzyx flow show <card>
+
+## 任务执行
+- 明确目标与约束
+- 拆解实施步骤
+- 执行变更
+- 验证测试与验收
+
+## 完成
+- fizzyx flow complete-steps <card>
+- fizzyx flow done <card> "commit <sha>: <subject>"
+- \`flow done\` 会写入标准完成评论并关闭卡片，不要重复 close/comment。
+
+## 阻塞
+- fizzyx flow block <card> "<reason>"
+- 使用 \`flow comment-template <kind>\` 进行手动评论并保持内容简洁。
+
+## 卡片结构
+- description 为上下文
+- steps 会变成 Fizzy checklist`;
+};
+
+const flowSkill = (language: FlowCardLanguage): string => {
+	if (language === "en") {
+		return `## AGENTS.md snippet
+
+- Use \`fizzyx flow workflow\` for process orientation.
+- Use \`fizzyx flow template\` when creating new cards.
+- Keep project process in local docs only when there are project-specific exceptions.
+- Use \`flow.card.language\` in configuration to control comment labels (done/block/etc).`;
+	}
+
+	if (language === "mixed") {
+		return `## AGENTS.md snippet
+
+- 使用 \`fizzyx flow workflow\` 作为工作流程参考。
+- 创建卡片时使用 \`fizzyx flow template\`。
+- 仅在项目特殊场景下保留本地流程文档。
+- 使用配置中的 \`flow.card.language\` 控制卡片动作注释语种。`;
+	}
+
+	return `## AGENTS.md 片段
+
+- 使用 \`fizzyx flow workflow\` 作为工作流程参考。
+- 创建卡片时使用 \`fizzyx flow template\`。
+- 仅在项目特殊场景下保留本地流程文档。
+- 使用配置中的 \`flow.card.language\` 控制卡片动作注释语种。`;
+};
+
 const isHelpCommand = (value: string | undefined): value is "help" | "--help" | "-h" =>
 	value === "help" || value === "--help" || value === "-h";
 
@@ -414,7 +659,7 @@ const hasHelp = (args: ReadonlyArray<string>): boolean => args.some(isHelpComman
 
 const topUsage = (): string => `fizzyx <command>
 
-commands:
+			commands:
   setup
   auth
   flow
@@ -440,18 +685,24 @@ commands:
 const flowUsage = (): string => `fizzyx flow <command>
 
 commands:
-   sync
-   mine [--fresh] [user]
-   status [--fresh]
-   next [--fresh]
-   show <card>
-   start <card>
-   done <card> [ref]
-   block <card> <reason>
-   add <user> <title> --desc <file|->
-   steps-from-desc <card>
-   init
-   flow help`;
+    sync
+    mine [--fresh] [user]
+    status [--fresh]
+    next [--fresh]
+    show <card>
+    start <card>
+    done <card> [ref]
+    block <card> <reason>
+    comment-template <kind>
+    workflow
+    skill
+    repair-markdown <card>
+    complete-steps <card>
+    add <user> <title> --desc <file|->
+    template
+    steps-from-desc <card>
+    init
+    flow help`;
 
 const flowSyncUsage = (): string => "fizzyx flow sync";
 const flowMineUsage = (): string => "fizzyx flow mine [--fresh] [user]";
@@ -461,9 +712,84 @@ const flowShowUsage = (): string => "fizzyx flow show <card>";
 const flowStartUsage = (): string => "fizzyx flow start <card>";
 const flowDoneUsage = (): string => "fizzyx flow done <card> [ref]";
 const flowBlockUsage = (): string => "fizzyx flow block <card> <reason>";
+const flowRepairMarkdownUsage = (): string => "fizzyx flow repair-markdown <card>";
+const flowCommentTemplateUsage = (): string => "fizzyx flow comment-template <kind>";
+const flowWorkflowUsage = (): string => "fizzyx flow workflow";
+const flowSkillUsage = (): string => "fizzyx flow skill";
+const flowCompleteStepsUsage = (): string => "fizzyx flow complete-steps <card>";
 const flowAddUsage = (): string => "fizzyx flow add <user> <title> --desc <file|->";
+const flowTemplateUsage = (): string => "fizzyx flow template";
 const flowStepsUsage = (): string => "fizzyx flow steps-from-desc <card>";
 const flowInitUsage = (): string => "fizzyx flow init";
+
+const DEFAULT_CARD_LANGUAGE: FlowCardLanguage = DEFAULT_FLOW_CARD_LANGUAGE;
+
+const flowTemplate = (language: FlowCardLanguage): string => {
+	const labels = getTemplateLabels(language);
+
+	return `## ${labels.goal}
+Define the ticket objective in 1-2 concise sentences.
+
+## ${labels.scope}
+### ${labels.include}
+- What should be included
+
+### ${labels.exclude}
+- What should not be included
+
+## ${labels.notes}
+- Keep changes small and deterministic
+- Prefer existing patterns
+
+## ${labels.files}
+- Files to touch (relative path)
+
+## ${labels.verification}
+- Validation and acceptance checks to run before handoff
+
+## Steps
+
+- [ ] Replace goal + scope text with final content
+- [ ] Add or update implementation files
+- [ ] Keep step descriptions in plain text
+- [ ] Confirm checks and close card`;
+};
+
+const getTemplateLabels = (language: FlowCardLanguage) => {
+	if (language === "en") {
+		return {
+			scope: "Scope",
+			goal: "Goal",
+			include: "In",
+			exclude: "Out",
+			files: "Files",
+			verification: "Verification",
+			notes: "Notes",
+		};
+	}
+
+	if (language === "mixed") {
+		return {
+			scope: "Scope / 范围",
+			goal: "Goal / 目标",
+			include: "In / 包含",
+			exclude: "Out / 不包含",
+			files: "Files / 文件",
+			verification: "Verification / 验证",
+			notes: "Notes / 备注",
+		};
+	}
+
+	return {
+		scope: "范围",
+		goal: "目标",
+		include: "包含",
+		exclude: "不包含",
+		files: "文件",
+		verification: "验证",
+		notes: "备注",
+	};
+};
 
 const authLoginUsage = (): string => "fizzyx auth login <token>";
 const authStatusUsage = (): string => "fizzyx auth status";

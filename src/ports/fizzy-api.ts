@@ -24,6 +24,14 @@ export interface FizzyApi {
 	comment: (number: CardNumber, body: string) => Effect.Effect<void, ApiError>;
 	closeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	postponeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
+	updateCardDescription: (number: CardNumber, description: string) => Effect.Effect<void, ApiError>;
+	updateStep: (
+		number: CardNumber,
+		stepId: string,
+		input: {
+			completed: boolean;
+		},
+	) => Effect.Effect<void, ApiError>;
 	createStep: (
 		number: CardNumber,
 		content: string,

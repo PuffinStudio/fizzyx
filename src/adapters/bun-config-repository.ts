@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { existsSync } from "node:fs";
 import { ConfigError, FileError } from "../domain/errors";
+import { DEFAULT_FLOW_CARD_LANGUAGE, type FlowCardLanguage } from "../domain/models";
 import type {
 	Credentials,
 	FlowConfig,
@@ -264,6 +265,9 @@ const parseFlowConfig = (raw: unknown): FlowConfig | undefined => {
 			inProgress,
 		},
 		users: parsedUsers,
+		card: {
+			language: parseCardLanguage(flow.card) || DEFAULT_FLOW_CARD_LANGUAGE,
+		},
 		wipLimit: numberValue(flow.wip_limit) || DEFAULT_WIP_LIMIT,
 		cacheTtlSeconds: numberValue(flow.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
 	};
@@ -279,6 +283,9 @@ const renderProjectConfig = (input: SetupProjectConfigInput, existingText = ""):
 			in_progress: input.inProgressColumn || "",
 		},
 		users: parseUsersInput(input.users || {}),
+		card: {
+			language: DEFAULT_FLOW_CARD_LANGUAGE,
+		},
 		wip_limit: DEFAULT_WIP_LIMIT,
 		cache_ttl: DEFAULT_CACHE_TTL_SECONDS,
 	} satisfies YamlObject;
@@ -324,7 +331,7 @@ const mergeFlowIntoConfig = (
 		}
 		if (key === "flow") {
 			hasFlow = true;
-			entries.push([key, flow]);
+			entries.push([key, mergeFlowConfig(objectValue(value), flow)]);
 			continue;
 		}
 		entries.push([key, value]);
@@ -335,6 +342,44 @@ const mergeFlowIntoConfig = (
 	}
 
 	return entries;
+};
+
+const mergeFlowConfig = (current: YamlObject, next: YamlObject): YamlObject => {
+	const currentColumns = objectValue(current.columns);
+	const nextColumns = objectValue(next.columns);
+	const nextUsers = objectValue(next.users);
+	const currentCard = objectValue(current.card);
+	const nextCard = objectValue(next.card);
+
+	const cardLanguage =
+		parseCardLanguage(currentCard) || parseCardLanguage(nextCard) || DEFAULT_FLOW_CARD_LANGUAGE;
+
+	return {
+		...current,
+		columns: {
+			todo: stringValue(nextColumns.todo) || stringValue(currentColumns.todo) || "",
+			in_progress:
+				stringValue(nextColumns.in_progress) || stringValue(currentColumns.in_progress) || "",
+		},
+		users: nextUsers,
+		wip_limit: numberValue(next.wip_limit) || numberValue(current.wip_limit) || DEFAULT_WIP_LIMIT,
+		cache_ttl:
+			numberValue(next.cache_ttl) || numberValue(current.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
+		card: {
+			...currentCard,
+			...nextCard,
+			language: cardLanguage,
+		},
+	};
+};
+
+const parseCardLanguage = (value: unknown): FlowCardLanguage | undefined => {
+	if (typeof value === "object" && value !== null) {
+		const raw = (value as YamlObject).language;
+		if (raw === "en" || raw === "mixed" || raw === "zh-CN") return raw;
+	}
+
+	return undefined;
 };
 
 const serializeYaml = (entries: Array<[string, YamlValue]>, indent = 0): string => {

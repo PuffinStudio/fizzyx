@@ -155,6 +155,145 @@ test("prints flow help", async () => {
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("fizzyx flow <command>");
 	expect(stdout).toContain("add <user> <title> --desc <file|->");
+	expect(stdout).toContain("repair-markdown <card>");
+	expect(stdout).toContain("complete-steps <card>");
+	expect(stdout).toContain("template");
+	expect(stdout).toContain("comment-template <kind>");
+	expect(stdout).toContain("workflow");
+	expect(stdout).toContain("skill");
+});
+
+test("flow comment-template requires kind", async () => {
+	const { stderr, exitCode } = await runCli(["flow", "comment-template"]);
+
+	expect(exitCode).toBe(1);
+	expect(stderr).toContain("fizzyx flow comment-template <kind>");
+});
+
+test("flow comment-template prints template for default zh-CN", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "comment-template", "blocked"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toBe("阻塞：<原因；需要谁/什么决策>\n");
+});
+
+test("flow comment-template prints english template when configured", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n  card:\n    language: en\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "comment-template", "done"], {
+			cwd: projectDir,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toBe("done: commit <sha>: <subject>\n");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow workflow prints process checklist", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n  card:\n    language: mixed\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "workflow"], {
+			cwd: projectDir,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("## Workflow / 工作流");
+		expect(stdout).toContain("fizzyx flow comment-template <kind>");
+		expect(stdout).toContain("close/comment");
+		expect(stdout).toContain("简洁");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow skill prints AGENTS snippet", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "skill"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("## AGENTS.md 片段");
+	expect(stdout).toContain("fizzyx flow workflow");
+});
+
+test("flow template command prints card template sections", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "template"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("## 目标");
+	expect(stdout).toContain("## 范围");
+	expect(stdout).toContain("### 包含");
+	expect(stdout).toContain("### 不包含");
+	expect(stdout).toContain("## 备注");
+	expect(stdout).toContain("## 文件");
+	expect(stdout).toContain("## 验证");
+	expect(stdout).toContain("## Steps");
+	expect(stdout).not.toContain("## References");
+	expect(stdout).not.toContain("## Backup");
+	expect(stdout).not.toContain("## Depends On");
+	expect(stdout).toContain("- [ ] Replace goal + scope text with final content");
+	expect(stdout).not.toContain("- [ ] `");
+});
+
+test("flow template uses config language", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n  card:\n    language: en\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "template"], { cwd: projectDir });
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("## Goal");
+		expect(stdout).toContain("## Scope");
+		expect(stdout).toContain("### In");
+		expect(stdout).toContain("### Out");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow template help is available", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "template", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("fizzyx flow template");
+});
+
+test("flow repair-markdown help is available", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "repair-markdown", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("fizzyx flow repair-markdown <card>");
+});
+
+test("flow complete-steps help is available", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "complete-steps", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("fizzyx flow complete-steps <card>");
 });
 
 test("top-level flow command suggests flow namespace", async () => {
@@ -163,6 +302,189 @@ test("top-level flow command suggests flow namespace", async () => {
 	expect(exitCode).toBe(1);
 	expect(stderr).toContain("unknown command: mine");
 	expect(stderr).toContain("Did you mean: fizzyx flow mine?");
+});
+
+test("top-level repair-markdown command suggests flow namespace", async () => {
+	const { stderr, exitCode } = await runCli(["repair-markdown", "7"]);
+
+	expect(exitCode).toBe(1);
+	expect(stderr).toContain("unknown command: repair-markdown");
+	expect(stderr).toContain("Did you mean: fizzyx flow repair-markdown?");
+});
+
+test("top-level comment-template command suggests flow namespace", async () => {
+	const { stderr, exitCode } = await runCli(["comment-template", "done"]);
+
+	expect(exitCode).toBe(1);
+	expect(stderr).toContain("unknown command: comment-template");
+	expect(stderr).toContain("Did you mean: fizzyx flow comment-template?");
+});
+
+test("top-level workflow command suggests flow namespace", async () => {
+	const { stderr, exitCode } = await runCli(["workflow"]);
+
+	expect(exitCode).toBe(1);
+	expect(stderr).toContain("unknown command: workflow");
+	expect(stderr).toContain("Did you mean: fizzyx flow workflow?");
+});
+
+test("top-level skill command suggests flow namespace", async () => {
+	const { stderr, exitCode } = await runCli(["skill"]);
+
+	expect(exitCode).toBe(1);
+	expect(stderr).toContain("unknown command: skill");
+	expect(stderr).toContain("Did you mean: fizzyx flow skill?");
+});
+
+test("flow repair-markdown repairs card description and prints result", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const homeDir = join(root, "home");
+
+	const calls: string[] = [];
+	const requestBodies: Array<{ [key: string]: unknown }> = [];
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		mkdirSync(homeDir, { recursive: true });
+
+		const credentialsDir = join(homeDir, ".config", "fizzyx", "credentials");
+		mkdirSync(credentialsDir, { recursive: true });
+		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
+
+		const api = Bun.serve({
+			port: 0,
+			async fetch(req) {
+				const url = new URL(req.url);
+				calls.push(`${req.method} ${url.pathname}`);
+
+				if (url.pathname === "/my/identity.json" && req.method === "GET") {
+					return Response.json({
+						user: {
+							id: "identity-id",
+							name: "Identity User",
+							email: "identity@example.com",
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards/12.json" && req.method === "GET") {
+					return Response.json({
+						number: 12,
+						title: "Repair description",
+						description: "- [ ] Fix tests",
+					});
+				}
+
+				if (url.pathname === "/1/cards/12.json" && req.method === "PATCH") {
+					requestBodies.push((await new Response(req.body).json()) as { [key: string]: unknown });
+					return Response.json({});
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "GET") {
+					return Response.json([]);
+				}
+
+				return new Response("not found", { status: 404 });
+			},
+		});
+
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: http://127.0.0.1:${api.port}\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n`,
+		);
+
+		const result = await runCli(["flow", "repair-markdown", "12"], {
+			cwd: projectDir,
+			env: { HOME: homeDir },
+		});
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("repaired #12");
+		expect(requestBodies).toHaveLength(1);
+		expect(requestBodies[0]).toHaveProperty("description");
+		expect(typeof requestBodies[0]?.description).toBe("string");
+		expect(calls.filter((call) => call === "GET /1/cards.json").length).toBe(3);
+
+		api.stop();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow complete-steps completes open steps and prints count/list", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const homeDir = join(root, "home");
+
+	const updated: string[] = [];
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		mkdirSync(homeDir, { recursive: true });
+
+		const credentialsDir = join(homeDir, ".config", "fizzyx", "credentials");
+		mkdirSync(credentialsDir, { recursive: true });
+		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
+
+		const api = Bun.serve({
+			port: 0,
+			async fetch(req) {
+				const url = new URL(req.url);
+
+				if (url.pathname === "/my/identity.json" && req.method === "GET") {
+					return Response.json({
+						user: {
+							id: "identity-id",
+							name: "Identity User",
+							email: "identity@example.com",
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards/77.json" && req.method === "GET") {
+					return Response.json({
+						number: 77,
+						title: "Complete steps",
+						steps: [
+							{ id: "step-1", content: "Plan", completed: true },
+							{ id: "step-2", content: "Implement", completed: false },
+						],
+					});
+				}
+
+				if (url.pathname.startsWith("/1/cards/77/steps/") && req.method === "PATCH") {
+					updated.push(url.pathname);
+					return Response.json({});
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "GET") {
+					return Response.json([]);
+				}
+
+				return new Response("not found", { status: 404 });
+			},
+		});
+
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: http://127.0.0.1:${api.port}\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n`,
+		);
+
+		const result = await runCli(["flow", "complete-steps", "77"], {
+			cwd: projectDir,
+			env: { HOME: homeDir },
+		});
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("completed 1 step for #77");
+		expect(result.stdout).toContain("- Implement");
+		expect(updated).toEqual(["/1/cards/77/steps/step-2.json"]);
+
+		api.stop();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("setup does not expose advanced flags", async () => {
