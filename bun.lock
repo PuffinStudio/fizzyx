@@ -4,12 +4,10 @@
   "workspaces": {
     "": {
       "name": "fizzyx",
-      "dependencies": {
-        "effect": "4.0.0-beta.79",
-      },
       "devDependencies": {
         "@types/bun": "latest",
         "@typescript/native-preview": "^7.0.0-dev.20260611.2",
+        "effect": "4.0.0-beta.79",
         "oxfmt": "^0.54.0",
         "oxlint": "^1.69.0",
       },

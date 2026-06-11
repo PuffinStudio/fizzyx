@@ -1,6 +1,6 @@
 {
-	"name": "fizzyx",
-	"version": "0.1.0",
+	"name": "@puffinstudio/fizzyx",
+	"version": "0.2.0",
 	"homepage": "https://github.com/PuffinStudio/fizzyx#readme",
 	"bugs": {
 		"url": "https://github.com/PuffinStudio/fizzyx/issues"
