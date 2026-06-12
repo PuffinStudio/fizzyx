@@ -14,6 +14,8 @@ import {
 	done,
 	resolveDoneRefFromGit,
 	block,
+	standardizeBoard,
+	standardizeCard,
 	stepsFromDescription,
 } from "../src/use-cases/flow-service";
 
@@ -461,4 +463,152 @@ test("block posts standardized escaped comment", async () => {
 
 	expect(result).toEqual({ number: 21, reason: 'bad <html> & chars "x"' });
 	expect(comments).toEqual(["<p>阻塞：bad &lt;html&gt; &amp; chars &quot;x&quot;</p>"]);
+});
+
+test("standardizeCard extracts old markdown sections and normalizes steps", async () => {
+	const descriptions: string[] = [];
+	const created: Array<{ content: string; completed: boolean }> = [];
+	const updated: Array<{ stepId: string; content?: string; completed?: boolean }> = [];
+	const api = defaultApi();
+	api.showCard = () =>
+		Effect.succeed({
+			number: 30,
+			title: "[Infra] radius tokens",
+			description: `## Goal
+Shrink radius tokens.
+
+## Done When
+- [ ] \`--radius-sm\` 降至 4rpx
+- [ ] pnpm check 通过
+
+## Files
+- \`src/app.css\`
+
+## References
+- stale figma node
+
+## Backup
+Ray`,
+			steps: [{ id: "s1", content: "`--radius-md` 降至 8rpx", completed: false }],
+		});
+	api.updateCardDescription = (_number, description) => {
+		descriptions.push(description);
+		return Effect.succeed(undefined);
+	};
+	api.updateStep = (_number, stepId, input) => {
+		updated.push({ stepId, ...input });
+		return Effect.succeed(undefined);
+	};
+	api.createStep = (_number, content, completed) => {
+		created.push({ content, completed: Boolean(completed) });
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(standardizeCard(makeEnv(api), 30));
+
+	expect(result).toEqual({
+		number: 30,
+		descriptionUpdated: true,
+		stepsCreated: 0,
+		stepsUpdated: 1,
+		stepsCompleted: 0,
+	});
+	expect(descriptions[0]).toContain("<h2>目标</h2>");
+	expect(descriptions[0]).toContain("Shrink radius tokens.");
+	expect(descriptions[0]).toContain("<h2>文件</h2>");
+	expect(descriptions[0]).toContain("<h2>验证</h2>");
+	expect(descriptions[0]).not.toContain("References");
+	expect(descriptions[0]).not.toContain("Backup");
+	expect(created).toEqual([]);
+	expect(updated).toEqual([{ stepId: "s1", content: "--radius-md 降至 8rpx" }]);
+});
+
+test("standardizeCard parses old html and completes closed card steps", async () => {
+	const created: Array<{ content: string; completed: boolean }> = [];
+	const updated: Array<{ stepId: string; content?: string; completed?: boolean }> = [];
+	const api = defaultApi();
+	api.showCard = () =>
+		Effect.succeed({
+			number: 31,
+			title: "Closed task",
+			closed: true,
+			descriptionHtml:
+				"<div><h2>Goal</h2><p>Ship it.</p><h2>Done When</h2><ul><li><code>pnpm check</code> passed</li></ul></div>",
+			steps: [{ id: "s1", content: "`old` step", completed: false }],
+		});
+	api.updateCardDescription = () => Effect.succeed(undefined);
+	api.updateStep = (_number, stepId, input) => {
+		updated.push({ stepId, ...input });
+		return Effect.succeed(undefined);
+	};
+	api.createStep = (_number, content, completed) => {
+		created.push({ content, completed: Boolean(completed) });
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(standardizeCard(makeEnv(api), 31));
+
+	expect(result.stepsCreated).toBe(0);
+	expect(result.stepsUpdated).toBe(1);
+	expect(result.stepsCompleted).toBe(1);
+	expect(created).toEqual([]);
+	expect(updated).toEqual([{ stepId: "s1", content: "old step", completed: true }]);
+});
+
+test("standardizeCard creates steps from old done-when when no steps exist", async () => {
+	const created: Array<{ content: string; completed: boolean }> = [];
+	const api = defaultApi();
+	api.showCard = () =>
+		Effect.succeed({
+			number: 32,
+			title: "Create steps",
+			description: `## Goal
+Do work.
+
+## Done When
+- [ ] \`pnpm check\` 通过
+- [x] screenshot verified`,
+			steps: [],
+		});
+	api.updateCardDescription = () => Effect.succeed(undefined);
+	api.createStep = (_number, content, completed) => {
+		created.push({ content, completed: Boolean(completed) });
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(standardizeCard(makeEnv(api), 32));
+
+	expect(result.stepsCreated).toBe(2);
+	expect(created).toEqual([
+		{ content: "pnpm check 通过", completed: false },
+		{ content: "screenshot verified", completed: true },
+	]);
+});
+
+test("standardizeBoard standardizes unique open and closed cards", async () => {
+	const standardized: number[] = [];
+	const api = defaultApi();
+	api.listCards = (options) =>
+		Effect.succeed(
+			options?.indexedBy === "closed"
+				? [
+						{ number: 41, title: "Closed", description: "closed" },
+						{ number: 40, title: "Duplicate", description: "duplicate" },
+					]
+				: [
+						{ number: 40, title: "Open", description: "open" },
+						{ number: 42, title: "Open 2", description: "open 2" },
+					],
+		);
+	api.showCard = (number) =>
+		Effect.succeed({ number, title: `Card ${number}`, description: `card ${number}` });
+	api.updateCardDescription = (number) => {
+		standardized.push(number);
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(standardizeBoard(makeEnv(api)));
+
+	expect(result.total).toBe(3);
+	expect(standardized.sort()).toEqual([40, 41, 42]);
 });

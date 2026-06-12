@@ -90,6 +90,7 @@ test("listCards unwraps { data: [...] } and decodes card fields", async () => {
 				number: 101,
 				title: "Write docs",
 				description: "Draft migration guide",
+				description_html: "<h2>Draft migration guide</h2>",
 				closed: true,
 				assignees: [{ id: "user-1", name: "Ada" }],
 				column: { id: "col", name: "TODO" },
@@ -109,6 +110,7 @@ test("listCards unwraps { data: [...] } and decodes card fields", async () => {
 			number: 101,
 			title: "Write docs",
 			description: "Draft migration guide",
+			descriptionHtml: "<h2>Draft migration guide</h2>",
 			column: { id: "col", name: "TODO" },
 			assignees: [{ id: "user-1", name: "Ada" }],
 			steps: [{ content: "Step A", completed: false }],
@@ -196,13 +198,16 @@ test("updateCardDescription uses PATCH and sends description body", async () => 
 	});
 });
 
-test("updateStep uses PATCH and sends completed boolean", async () => {
+test("updateStep uses PATCH and sends partial fields", async () => {
 	const config = makeConfig();
 	const response = jsonResponse({});
 
 	const { calls } = await withMockFetch(response, () =>
 		Effect.runPromise(
-			makeFetchFizzyApi(config, "token").updateStep(42, "step-1", { completed: false }),
+			makeFetchFizzyApi(config, "token").updateStep(42, "step-1", {
+				completed: false,
+				content: "Plain step",
+			}),
 		),
 	);
 
@@ -212,6 +217,7 @@ test("updateStep uses PATCH and sends completed boolean", async () => {
 	expect(summary.url).toContain("/acme/cards/42/steps/step-1.json");
 	expect(JSON.parse(summary.bodyText)).toEqual({
 		completed: false,
+		content: "Plain step",
 	});
 });
 

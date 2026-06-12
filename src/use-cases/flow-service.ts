@@ -601,6 +601,106 @@ export const stepsFromDescription = (env: InitializedEnv, number: number) =>
 		return steps;
 	});
 
+export interface StandardizeCardResult {
+	number: number;
+	descriptionUpdated: boolean;
+	stepsCreated: number;
+	stepsUpdated: number;
+	stepsCompleted: number;
+}
+
+export const standardizeCard = (env: InitializedEnv, number: number) =>
+	Effect.gen(function* () {
+		const card = yield* env.api.showCard(number);
+		return yield* standardizeLoadedCard(env, card);
+	});
+
+export const standardizeBoard = (env: InitializedEnv) =>
+	Effect.gen(function* () {
+		const [openCards, closedCards] = yield* Effect.all([
+			env.api.listCards({ all: true }),
+			env.api.listCards({ indexedBy: "closed", all: true }),
+		]);
+		const seen = new Set<number>();
+		const cards = openCards.concat(closedCards).filter((card) => {
+			if (seen.has(card.number)) return false;
+			seen.add(card.number);
+			return true;
+		});
+
+		const results = yield* Effect.forEach(cards, (card) => standardizeCard(env, card.number));
+		return {
+			results,
+			total: results.length,
+			descriptionUpdated: results.filter((result) => result.descriptionUpdated).length,
+			stepsCreated: results.reduce((total, result) => total + result.stepsCreated, 0),
+			stepsUpdated: results.reduce((total, result) => total + result.stepsUpdated, 0),
+			stepsCompleted: results.reduce((total, result) => total + result.stepsCompleted, 0),
+		};
+	});
+
+const standardizeLoadedCard = (env: InitializedEnv, card: Card) =>
+	Effect.gen(function* () {
+		const source = card.descriptionHtml || card.description || "";
+		const plain = markdownishText(source);
+		const sections = parseDescriptionSections(plain);
+		const nextMarkdown = buildStandardDescription(env.config.flow.card.language, card, sections);
+		const nextDescription = convertDescription(nextMarkdown);
+		const currentDescription = card.descriptionHtml || card.description || "";
+		const descriptionUpdated =
+			normalizeComparableDescription(nextDescription) !==
+			normalizeComparableDescription(currentDescription);
+
+		if (descriptionUpdated) {
+			yield* env.api.updateCardDescription(card.number, nextDescription);
+		}
+
+		const existingSteps = card.steps || [];
+		const existingByContent = new Map<string, Step>();
+		for (const step of existingSteps) {
+			existingByContent.set(normalizeStepContent(step.content), step);
+		}
+
+		const oldStepCandidates =
+			existingSteps.length > 0 ? [] : extractStandardizeSteps(source, sections);
+		let stepsCreated = 0;
+		let stepsUpdated = 0;
+		let stepsCompleted = 0;
+
+		for (const step of existingSteps) {
+			const normalized = normalizeStepContent(step.content);
+			const needsContentUpdate = Boolean(step.id) && normalized !== step.content;
+			const needsCompletion = Boolean(step.id) && Boolean(card.closed) && !step.completed;
+			if (!step.id || (!needsContentUpdate && !needsCompletion)) continue;
+
+			yield* env.api.updateStep(card.number, step.id, {
+				...(needsContentUpdate ? { content: normalized } : {}),
+				...(needsCompletion ? { completed: true } : {}),
+			});
+			if (needsContentUpdate) stepsUpdated += 1;
+			if (needsCompletion) stepsCompleted += 1;
+		}
+
+		for (const candidate of oldStepCandidates) {
+			const content = normalizeStepContent(candidate.content);
+			if (!content || existingByContent.has(content)) continue;
+			yield* env.api.createStep(card.number, content, Boolean(card.closed) || candidate.completed);
+			stepsCreated += 1;
+			existingByContent.set(content, {
+				content,
+				completed: Boolean(card.closed) || candidate.completed,
+			});
+		}
+
+		return {
+			number: card.number,
+			descriptionUpdated,
+			stepsCreated,
+			stepsUpdated,
+			stepsCompleted,
+		} satisfies StandardizeCardResult;
+	});
+
 const ensureFlowConfig = (args: {
 	configRepo: ConfigRepository;
 	api: FizzyApi;
@@ -788,6 +888,142 @@ const parseTemplateDescription = (
 		templateSteps: parseDoneWhen(templateLines.join("\n")),
 	};
 };
+
+type DescriptionSections = Record<string, string[]>;
+
+const markdownishText = (value: string): string =>
+	decodeTextEntities(
+		value
+			.replace(
+				/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi,
+				(_, text: string) => `\n## ${stripTaskListHtmlText(text).trim()}\n`,
+			)
+			.replace(
+				/<li[^>]*>([\s\S]*?)<\/li>/gi,
+				(_, text: string) => `\n- ${stripTaskListHtmlText(text).trim()}`,
+			)
+			.replace(
+				/<p[^>]*>([\s\S]*?)<\/p>/gi,
+				(_, text: string) => `\n${stripTaskListHtmlText(text).trim()}\n`,
+			)
+			.replace(/<br\s*\/?>/gi, "\n")
+			.replace(/<[^>]*>/g, "")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim(),
+	);
+
+const parseDescriptionSections = (value: string): DescriptionSections => {
+	const sections: DescriptionSections = {};
+	let current = "root";
+	for (const rawLine of value.split(/\r?\n/)) {
+		const line = rawLine.trimEnd();
+		const heading = line.match(/^#{1,6}\s+(.+)$/);
+		if (heading?.[1]) {
+			current = normalizeHeading(heading[1]);
+			sections[current] ||= [];
+			continue;
+		}
+		sections[current] ||= [];
+		sections[current]!.push(line);
+	}
+	return sections;
+};
+
+const normalizeHeading = (value: string): string =>
+	normalizeStepContent(value)
+		.toLowerCase()
+		.replace(/[：:]+$/, "")
+		.trim();
+
+const firstSection = (sections: DescriptionSections, names: ReadonlyArray<string>): string => {
+	for (const name of names) {
+		const lines = sections[name];
+		if (!lines) continue;
+		const text = cleanSectionLines(lines).join("\n").trim();
+		if (text) return text;
+	}
+	return "";
+};
+
+const cleanSectionLines = (lines: ReadonlyArray<string>): string[] =>
+	lines
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.map((line) => line.replace(/^[-*]\s+/, "- "));
+
+const buildStandardDescription = (
+	language: FlowCardLanguage,
+	card: Card,
+	sections: DescriptionSections,
+): string => {
+	const labels =
+		language === "en"
+			? { goal: "Goal", files: "Files", verification: "Verification", notes: "Notes" }
+			: { goal: "目标", files: "文件", verification: "验证", notes: "备注" };
+	const goal = firstSection(sections, ["goal", "目标"]) || card.title;
+	const files = firstSection(sections, ["files", "文件"]);
+	const verification = mergeUniqueLines(
+		firstSection(sections, ["verification", "验证"])
+			.split(/\r?\n/)
+			.concat(extractVerificationLines(firstSection(sections, ["done when", "完成条件"]))),
+	);
+	const notes = firstSection(sections, ["notes", "备注"]);
+
+	const parts = [`## ${labels.goal}`, "", goal.trim()];
+	if (files) parts.push("", `## ${labels.files}`, "", files);
+	if (verification.length > 0) parts.push("", `## ${labels.verification}`, "", ...verification);
+	if (notes) parts.push("", `## ${labels.notes}`, "", notes);
+	return parts.join("\n").trim();
+};
+
+const mergeUniqueLines = (lines: ReadonlyArray<string>): string[] => {
+	const seen = new Set<string>();
+	const result: string[] = [];
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (!line || seen.has(line)) continue;
+		seen.add(line);
+		result.push(line.startsWith("-") ? line : `- ${line}`);
+	}
+	return result;
+};
+
+const extractVerificationLines = (doneWhen: string): string[] =>
+	doneWhen
+		.split(/\r?\n/)
+		.map((line) => normalizeStepContent(line.replace(/^[-*]\s+(\[[ xX]\]\s*)?/, "")))
+		.filter((line) =>
+			/\b(pnpm|bun|test|check|build|screenshot|compare|lint|typecheck)\b/i.test(line),
+		)
+		.map((line) => `- ${line}`);
+
+const extractStandardizeSteps = (
+	source: string,
+	sections: DescriptionSections,
+): Array<{ content: string; completed: boolean }> => {
+	const doneWhen = firstSection(sections, ["done when", "完成条件"]);
+	const parsed = parseDoneWhen(source).concat(parseLooseStepLines(doneWhen));
+	const seen = new Set<string>();
+	return parsed.filter((step) => {
+		const content = normalizeStepContent(step.content);
+		if (!content || seen.has(content)) return false;
+		seen.add(content);
+		step.content = content;
+		return true;
+	});
+};
+
+const parseLooseStepLines = (value: string): Array<{ content: string; completed: boolean }> =>
+	value.split(/\r?\n/).flatMap((line) => {
+		const match = line.match(/^\s*[-*]\s+(?:\[([ xX])]\s*)?(.+)$/);
+		if (!match?.[2]) return [];
+		return [
+			{ content: normalizeStepContent(match[2]), completed: match[1]?.toLowerCase() === "x" },
+		];
+	});
+
+const normalizeComparableDescription = (value: string): string =>
+	markdownishText(value).replace(/\s+/g, " ").trim();
 
 const parseMarkdownTaskList = (description: string) =>
 	description.split(/\r?\n/).flatMap((line) => {

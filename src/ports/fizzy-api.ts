@@ -29,7 +29,8 @@ export interface FizzyApi {
 		number: CardNumber,
 		stepId: string,
 		input: {
-			completed: boolean;
+			completed?: boolean;
+			content?: string;
 		},
 	) => Effect.Effect<void, ApiError>;
 	createStep: (

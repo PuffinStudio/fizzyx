@@ -157,6 +157,8 @@ test("prints flow help", async () => {
 	expect(stdout).toContain("add <user> <title> --desc <file|->");
 	expect(stdout).toContain("repair-markdown <card>");
 	expect(stdout).toContain("complete-steps <card>");
+	expect(stdout).toContain("std <card>");
+	expect(stdout).toContain("std-all");
 	expect(stdout).toContain("template");
 	expect(stdout).toContain("comment-template <kind>");
 	expect(stdout).toContain("workflow");
@@ -247,7 +249,8 @@ test("flow template command prints card template sections", async () => {
 	expect(stdout).not.toContain("## References");
 	expect(stdout).not.toContain("## Backup");
 	expect(stdout).not.toContain("## Depends On");
-	expect(stdout).toContain("- [ ] Replace goal + scope text with final content");
+	expect(stdout).toContain("用 1-2 句说明这张卡要完成什么、为什么。");
+	expect(stdout).toContain("- [ ] 确认目标与范围");
 	expect(stdout).not.toContain("- [ ] `");
 });
 
@@ -294,6 +297,22 @@ test("flow complete-steps help is available", async () => {
 
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("fizzyx flow complete-steps <card>");
+});
+
+test("flow standardize help is available", async () => {
+	const card = await runCli(["flow", "std", "--help"]);
+	const board = await runCli(["flow", "std-all", "--help"]);
+	const longCard = await runCli(["flow", "standardize-card", "--help"]);
+	const longBoard = await runCli(["flow", "standardize-board", "--help"]);
+
+	expect(card.exitCode).toBe(0);
+	expect(card.stdout).toContain("fizzyx flow std <card>");
+	expect(board.exitCode).toBe(0);
+	expect(board.stdout).toContain("fizzyx flow std-all");
+	expect(longCard.exitCode).toBe(0);
+	expect(longCard.stdout).toContain("alias: standardize-card");
+	expect(longBoard.exitCode).toBe(0);
+	expect(longBoard.stdout).toContain("alias: standardize-board");
 });
 
 test("top-level flow command suggests flow namespace", async () => {

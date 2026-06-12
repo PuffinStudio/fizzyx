@@ -21,6 +21,8 @@ import {
 	show,
 	start,
 	status,
+	standardizeBoard,
+	standardizeCard,
 	stepsFromDescription,
 	syncBoard,
 } from "../use-cases/flow-service";
@@ -88,6 +90,10 @@ const legacyFlowCommands = {
 	"repair-markdown": "repair-markdown",
 	"complete-steps": "complete-steps",
 	"comment-template": "comment-template",
+	"standardize-card": "standardize-card",
+	"standardize-board": "standardize-board",
+	std: "std",
+	"std-all": "std-all",
 	workflow: "workflow",
 	skill: "skill",
 } as const;
@@ -328,6 +334,42 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				}
 				return;
 			}
+			case "std":
+			case "standardize-card": {
+				if (hasHelp(rest)) {
+					console.log(flowStdUsage());
+					return;
+				}
+				const number = parseNumber(rest[0]);
+				const result = yield* withSpinner(
+					"Standardizing card...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* standardizeCard(env, number);
+					}),
+				);
+				console.log(formatStandardizeResult(result));
+				return;
+			}
+			case "std-all":
+			case "standardize-board": {
+				if (hasHelp(rest)) {
+					console.log(flowStdAllUsage());
+					return;
+				}
+				const result = yield* withSpinner(
+					"Standardizing board...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* standardizeBoard(env);
+					}),
+				);
+				console.log(result.results.map(formatStandardizeResult).join("\n"));
+				console.log(
+					`total=${result.total} descriptions=${result.descriptionUpdated} steps_created=${result.stepsCreated} steps_updated=${result.stepsUpdated} steps_completed=${result.stepsCompleted}`,
+				);
+				return;
+			}
 			case "add": {
 				if (hasHelp(rest)) {
 					console.log(flowAddUsage());
@@ -492,6 +534,15 @@ const readDescription = (path: string) =>
 				try: () => Bun.file(path).text(),
 				catch: (cause) => new Error(`failed to read ${path}: ${String(cause)}`),
 			});
+
+const formatStandardizeResult = (result: {
+	number: number;
+	descriptionUpdated: boolean;
+	stepsCreated: number;
+	stepsUpdated: number;
+	stepsCompleted: number;
+}): string =>
+	`standardized #${result.number} description=${result.descriptionUpdated ? "yes" : "no"} steps_created=${result.stepsCreated} steps_updated=${result.stepsUpdated} steps_completed=${result.stepsCompleted}`;
 
 type FlowCommentTemplateKind = "done" | "blocked" | "unblocked" | "handoff" | "note";
 
@@ -698,6 +749,8 @@ commands:
     skill
     repair-markdown <card>
     complete-steps <card>
+    std <card>
+    std-all
     add <user> <title> --desc <file|->
     template
     steps-from-desc <card>
@@ -717,6 +770,8 @@ const flowCommentTemplateUsage = (): string => "fizzyx flow comment-template <ki
 const flowWorkflowUsage = (): string => "fizzyx flow workflow";
 const flowSkillUsage = (): string => "fizzyx flow skill";
 const flowCompleteStepsUsage = (): string => "fizzyx flow complete-steps <card>";
+const flowStdUsage = (): string => "fizzyx flow std <card>  (alias: standardize-card)";
+const flowStdAllUsage = (): string => "fizzyx flow std-all  (alias: standardize-board)";
 const flowAddUsage = (): string => "fizzyx flow add <user> <title> --desc <file|->";
 const flowTemplateUsage = (): string => "fizzyx flow template";
 const flowStepsUsage = (): string => "fizzyx flow steps-from-desc <card>";
@@ -726,33 +781,82 @@ const DEFAULT_CARD_LANGUAGE: FlowCardLanguage = DEFAULT_FLOW_CARD_LANGUAGE;
 
 const flowTemplate = (language: FlowCardLanguage): string => {
 	const labels = getTemplateLabels(language);
+	const text = getTemplateText(language);
 
 	return `## ${labels.goal}
-Define the ticket objective in 1-2 concise sentences.
+${text.goal}
 
 ## ${labels.scope}
 ### ${labels.include}
-- What should be included
+- ${text.include}
 
 ### ${labels.exclude}
-- What should not be included
+- ${text.exclude}
 
 ## ${labels.notes}
-- Keep changes small and deterministic
-- Prefer existing patterns
+- ${text.noteSmall}
+- ${text.notePattern}
 
 ## ${labels.files}
-- Files to touch (relative path)
+- ${text.files}
 
 ## ${labels.verification}
-- Validation and acceptance checks to run before handoff
+- ${text.verification}
 
 ## Steps
 
-- [ ] Replace goal + scope text with final content
-- [ ] Add or update implementation files
-- [ ] Keep step descriptions in plain text
-- [ ] Confirm checks and close card`;
+- [ ] ${text.stepGoal}
+- [ ] ${text.stepImplementation}
+- [ ] ${text.stepPlain}
+- [ ] ${text.stepClose}`;
+};
+
+const getTemplateText = (language: FlowCardLanguage) => {
+	if (language === "en") {
+		return {
+			goal: "Define the ticket objective in 1-2 concise sentences.",
+			include: "What should be included",
+			exclude: "What should not be included",
+			noteSmall: "Keep changes small and deterministic",
+			notePattern: "Prefer existing patterns",
+			files: "Files to touch (relative path)",
+			verification: "Validation and acceptance checks to run before handoff",
+			stepGoal: "Replace goal + scope text with final content",
+			stepImplementation: "Add or update implementation files",
+			stepPlain: "Keep step descriptions in plain text",
+			stepClose: "Confirm checks and close card",
+		};
+	}
+
+	if (language === "mixed") {
+		return {
+			goal: "用 1-2 句说明目标；代码/API 名称可保留英文。",
+			include: "In scope / 本卡包含的工作",
+			exclude: "Out of scope / 本卡不包含的工作",
+			noteSmall: "Keep changes small / 保持变更小且确定",
+			notePattern: "Prefer existing patterns / 优先沿用现有模式",
+			files: "Files to touch / 相关文件路径",
+			verification: "Checks to run / 需要执行的验证",
+			stepGoal: "Finalize goal and scope / 确认目标与范围",
+			stepImplementation: "Implement required changes / 完成实现",
+			stepPlain: "Keep step labels plain text / step 文本不写 Markdown",
+			stepClose: "Run checks and close card / 通过检查并关卡",
+		};
+	}
+
+	return {
+		goal: "用 1-2 句说明这张卡要完成什么、为什么。",
+		include: "本卡包含的工作",
+		exclude: "本卡不包含的工作",
+		noteSmall: "保持变更小且确定",
+		notePattern: "优先沿用现有模式",
+		files: "相关文件路径",
+		verification: "交付前需要执行的检查或验收",
+		stepGoal: "确认目标与范围",
+		stepImplementation: "完成实现文件变更",
+		stepPlain: "保持 step 文本为纯文本",
+		stepClose: "检查通过并关闭卡片",
+	};
 };
 
 const getTemplateLabels = (language: FlowCardLanguage) => {

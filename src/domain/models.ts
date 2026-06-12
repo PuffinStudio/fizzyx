@@ -75,6 +75,7 @@ export interface Card {
 	number: CardNumber;
 	title: string;
 	description?: string;
+	descriptionHtml?: string;
 	column?: ColumnRef;
 	assignees?: ReadonlyArray<Assignee>;
 	closed?: boolean;

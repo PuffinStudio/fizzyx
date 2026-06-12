@@ -194,11 +194,13 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 					throw new ApiError({ message: "Failed to decode card: title must be string" });
 				}
 
+				const descriptionHtml = readString(obj.description_html);
 				return {
 					id: readString(obj.id),
 					number,
 					title,
 					description: readString(obj.description),
+					...(descriptionHtml ? { descriptionHtml } : {}),
 					column: decodeColumnRef(obj.column),
 					assignees: decodeAssignees(obj.assignees),
 					closed: readBoolean(obj.closed),
@@ -454,9 +456,11 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 				content,
 				completed: Boolean(completed),
 			}),
-		updateStep: (number, stepId, input) =>
-			requestVoid("PATCH", `/cards/${number}/steps/${stepId}.json`, {
-				completed: Boolean(input.completed),
-			}),
+		updateStep: (number, stepId, input) => {
+			const body: JsonObject = {};
+			if (input.completed !== undefined) body.completed = input.completed;
+			if (input.content !== undefined) body.content = input.content;
+			return requestVoid("PATCH", `/cards/${number}/steps/${stepId}.json`, body);
+		},
 	};
 };
