@@ -226,12 +226,19 @@ test("flow workflow prints process checklist", async () => {
 	}
 });
 
-test("flow skill prints AGENTS snippet", async () => {
+test("flow skill prints english skill template", async () => {
 	const { stdout, exitCode } = await runCli(["flow", "skill"]);
 
 	expect(exitCode).toBe(0);
-	expect(stdout).toContain("## AGENTS.md 片段");
+	expect(stdout).toContain("name: fizzyx");
+	expect(stdout).toContain("# fizzyx");
 	expect(stdout).toContain("fizzyx flow workflow");
+	expect(stdout).toContain("## Context Loading");
+	expect(stdout).toContain("Treat this skill as generic");
+	expect(stdout).toContain("Do not infer identity from git user");
+	expect(stdout).not.toContain("Youda-mini");
+	expect(stdout).not.toContain("03gaf3a10zn8g6flsloi7swvi");
+	expect(stdout).not.toContain("AGENTS.md 片段");
 });
 
 test("flow template command prints card template sections", async () => {

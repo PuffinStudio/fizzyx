@@ -294,8 +294,7 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					console.log(flowSkillUsage());
 					return;
 				}
-				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
-				console.log(flowSkill(language));
+				console.log(flowSkill());
 				return;
 			}
 			case "repair-markdown": {
@@ -676,32 +675,103 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 - steps 会变成 Fizzy checklist`;
 };
 
-const flowSkill = (language: FlowCardLanguage): string => {
-	if (language === "en") {
-		return `## AGENTS.md snippet
+const flowSkill = (): string => `---
+name: fizzyx
+description: Manage this repository's board through fizzyx flow commands.
+triggers:
+  - fizzyx
+  - /fizzyx
+  - create card
+  - close card
+  - move card
+  - assign card
+  - add comment
+  - add step
+  - my cards
+  - my tasks
+  - board status
+  - card workflow
+invocable: true
+argument-hint: "[flow action] [args...]"
+---
 
-- Use \`fizzyx flow workflow\` for process orientation.
-- Use \`fizzyx flow template\` when creating new cards.
-- Keep project process in local docs only when there are project-specific exceptions.
-- Use \`flow.card.language\` in configuration to control comment labels (done/block/etc).`;
-	}
+# fizzyx
 
-	if (language === "mixed") {
-		return `## AGENTS.md snippet
+Use \`fizzyx flow ...\` for board workflow. Do not use the legacy official CLI
+for project workflow. If \`fizzyx flow\` lacks an operation, stop and ask.
 
-- 使用 \`fizzyx flow workflow\` 作为工作流程参考。
-- 创建卡片时使用 \`fizzyx flow template\`。
-- 仅在项目特殊场景下保留本地流程文档。
-- 使用配置中的 \`flow.card.language\` 控制卡片动作注释语种。`;
-	}
+## Context Loading
 
-	return `## AGENTS.md 片段
+- Treat this skill as generic. Do not hardcode board IDs, column IDs, users,
+  scopes, title formats, or assignment rules here.
+- Project data comes from \`.fizzy.yaml\`, the repo's \`AGENTS.md\`, and local
+  workflow docs referenced by \`AGENTS.md\`.
+- The CLI reads \`.fizzy.yaml\` automatically from the current repository.
+- Before creating or assigning cards, inspect the project's local tracking rules
+  instead of guessing from this skill.
+- If project context is missing, run \`fizzyx setup <board-id>\` for machine
+  config, then create or update a local project workflow doc such as
+  \`docs/fizzy-workflow.md\` and link it from \`AGENTS.md\`.
 
-- 使用 \`fizzyx flow workflow\` 作为工作流程参考。
-- 创建卡片时使用 \`fizzyx flow template\`。
-- 仅在项目特殊场景下保留本地流程文档。
-- 使用配置中的 \`flow.card.language\` 控制卡片动作注释语种。`;
-};
+## Project Workflow Doc
+
+Keep project-specific board details out of this skill. Put them in a local doc
+near the repo's other docs, usually \`docs/fizzy-workflow.md\`.
+
+Minimum sections:
+
+- Install/auth/setup commands.
+- Board/account/API/cache context.
+- Column meanings and IDs.
+- Card title formats and allowed scopes.
+- Assignment rules and user IDs.
+- Local delivery rules that differ from \`fizzyx flow workflow\`.
+
+If any of these facts are unknown, ask before creating cards that depend on
+them.
+
+## Identity
+
+- \`my work\`, \`my cards\`, and \`my tasks\` mean the authenticated fizzyx user.
+- Do not infer identity from git user, OS user, commit author, branch, or card assignee.
+- For identity-sensitive requests, run \`fizzyx auth status\` first.
+- Then run \`fizzyx flow mine --fresh\`.
+- Use \`fizzyx flow status --fresh\` only as extra board context.
+
+## Commands
+
+\`\`\`bash
+fizzyx auth status
+fizzyx flow workflow
+fizzyx flow status --fresh
+fizzyx flow mine --fresh
+fizzyx flow show <card>
+fizzyx flow start <card>
+fizzyx flow template
+fizzyx flow add <user> "<title>" --desc <file|->
+fizzyx flow comment-template <done|blocked|unblocked|handoff|note>
+fizzyx flow complete-steps <card>
+fizzyx flow done <card> "commit <sha>: <subject>"
+fizzyx flow block <card> "<reason>"
+fizzyx flow std <card>
+fizzyx flow std-all
+\`\`\`
+
+## Cards
+
+- Generate new card bodies with \`fizzyx flow template\`.
+- Description is context only. Field language follows \`flow.card.language\`.
+- Put work checklist under \`## Steps\`; \`flow add\` converts it to card steps.
+- Step labels must be plain text: no Markdown links, backticks, or bold.
+- Normalize existing cards with \`fizzyx flow std <card>\`.
+
+## Delivery
+
+- Do not create cards for typo fixes or tiny chore commits.
+- Do not maintain a parallel progress document; board is execution state.
+- Before closing, run \`fizzyx flow complete-steps <card>\`.
+- Close with \`fizzyx flow done <card> "commit <sha>: <subject>"\`.
+- Keep comments concise; use \`fizzyx flow comment-template <kind>\` for format.`;
 
 const isHelpCommand = (value: string | undefined): value is "help" | "--help" | "-h" =>
 	value === "help" || value === "--help" || value === "-h";
