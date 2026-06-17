@@ -805,7 +805,7 @@ const buildUsers = (config: ProjectConfig, cards: ReadonlyArray<Card>): Record<s
 	return users;
 };
 
-const resolveUser = (config: InitializedProjectConfig, user: string): string => {
+export const resolveUser = (config: InitializedProjectConfig, user: string): string => {
 	const exact = config.flow.users[user];
 	if (exact) return exact;
 	const lower = config.flow.users[user.toLowerCase()];
@@ -813,6 +813,34 @@ const resolveUser = (config: InitializedProjectConfig, user: string): string => 
 	if (/^03[a-z0-9]{23}$/.test(user)) return user;
 	throw new ValidationError({ message: `Unknown user ${user}` });
 };
+
+const resolveBoardUser = (boardUsers: Record<string, string>, user: string): string => {
+	const exact = boardUsers[user];
+	if (exact) return exact;
+	const lower = boardUsers[user.toLowerCase()];
+	if (lower) return lower;
+	if (/^03[a-z0-9]{23}$/.test(user)) {
+		const knownIds = Object.values(boardUsers);
+		if (!knownIds.includes(user)) {
+			const members = Object.keys(boardUsers).join(", ");
+			throw new ValidationError({ message: `User ID ${user} is not a board member. Known members: ${members}` });
+		}
+		return user;
+	}
+	const members = Object.keys(boardUsers).join(", ");
+	throw new ValidationError({ message: `Unknown user "${user}". Board members: ${members}` });
+};
+
+export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray<string>) =>
+	Effect.gen(function* () {
+		if (users.length === 0) return yield* new ValidationError({ message: "At least one user is required" });
+		const cache = yield* ensureCache(env, false);
+		const boardUsers = { ...cache.users };
+		const userIds = users.map((u) => resolveBoardUser(boardUsers, u));
+		yield* Effect.forEach(userIds, (userId) => env.api.assignCard(number, userId), { concurrency: 1 });
+		yield* syncBoard(env);
+		return { number, userIds };
+	});
 
 const findUserName = (cache: BoardCache, userId: string): string | undefined =>
 	Object.entries(cache.users).find(([, id]) => id === userId)?.[0];

@@ -4,6 +4,7 @@ import { makeBunConfigRepository } from "../adapters/bun-config-repository";
 import type { SetupProjectConfigInput } from "../ports/config-repository";
 import {
 	add,
+	assign,
 	authLogin,
 	authLogout,
 	authStatus,
@@ -17,6 +18,7 @@ import {
 	repairMarkdownDescription,
 	resolveDoneRefFromGit,
 	listBoards,
+	resolveUser,
 	setup,
 	show,
 	start,
@@ -265,6 +267,26 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					}),
 				);
 				console.log(`blocked #${result.number}: ${result.reason}`);
+				return;
+			}
+			case "assign": {
+				if (hasHelp(rest)) {
+					console.log(flowAssignUsage());
+					return;
+				}
+				const number = parseNumber(rest[0]);
+				const users = rest.slice(1).filter((a) => !a.startsWith("--"));
+				if (users.length === 0) {
+					throw new Error(flowAssignUsage());
+				}
+				const result = yield* withSpinner(
+					"Assigning card...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* assign(env, number, users);
+					}),
+				);
+				console.log(`assigned #${result.number} to ${result.userIds.join(", ")}`);
 				return;
 			}
 			case "comment-template": {
@@ -822,6 +844,7 @@ commands:
     std <card>
     std-all
     add <user> <title> --desc <file|->
+    assign <card> <user> [user...]
     template
     steps-from-desc <card>
     init
@@ -843,6 +866,7 @@ const flowCompleteStepsUsage = (): string => "fizzyx flow complete-steps <card>"
 const flowStdUsage = (): string => "fizzyx flow std <card>  (alias: standardize-card)";
 const flowStdAllUsage = (): string => "fizzyx flow std-all  (alias: standardize-board)";
 const flowAddUsage = (): string => "fizzyx flow add <user> <title> --desc <file|->";
+const flowAssignUsage = (): string => "fizzyx flow assign <card> <user> [user...]";
 const flowTemplateUsage = (): string => "fizzyx flow template";
 const flowStepsUsage = (): string => "fizzyx flow steps-from-desc <card>";
 const flowInitUsage = (): string => "fizzyx flow init";
