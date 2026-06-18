@@ -565,6 +565,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 				}
 				const env = parseOssEnv(rest, "dev");
 				const full = rest.includes("--full");
+				const verify = rest.includes("--verify");
 				const showUrls = !rest.includes("--no-urls");
 				const stderr = process.stderr;
 				const isTTY = stderr.isTTY;
@@ -594,7 +595,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 					const label = `  ${spinner} ${env} [${bar}] ${pct}%  ${icon} ${info.file}    `;
 					stderr.write(`\r${label}`);
 				};
-				const result = yield* ossSync({ env, full, onProgress });
+				const result = yield* ossSync({ env, full, verify, onProgress });
 				if (isTTY && lastTotal > 0) {
 					stderr.write("\r\x1b[2K");
 				}
@@ -1243,7 +1244,7 @@ const ossUsage = (): string => `fizzyx oss <command>
 
 commands:
   ls [--env <name>] [--prefix <prefix>]
-  sync [--env <name>] [--full] [--no-urls]
+  sync [--env <name>] [--full] [--no-urls] [--verify]
   status [--env <name>]
   setup [--env <name> --endpoint <url> --region <region>
          --local-dir <path>] [--bucket <name>] [--remote-prefix <prefix>]`;
@@ -1252,7 +1253,7 @@ const ossLsUsage = (): string =>
 	"fizzyx oss ls [--env <name>] [--prefix <prefix>]\n  List objects in the remote bucket";
 
 const ossSyncUsage = (): string =>
-	"fizzyx oss sync [--env <name>] [--full] [--no-urls]\n  --full: ignore manifest, force full upload\n  --no-urls: suppress file URL output";
+	"fizzyx oss sync [--env <name>] [--full] [--no-urls] [--verify]\n  --full: ignore manifest, force full upload\n  --no-urls: suppress file URL output\n  --verify: check remote existence before skipping files";
 
 const ossStatusUsage = (): string => "fizzyx oss status [--env <name>]";
 

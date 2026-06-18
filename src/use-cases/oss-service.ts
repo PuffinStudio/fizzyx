@@ -145,6 +145,7 @@ export const ossSetup = (input: OssSetupInput) =>
 export const ossSync = (options: {
 	env: OssEnvironmentName;
 	full: boolean;
+	verify?: boolean;
 	onProgress?: (info: {
 		current: number;
 		total: number;
@@ -209,6 +210,7 @@ export const ossSync = (options: {
 				manifest,
 				absolutePath,
 				relativePath,
+				options.verify ?? false,
 			);
 			if (result._tag === "uploaded") {
 				if (options.onProgress) {
@@ -488,6 +490,7 @@ const syncFile = (
 	manifest: SyncManifest,
 	absolutePath: string,
 	relativePath: string,
+	verify: boolean,
 ): Effect.Effect<SyncFileResult, never> =>
 	Effect.gen(function* () {
 		const existing = manifest.files[relativePath];
@@ -500,18 +503,35 @@ const syncFile = (
 			existing.mtimeMs === currentStat.mtimeMs &&
 			existing.size === currentStat.size
 		) {
-			return { _tag: "skipped" } satisfies SyncFileResult;
+			if (!verify) return { _tag: "skipped" } satisfies SyncFileResult;
+			const remoteExists = yield* ossRepo
+				.exists(key)
+				.pipe(Effect.catch(() => Effect.succeed(false)));
+			if (remoteExists) return { _tag: "skipped" } satisfies SyncFileResult;
 		}
 
 		if (existing && existing.hash) {
 			const currentHash = yield* hashFile(absolutePath);
 			if (currentHash === existing.hash) {
-				manifest.files[relativePath] = {
-					...existing,
-					mtimeMs: currentStat.mtimeMs,
-					size: currentStat.size,
-				};
-				return { _tag: "skipped" } satisfies SyncFileResult;
+				if (!verify) {
+					manifest.files[relativePath] = {
+						...existing,
+						mtimeMs: currentStat.mtimeMs,
+						size: currentStat.size,
+					};
+					return { _tag: "skipped" } satisfies SyncFileResult;
+				}
+				const remoteExists = yield* ossRepo
+					.exists(key)
+					.pipe(Effect.catch(() => Effect.succeed(false)));
+				if (remoteExists) {
+					manifest.files[relativePath] = {
+						...existing,
+						mtimeMs: currentStat.mtimeMs,
+						size: currentStat.size,
+					};
+					return { _tag: "skipped" } satisfies SyncFileResult;
+				}
 			}
 		}
 
