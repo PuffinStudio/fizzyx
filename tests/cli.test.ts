@@ -1126,3 +1126,65 @@ test("auth status does not migrate from mismatched official account", async () =
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("oss status --files lists pending and manifest-only files", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const homeDir = join(root, "home");
+
+	try {
+		mkdirSync(join(projectDir, "public"), { recursive: true });
+		mkdirSync(join(projectDir, ".fizzyx"), { recursive: true });
+		mkdirSync(homeDir, { recursive: true });
+
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: https://example.com
+account: "1"
+board: board-1
+oss:
+  dev:
+    endpoint: https://s3.example.com
+    region: auto
+  sync:
+    local_dir: ./public
+`,
+		);
+		writeFileSync(join(projectDir, "public", "fresh.txt"), "fresh");
+		writeFileSync(
+			join(projectDir, ".fizzyx", "oss-manifest.json"),
+			JSON.stringify(
+				{
+					version: 1,
+					localDir: join(projectDir, "public"),
+					remotePrefix: "",
+					lastSyncedAt: "2026-01-01T00:00:00.000Z",
+					files: {
+						"stale.txt": {
+							key: "stale.txt",
+							size: 5,
+							mtimeMs: 1,
+						},
+					},
+				},
+				null,
+				2,
+			),
+		);
+
+		const result = await runCli(["oss", "status", "--files"], {
+			cwd: projectDir,
+			env: { HOME: homeDir },
+		});
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("pending uploads: 1");
+		expect(result.stdout).toContain("pending deletions: 1");
+		expect(result.stdout).toContain("pending upload files:");
+		expect(result.stdout).toContain("  + fresh.txt");
+		expect(result.stdout).toContain("manifest-only files:");
+		expect(result.stdout).toContain("  - stale.txt");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

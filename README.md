@@ -141,6 +141,12 @@ Show sync status (pending uploads, manifest info):
 fizzyx oss status [--env dev]
 ```
 
+List exact pending files without uploading:
+
+```sh
+fizzyx oss status --files
+```
+
 ## Config File (`.fizzy.yaml`)
 
 Minimal OSS-only config:

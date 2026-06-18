@@ -154,6 +154,8 @@ export interface OssStatusResult {
 	env: OssEnvironmentName;
 	pendingUploads: number;
 	pendingDeletions: number;
+	pendingUploadFiles: ReadonlyArray<string>;
+	pendingDeletionFiles: ReadonlyArray<string>;
 	totalLocal: number;
 	manifestEntries: number;
 	manifestPath: string;

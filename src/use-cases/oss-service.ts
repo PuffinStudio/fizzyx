@@ -165,8 +165,7 @@ export const ossSync = (options: {
 		const envConfig = getOssEnvConfig(oss, options.env);
 		const resolvedLocalDir = resolvePath(config.rootDir, oss.sync.localDir);
 		const remotePrefix = oss.sync.remotePrefix ?? "";
-		const uploadedKeys: string[] = [];
-		const allKeys: string[] = [];
+		const concurrency = Math.max(1, oss.sync.concurrency || 1);
 
 		const credentials = yield* resolveOssCredentials(config, options.env, envConfig);
 
@@ -182,75 +181,64 @@ export const ossSync = (options: {
 		const manifest = rawManifest ?? makeEmptyManifest(resolvedLocalDir, remotePrefix);
 
 		const localFiles = yield* collectLocalFiles(resolvedLocalDir);
-		const errors: string[] = [];
+		const allKeys = localFiles.map(({ relativePath }) =>
+			[remotePrefix, relativePath].filter(Boolean).join("/"),
+		);
+		let completed = 0;
 
-		let uploaded = 0;
-		let skipped = 0;
+		const results = yield* Effect.forEach(
+			localFiles,
+			({ absolutePath, relativePath }) =>
+				Effect.gen(function* () {
+					if (options.onProgress) {
+						yield* Effect.sync(() =>
+							options.onProgress!({
+								current: Math.min(completed + 1, localFiles.length),
+								total: localFiles.length,
+								file: relativePath,
+								action: "checking",
+							}),
+						);
+					}
 
-		for (let i = 0; i < localFiles.length; i++) {
-			const { absolutePath, relativePath } = localFiles[i]!;
-			const key = [remotePrefix, relativePath].filter(Boolean).join("/");
-			allKeys.push(key);
-
-			if (options.onProgress) {
-				yield* Effect.sync(() =>
-					options.onProgress!({
-						current: i + 1,
-						total: localFiles.length,
-						file: relativePath,
-						action: "checking",
-					}),
-				);
-			}
-
-			const result = yield* syncFile(
-				ossRepo,
-				resolvedLocalDir,
-				remotePrefix,
-				manifest,
-				absolutePath,
-				relativePath,
-				options.verify ?? false,
-			);
-			if (result._tag === "uploaded") {
-				if (options.onProgress) {
-					yield* Effect.sync(() =>
-						options.onProgress!({
-							current: i + 1,
-							total: localFiles.length,
-							file: relativePath,
-							action: "uploading",
-						}),
+					const result = yield* syncFile(
+						ossRepo,
+						resolvedLocalDir,
+						remotePrefix,
+						manifest,
+						absolutePath,
+						relativePath,
+						options.verify ?? false,
 					);
-				}
-				uploaded++;
-				uploadedKeys.push(result.key);
-			} else if (result._tag === "skipped") {
-				if (options.onProgress) {
-					yield* Effect.sync(() =>
-						options.onProgress!({
-							current: i + 1,
-							total: localFiles.length,
-							file: relativePath,
-							action: "skipping",
-						}),
-					);
-				}
-				skipped++;
-			} else {
-				if (options.onProgress) {
-					yield* Effect.sync(() =>
-						options.onProgress!({
-							current: i + 1,
-							total: localFiles.length,
-							file: relativePath,
-							action: "error",
-						}),
-					);
-				}
-				errors.push(result.error);
-			}
-		}
+
+					completed += 1;
+					if (options.onProgress) {
+						yield* Effect.sync(() =>
+							options.onProgress!({
+								current: completed,
+								total: localFiles.length,
+								file: relativePath,
+								action:
+									result._tag === "uploaded"
+										? "uploading"
+										: result._tag === "skipped"
+											? "skipping"
+											: "error",
+							}),
+						);
+					}
+
+					return result;
+				}),
+			{ concurrency },
+		);
+
+		const uploadedKeys = results.flatMap((result) =>
+			result._tag === "uploaded" ? [result.key] : [],
+		);
+		const errors = results.flatMap((result) => (result._tag === "error" ? [result.error] : []));
+		const uploaded = uploadedKeys.length;
+		const skipped = results.filter((result) => result._tag === "skipped").length;
 
 		manifest.lastSyncedAt = new Date().toISOString();
 		yield* manifestRepo.write(manifest);
@@ -285,37 +273,39 @@ export const ossStatus = (options: {
 		const localFiles = yield* collectLocalFiles(resolvedLocalDir);
 		const localRelPaths = new Set(localFiles.map((f) => f.relativePath));
 
-		let pendingUploads = 0;
+		const pendingUploadFiles: string[] = [];
 		if (manifest) {
 			for (const { relativePath } of localFiles) {
 				const entry = manifest.files[relativePath];
 				if (!entry) {
-					pendingUploads++;
+					pendingUploadFiles.push(relativePath);
 					continue;
 				}
 				const file = localFiles.find((f) => f.relativePath === relativePath);
 				const stat = yield* statFile(Bun.file(file!.absolutePath));
 				if (stat.mtimeMs !== entry.mtimeMs || stat.size !== entry.size) {
-					pendingUploads++;
+					pendingUploadFiles.push(relativePath);
 				}
 			}
 		} else {
-			pendingUploads = localFiles.length;
+			pendingUploadFiles.push(...localFiles.map((file) => file.relativePath));
 		}
 
-		let pendingDeletions = 0;
+		const pendingDeletionFiles: string[] = [];
 		if (manifest) {
 			for (const relPath of Object.keys(manifest.files)) {
 				if (!localRelPaths.has(relPath)) {
-					pendingDeletions++;
+					pendingDeletionFiles.push(relPath);
 				}
 			}
 		}
 
 		return {
 			env: options.env,
-			pendingUploads,
-			pendingDeletions,
+			pendingUploads: pendingUploadFiles.length,
+			pendingDeletions: pendingDeletionFiles.length,
+			pendingUploadFiles: pendingUploadFiles.sort(),
+			pendingDeletionFiles: pendingDeletionFiles.sort(),
 			totalLocal: localFiles.length,
 			manifestEntries: manifest ? Object.keys(manifest.files).length : 0,
 			manifestPath: manifestRepo.path(),

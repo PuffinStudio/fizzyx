@@ -666,15 +666,22 @@ const runOss = (args: ReadonlyArray<string>) =>
 					skipping: "→",
 					error: "✗",
 				};
-				let lastTotal = 0;
+				const progressStartedAt = Date.now();
+				let renderedProgress = false;
 				const onProgress = (info: {
 					current: number;
 					total: number;
 					file: string;
 					action: string;
 				}) => {
-					lastTotal = info.total;
 					if (!isTTY) return;
+					const shouldRender =
+						renderedProgress ||
+						info.action === "uploading" ||
+						info.action === "error" ||
+						Date.now() - progressStartedAt > 120;
+					if (!shouldRender) return;
+					renderedProgress = true;
 					const icon = actionIcon[info.action] ?? " ";
 					const spinner = frames[frame++ % frames.length];
 					const pct = Math.round((info.current / info.total) * 100);
@@ -685,7 +692,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 					stderr.write(`\r${label}`);
 				};
 				const result = yield* ossSync({ env, full, verify, onProgress });
-				if (isTTY && lastTotal > 0) {
+				if (isTTY && renderedProgress) {
 					stderr.write("\r\x1b[2K");
 				}
 				if (result.errors.length > 0) {
@@ -700,9 +707,9 @@ const runOss = (args: ReadonlyArray<string>) =>
 				yield* Console.log(
 					`  ✓ ${env} synced · ${result.uploaded} uploaded · ${result.skipped} skipped · ${dur}`,
 				);
-				if (showUrls) {
+				if (showUrls && result.uploadedKeys.length > 0) {
 					const base = result.endpoint.replace(/\/+$/, "");
-					for (const key of result.allKeys) {
+					for (const key of result.uploadedKeys) {
 						yield* Console.log(`    ${base}/${key}`);
 					}
 				}
@@ -714,12 +721,27 @@ const runOss = (args: ReadonlyArray<string>) =>
 					return;
 				}
 				const env = parseOssEnv(rest, "dev");
+				const showFiles = rest.includes("--files");
 				const result = yield* withSpinner("Checking OSS status...", ossStatus({ env }));
 				yield* Console.log(`env: ${result.env}`);
 				yield* Console.log(`total local files: ${result.totalLocal}`);
 				yield* Console.log(`manifest entries: ${result.manifestEntries}`);
 				yield* Console.log(`pending uploads: ${result.pendingUploads}`);
 				yield* Console.log(`pending deletions: ${result.pendingDeletions}`);
+				if (showFiles) {
+					if (result.pendingUploadFiles.length > 0) {
+						yield* Console.log("\npending upload files:");
+						for (const file of result.pendingUploadFiles) {
+							yield* Console.log(`  + ${file}`);
+						}
+					}
+					if (result.pendingDeletionFiles.length > 0) {
+						yield* Console.log("\nmanifest-only files:");
+						for (const file of result.pendingDeletionFiles) {
+							yield* Console.log(`  - ${file}`);
+						}
+					}
+				}
 				yield* Console.log(`manifest: ${result.manifestPath}`);
 				return;
 			}
@@ -969,7 +991,7 @@ const ossUsage = (): string => `fizzyx oss <command>
 commands:
   ls [--env <name>] [--prefix <prefix>]
   sync [--env <name>] [--full] [--no-urls] [--verify]
-  status [--env <name>]
+  status [--env <name>] [--files]
   setup [--env <name> --endpoint <url> --region <region>
          --local-dir <path>] [--bucket <name>] [--remote-prefix <prefix>]`;
 
@@ -979,7 +1001,8 @@ const ossLsUsage = (): string =>
 const ossSyncUsage = (): string =>
 	"fizzyx oss sync [--env <name>] [--full] [--no-urls] [--verify]\n  --full: ignore manifest, force full upload\n  --no-urls: suppress file URL output\n  --verify: check remote existence before skipping files";
 
-const ossStatusUsage = (): string => "fizzyx oss status [--env <name>]";
+const ossStatusUsage = (): string =>
+	"fizzyx oss status [--env <name>] [--files]\n  --files: list pending upload and manifest-only files";
 
 const ossSetupUsage = (): string =>
 	`fizzyx oss setup --env <name> --endpoint <url> --region <region> --local-dir <path> [--bucket <name>] [--remote-prefix <prefix>]\n  With no flags: init blank OSS scaffold in .fizzy.yaml, then prompt for keys\n  --bucket and --remote-prefix are optional; omit if endpoint already contains bucket name\nKeys are prompted interactively (not from args) to avoid shell history.`;
