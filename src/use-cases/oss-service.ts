@@ -43,8 +43,6 @@ export const ossInitBlank = (): Effect.Effect<void, FileError, ConfigRepository>
 
 		const configPath = config?.configPath ?? `${process.cwd()}/.fizzy.yaml`;
 
-		const defaultSync = { localDir: "./public", remotePrefix: "assets" };
-
 		yield* configRepo.setupOssConfig({
 			env: "dev",
 			config: {
@@ -52,7 +50,7 @@ export const ossInitBlank = (): Effect.Effect<void, FileError, ConfigRepository>
 				region: "your-region",
 				bucket: "your-bucket",
 			},
-			sync: defaultSync,
+			sync: { localDir: "./public" },
 			configPath,
 		});
 
@@ -63,7 +61,7 @@ export const ossInitBlank = (): Effect.Effect<void, FileError, ConfigRepository>
 				region: "your-region",
 				bucket: "your-bucket",
 			},
-			sync: defaultSync,
+			sync: { localDir: "./public" },
 			configPath,
 		});
 	});
@@ -130,7 +128,7 @@ export const ossSync = (options: {
 		const oss = yield* requireOssConfig(config);
 		const envConfig = getOssEnvConfig(oss, options.env);
 		const resolvedLocalDir = resolvePath(config.rootDir, oss.sync.localDir);
-		const remotePrefix = oss.sync.remotePrefix;
+		const remotePrefix = oss.sync.remotePrefix ?? "";
 		const uploadedKeys: string[] = [];
 
 		const credentials = yield* resolveOssCredentials(config, options.env, envConfig);
@@ -403,7 +401,7 @@ const syncFile = (
 ): Effect.Effect<SyncFileResult, never> =>
 	Effect.gen(function* () {
 		const existing = manifest.files[relativePath];
-		const key = `${remotePrefix}/${relativePath}`;
+		const key = [remotePrefix, relativePath].filter(Boolean).join("/");
 
 		const currentStat = yield* statFile(Bun.file(absolutePath));
 

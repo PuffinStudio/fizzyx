@@ -583,7 +583,9 @@ const runOss = (args: ReadonlyArray<string>) =>
 				if (!endpoint && !region && !bucket && !localDir && remotePrefix === undefined) {
 					yield* withSpinner("Initializing OSS config...", ossInitBlank());
 					yield* Console.log("OSS scaffold written to .fizzy.yaml");
-					yield* Console.log("Edit endpoint, region, bucket, local_dir, remote_prefix in the file");
+					yield* Console.log(
+						"Edit endpoint, region, bucket, local_dir, and optionally remote_prefix in the file",
+					);
 					yield* Console.log("");
 					yield* Console.error(`Configuring keys for [${env}]:`);
 					const accessKeyId = yield* promptSecret(`  Access Key ID: `);
@@ -602,7 +604,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 					return;
 				}
 
-				if (!endpoint || !region || !bucket || !localDir || remotePrefix === undefined) {
+				if (!endpoint || !region || !bucket || !localDir) {
 					throw new Error(ossSetupUsage());
 				}
 
@@ -616,7 +618,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 				const input: OssSetupInput = {
 					env,
 					config: { endpoint, region, bucket, accessKeyId, secretAccessKey },
-					sync: { localDir, remotePrefix },
+					sync: { localDir, remotePrefix: remotePrefix ?? undefined },
 				};
 				const result = yield* withSpinner("Writing OSS config...", ossSetup(input));
 				const resultEnvConfig = result.environments[env];
@@ -1176,7 +1178,7 @@ commands:
   sync [--env <name>] [--full]
   status [--env <name>]
   setup [--env <name> --endpoint <url> --region <region> --bucket <name>
-         --local-dir <path> --remote-prefix <prefix>]`;
+         --local-dir <path>] [--remote-prefix <prefix>]`;
 
 const ossSyncUsage = (): string =>
 	"fizzyx oss sync [--env <name>] [--full]\n  --full: ignore manifest, force full upload";
@@ -1184,4 +1186,4 @@ const ossSyncUsage = (): string =>
 const ossStatusUsage = (): string => "fizzyx oss status [--env <name>]";
 
 const ossSetupUsage = (): string =>
-	`fizzyx oss setup --env <name> --endpoint <url> --region <region> --bucket <name> --local-dir <path> --remote-prefix <prefix>\n  With no flags: init blank OSS scaffold in .fizzy.yaml, then prompt for keys\nKeys are prompted interactively (not from args) to avoid shell history.`;
+	`fizzyx oss setup --env <name> --endpoint <url> --region <region> --bucket <name> --local-dir <path> [--remote-prefix <prefix>]\n  With no flags: init blank OSS scaffold in .fizzy.yaml, then prompt for keys\n  --remote-prefix is optional; omit to upload to bucket root\nKeys are prompted interactively (not from args) to avoid shell history.`;

@@ -44,7 +44,7 @@ export interface OssSetupInput {
 	config: OssEnvironmentConfig;
 	sync: {
 		localDir: string;
-		remotePrefix: string;
+		remotePrefix?: string;
 		concurrency?: number;
 	};
 	configPath?: string;

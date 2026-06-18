@@ -122,7 +122,7 @@ export interface OssEnvironmentConfig {
 
 export interface OssSyncConfig {
 	localDir: string;
-	remotePrefix: string;
+	remotePrefix?: string;
 	concurrency: number;
 }
 

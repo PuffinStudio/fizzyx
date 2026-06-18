@@ -385,10 +385,10 @@ const parseOssSyncConfig = (raw: unknown): OssSyncConfig | undefined => {
 	const obj = objectValue(raw);
 	const localDir = stringValue(obj.local_dir);
 	const remotePrefix = stringValue(obj.remote_prefix);
-	if (!localDir || remotePrefix === undefined) return undefined;
+	if (!localDir) return undefined;
 	return {
 		localDir,
-		remotePrefix,
+		remotePrefix: remotePrefix ?? "",
 		concurrency: numberValue(obj.concurrency) || 10,
 	};
 };
@@ -410,7 +410,7 @@ const renderOssConfig = (input: OssSetupInput, existingText: string): string => 
 		sync: {
 			...(existingOss.sync as YamlObject | undefined),
 			local_dir: input.sync.localDir,
-			remote_prefix: input.sync.remotePrefix,
+			...(input.sync.remotePrefix ? { remote_prefix: input.sync.remotePrefix } : {}),
 			concurrency: input.sync.concurrency ?? 10,
 		},
 	};
