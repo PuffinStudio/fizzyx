@@ -8,6 +8,7 @@ import {
 	ossStoreCredentials,
 	ossSync,
 	ossStatus,
+	ossList,
 } from "../use-cases/oss-service";
 import { Live as ConfigRepoLive } from "../adapters/bun-config-repository";
 import {
@@ -532,6 +533,31 @@ const runOss = (args: ReadonlyArray<string>) =>
 		}
 
 		switch (command) {
+			case "ls": {
+				if (hasHelp(rest)) {
+					yield* Console.log(ossLsUsage());
+					return;
+				}
+				const lsEnv = parseOssEnv(rest, "dev");
+				const lsPrefix = parseFlag(rest, "--prefix") ?? undefined;
+				const result = yield* withSpinner(
+					`Listing ${lsEnv}...`,
+					ossList({ env: lsEnv, prefix: lsPrefix }),
+				);
+				if (result.objects.length === 0) {
+					yield* Console.log(`${lsEnv}: no objects found`);
+					return;
+				}
+				const tree = buildKeyTree(result.objects as { key: string; size?: number }[]);
+				for (const line of tree) {
+					yield* Console.log(line);
+				}
+				if (result.isTruncated) {
+					yield* Console.log(`  ... (truncated, more objects available)`);
+				}
+				yield* Console.log(`${lsEnv}: ${result.objects.length} objects`);
+				return;
+			}
 			case "sync": {
 				if (hasHelp(rest)) {
 					yield* Console.log(ossSyncUsage());
@@ -539,6 +565,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 				}
 				const env = parseOssEnv(rest, "dev");
 				const full = rest.includes("--full");
+				const showUrls = !rest.includes("--no-urls");
 				const result = yield* withSpinner(`Syncing to ${env}...`, ossSync({ env, full }));
 				if (result.errors.length > 0) {
 					for (const err of result.errors) {
@@ -548,8 +575,11 @@ const runOss = (args: ReadonlyArray<string>) =>
 				yield* Console.log(
 					`${env}: uploaded=${result.uploaded} skipped=${result.skipped} duration=${result.durationMs}ms`,
 				);
-				for (const key of result.uploadedKeys) {
-					yield* Console.log(`  ${result.endpoint}/${key}`);
+				if (showUrls) {
+					const base = result.endpoint.replace(/\/+$/, "");
+					for (const key of result.allKeys) {
+						yield* Console.log(`  ${base}/${key}`);
+					}
 				}
 				return;
 			}
@@ -584,7 +614,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 					yield* withSpinner("Initializing OSS config...", ossInitBlank());
 					yield* Console.log("OSS scaffold written to .fizzy.yaml");
 					yield* Console.log(
-						"Edit endpoint, region, bucket, local_dir, and optionally remote_prefix in the file",
+						"Edit endpoint, region, local_dir, and optionally bucket/remote_prefix in the file",
 					);
 					yield* Console.log("");
 					yield* Console.error(`Configuring keys for [${env}]:`);
@@ -604,7 +634,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 					return;
 				}
 
-				if (!endpoint || !region || !bucket || !localDir) {
+				if (!endpoint || !region || !localDir) {
 					throw new Error(ossSetupUsage());
 				}
 
@@ -617,7 +647,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 
 				const input: OssSetupInput = {
 					env,
-					config: { endpoint, region, bucket, accessKeyId, secretAccessKey },
+					config: { endpoint, region, ...(bucket ? { bucket } : {}), accessKeyId, secretAccessKey },
 					sync: { localDir, remotePrefix: remotePrefix ?? undefined },
 				};
 				const result = yield* withSpinner("Writing OSS config...", ossSetup(input));
@@ -1175,15 +1205,62 @@ const authLogoutUsage = (): string => "fizzyx auth logout";
 const ossUsage = (): string => `fizzyx oss <command>
 
 commands:
-  sync [--env <name>] [--full]
+  ls [--env <name>] [--prefix <prefix>]
+  sync [--env <name>] [--full] [--no-urls]
   status [--env <name>]
-  setup [--env <name> --endpoint <url> --region <region> --bucket <name>
-         --local-dir <path>] [--remote-prefix <prefix>]`;
+  setup [--env <name> --endpoint <url> --region <region>
+         --local-dir <path>] [--bucket <name>] [--remote-prefix <prefix>]`;
+
+const ossLsUsage = (): string =>
+	"fizzyx oss ls [--env <name>] [--prefix <prefix>]\n  List objects in the remote bucket";
 
 const ossSyncUsage = (): string =>
-	"fizzyx oss sync [--env <name>] [--full]\n  --full: ignore manifest, force full upload";
+	"fizzyx oss sync [--env <name>] [--full] [--no-urls]\n  --full: ignore manifest, force full upload\n  --no-urls: suppress file URL output";
 
 const ossStatusUsage = (): string => "fizzyx oss status [--env <name>]";
 
 const ossSetupUsage = (): string =>
-	`fizzyx oss setup --env <name> --endpoint <url> --region <region> --bucket <name> --local-dir <path> [--remote-prefix <prefix>]\n  With no flags: init blank OSS scaffold in .fizzy.yaml, then prompt for keys\n  --remote-prefix is optional; omit to upload to bucket root\nKeys are prompted interactively (not from args) to avoid shell history.`;
+	`fizzyx oss setup --env <name> --endpoint <url> --region <region> --local-dir <path> [--bucket <name>] [--remote-prefix <prefix>]\n  With no flags: init blank OSS scaffold in .fizzy.yaml, then prompt for keys\n  --bucket and --remote-prefix are optional; omit if endpoint already contains bucket name\nKeys are prompted interactively (not from args) to avoid shell history.`;
+
+const buildKeyTree = (objects: { key: string; size?: number }[]): string[] => {
+	const formatSize = (bytes: number): string => {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	};
+
+	type Entry = { size?: number; children: Record<string, Entry> };
+	const root: Entry = { children: {} };
+	for (const obj of objects) {
+		const parts = obj.key.split("/");
+		let node = root;
+		for (const part of parts) {
+			if (part === "") continue;
+			if (!node.children[part]) node.children[part] = { children: {} };
+			node = node.children[part] as Entry;
+		}
+		node.size = obj.size;
+	}
+
+	const lines: string[] = [];
+	const walk = (entry: Entry, prefix: string, names: string[]) => {
+		for (let i = 0; i < names.length; i++) {
+			const name = names[i] as string;
+			const child = entry.children[name] as Entry | undefined;
+			if (!child) continue;
+			const childNames = Object.keys(child.children);
+			const last = i === names.length - 1;
+			const indent = prefix + (last ? "    " : "│   ");
+			const sizeLabel = child.size !== undefined ? `  ${formatSize(child.size)}` : "";
+			lines.push(
+				`${prefix}${last ? "└── " : "├── "}${name}${childNames.length > 0 ? "/" : ""}${sizeLabel}`,
+			);
+			if (childNames.length > 0) {
+				walk(child, indent, childNames);
+			}
+		}
+	};
+
+	walk(root, "", Object.keys(root.children));
+	return lines;
+};

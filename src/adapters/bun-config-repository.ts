@@ -372,8 +372,9 @@ const parseOssEnvConfig = (raw: unknown): OssEnvironmentConfig | undefined => {
 	const endpoint = stringValue(obj.endpoint);
 	const region = stringValue(obj.region);
 	const bucket = stringValue(obj.bucket);
-	if (!endpoint || !region || !bucket) return undefined;
-	const config: OssEnvironmentConfig = { endpoint, region, bucket };
+	if (!endpoint || !region) return undefined;
+	const config: OssEnvironmentConfig = { endpoint, region };
+	if (bucket) config.bucket = bucket;
 	const accessKeyId = stringValue(obj.access_key_id);
 	const secretAccessKey = stringValue(obj.secret_access_key);
 	if (accessKeyId) config.accessKeyId = accessKeyId;
@@ -405,7 +406,7 @@ const renderOssConfig = (input: OssSetupInput, existingText: string): string => 
 			...(existingOss[envKey] as YamlObject | undefined),
 			endpoint: input.config.endpoint,
 			region: input.config.region,
-			bucket: input.config.bucket,
+			...(input.config.bucket ? { bucket: input.config.bucket } : {}),
 		},
 		sync: {
 			...(existingOss.sync as YamlObject | undefined),

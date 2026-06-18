@@ -115,7 +115,7 @@ export interface OssCredentials {
 export interface OssEnvironmentConfig {
 	endpoint: string;
 	region: string;
-	bucket: string;
+	bucket?: string;
 	accessKeyId?: string;
 	secretAccessKey?: string;
 }
@@ -153,6 +153,7 @@ export interface OssSyncSummary {
 	uploaded: number;
 	skipped: number;
 	uploadedKeys: ReadonlyArray<string>;
+	allKeys: ReadonlyArray<string>;
 	durationMs: number;
 	errors: ReadonlyArray<string>;
 }
@@ -164,4 +165,16 @@ export interface OssStatusResult {
 	totalLocal: number;
 	manifestEntries: number;
 	manifestPath: string;
+}
+
+export interface S3ObjectInfo {
+	key: string;
+	eTag?: string;
+	lastModified?: string;
+	size?: number;
+}
+
+export interface OssListResult {
+	objects: ReadonlyArray<S3ObjectInfo>;
+	isTruncated: boolean;
 }

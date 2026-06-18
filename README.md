@@ -1,84 +1,98 @@
 # fizzyx
 
-AI workflow CLI for Fizzy boards.
-
-`fizzyx` is a Bun + Effect 4 beta CLI that reads `.fizzy.yaml`, stores auth locally, talks to the Fizzy HTTP API directly, and adds project workflow commands optimized for AI agents.
+CLI tool for Fizzy board workflow and OSS/S3-compatible storage management.
 
 ## Install
 
-Install globally with Bun:
-
-```bash
+```sh
 bun add -g @puffinstudio/fizzyx
 ```
 
-Then verify the CLI is available:
+## OSS Commands
 
-```bash
-fizzyx --help
+Manage S3-compatible object storage (Alibaba Cloud OSS, AWS S3, MinIO, etc.).
+
+### Setup
+
+```sh
+# Interactive blank scaffold (prompts for keys)
+fizzyx oss setup
+
+# With explicit config (keys are prompted separately)
+fizzyx oss setup --env dev --endpoint https://oss-cn-beijing.aliyuncs.com --region cn-beijing --local-dir ./public [--bucket my-bucket] [--remote-prefix assets]
+
+# Configure keys for an existing environment
+fizzyx oss setup --env dev
 ```
 
-For local development from this repository:
+- `--endpoint` and `--region` are required
+- `--bucket` is optional — omit if your endpoint already includes the bucket name (e.g. `https://my-bucket.oss-cn-beijing.aliyuncs.com`)
+- `--remote-prefix` is optional — omit to upload to bucket root
+- Credentials are stored in OS keychain via `Bun.secrets`, never in config files or shell history
 
-```bash
-bun install
-bun run build
+### Sync
+
+Upload local files to the remote bucket:
+
+```sh
+fizzyx oss sync [--env dev] [--full] [--no-urls]
 ```
 
-## Setup
+- `--env`: environment name (default: `dev`)
+- `--full`: ignore cached manifest, force full re-upload
+- `--no-urls`: suppress file URL output
 
-```bash
-fizzyx setup <board-id>
+Sync uses a two-stage check (mtime+size → SHA-256 hash) to skip unchanged files. The manifest is stored at `.fizzyx/oss-manifest.json` and can be committed for team sharing.
 
-fizzyx setup --list
+### List
+
+List objects in the remote bucket:
+
+```sh
+fizzyx oss ls [--env dev] [--prefix assets/]
 ```
 
-This creates `.fizzy.yaml` with official Fizzy fields plus a `flow:` section.
-`setup --list` prints available board ids and names for the active account.
+- `--prefix`: filter objects by key prefix
 
-If TODO/INPROGRESS columns are omitted, `fizzyx setup` auto-discovers them from the API.
+### Status
 
-## Auth
+Show sync status (pending uploads, manifest info):
 
-```bash
-fizzyx auth login <token>
-fizzyx auth status
+```sh
+fizzyx oss status [--env dev]
 ```
 
-Tokens are stored outside the repo under `~/.config/fizzyx/credentials/`.
+## Config File (`.fizzy.yaml`)
 
-## Commands
+Minimal OSS-only config:
 
-```bash
-fizzyx flow sync
-fizzyx flow mine --fresh
-fizzyx flow status
-fizzyx flow next
-fizzyx flow show 123
-fizzyx flow start 123
-fizzyx flow done 123 "commit abc123: subject"
-fizzyx flow block 123 "waiting on API"
-fizzyx flow add ray "[Page] home · title" --desc /tmp/card.md
-fizzyx flow add ray "[Page] home · title" --desc - < /tmp/card.md
-fizzyx flow steps-from-desc 123
+```yaml
+oss:
+  dev:
+    endpoint: https://oss-cn-beijing.aliyuncs.com
+    region: cn-beijing
+    bucket: my-bucket
+  sync:
+    local_dir: ./public
+    remote_prefix: assets
+    concurrency: 10
 ```
 
-During development, you can run the entrypoint directly:
+If your endpoint already contains the bucket in the hostname, `bucket` can be omitted:
 
-```bash
-bun run src/main.ts <command>
+```yaml
+oss:
+  dev:
+    endpoint: https://my-bucket.oss-cn-beijing.aliyuncs.com
+    region: cn-beijing
+  sync:
+    local_dir: ./public
 ```
 
-## Architecture
+## Credential Resolution
 
-- `src/domain`: errors and models
-- `src/ports`: repository/API interfaces
-- `src/adapters`: Bun filesystem/cache and fetch-based Fizzy API
-- `src/use-cases`: workflow use cases
-- `src/cli`: thin command parsing and rendering
+Credentials are resolved in this priority order:
 
-## Check
-
-```bash
-bun run check
-```
+1. OS keychain (`Bun.secrets` — set via `fizzyx oss setup`)
+2. Environment variables: `OSS_<ENV>_ACCESS_KEY_ID` / `OSS_<ENV>_SECRET_ACCESS_KEY`
+3. `.fizzy.yaml` `access_key_id` / `secret_access_key` fields (legacy, discouraged)

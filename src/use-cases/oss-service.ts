@@ -7,6 +7,7 @@ import type {
 	OssEnvironmentName,
 	OssSyncSummary,
 	OssStatusResult,
+	OssListResult,
 	ProjectConfig,
 	SyncEntry,
 	SyncManifest,
@@ -130,6 +131,7 @@ export const ossSync = (options: {
 		const resolvedLocalDir = resolvePath(config.rootDir, oss.sync.localDir);
 		const remotePrefix = oss.sync.remotePrefix ?? "";
 		const uploadedKeys: string[] = [];
+		const allKeys: string[] = [];
 
 		const credentials = yield* resolveOssCredentials(config, options.env, envConfig);
 
@@ -151,6 +153,8 @@ export const ossSync = (options: {
 		let skipped = 0;
 
 		for (const { absolutePath, relativePath } of localFiles) {
+			const key = [remotePrefix, relativePath].filter(Boolean).join("/");
+			allKeys.push(key);
 			const result = yield* syncFile(
 				ossRepo,
 				resolvedLocalDir,
@@ -177,11 +181,12 @@ export const ossSync = (options: {
 		return {
 			env: options.env,
 			endpoint: envConfig.endpoint,
-			bucket: envConfig.bucket,
+			bucket: envConfig.bucket ?? "",
 			remotePrefix,
 			uploaded,
 			skipped,
 			uploadedKeys,
+			allKeys,
 			durationMs,
 			errors,
 		} satisfies OssSyncSummary;
@@ -236,6 +241,28 @@ export const ossStatus = (options: {
 			manifestEntries: manifest ? Object.keys(manifest.files).length : 0,
 			manifestPath: manifestRepo.path(),
 		} satisfies OssStatusResult;
+	});
+
+export const ossList = (options: {
+	env: OssEnvironmentName;
+	prefix?: string;
+}): Effect.Effect<
+	OssListResult,
+	ConfigError | FileError | OssError | ValidationError,
+	ConfigRepository
+> =>
+	Effect.gen(function* () {
+		const configRepo = yield* ConfigRepo;
+		const config = yield* configRepo.loadProjectConfig();
+		const oss = yield* requireOssConfig(config);
+		const envConfig = getOssEnvConfig(oss, options.env);
+		const credentials = yield* resolveOssCredentials(config, options.env, envConfig);
+		const ossRepo = makeBunOssRepository({
+			...envConfig,
+			accessKeyId: credentials.accessKeyId,
+			secretAccessKey: credentials.secretAccessKey,
+		});
+		return yield* ossRepo.list({ prefix: options.prefix });
 	});
 
 // ─── Secrets helpers ─────────────────────────────────────────
