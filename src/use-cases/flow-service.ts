@@ -791,7 +791,8 @@ const ensureColumn = (
 	createColumn: () => Effect.Effect<BoardColumn, unknown>,
 ): Effect.Effect<string, unknown> =>
 	Effect.gen(function* () {
-		const existing = columns.find((column) => column.name === name);
+		const lower = name.toLowerCase();
+		const existing = columns.find((column) => column.name.toLowerCase() === lower);
 		if (existing?.id) return existing.id;
 
 		const created = yield* createColumn();
