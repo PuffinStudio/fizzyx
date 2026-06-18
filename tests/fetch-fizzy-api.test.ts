@@ -224,7 +224,7 @@ test("listColumns decodes board columns", async () => {
 		data: [
 			{ id: "c1", name: "TODO" },
 			{ id: "c2", name: "INPROGRESS" },
-			{ id: "c3", name: "DONE" },
+			{ id: "c3", name: "REVIEW" },
 		],
 	});
 
@@ -239,8 +239,36 @@ test("listColumns decodes board columns", async () => {
 	expect(result).toEqual([
 		{ id: "c1", name: "TODO" },
 		{ id: "c2", name: "INPROGRESS" },
-		{ id: "c3", name: "DONE" },
+		{ id: "c3", name: "REVIEW" },
 	]);
+});
+
+test("closeCard uses official closure endpoint", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(makeFetchFizzyApi(config, "token").closeCard(42)),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("POST");
+	expect(summary.url).toContain("/acme/cards/42/closure.json");
+});
+
+test("postponeCard uses official not_now endpoint", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(makeFetchFizzyApi(config, "token").postponeCard(42)),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("POST");
+	expect(summary.url).toContain("/acme/cards/42/not_now.json");
 });
 
 test("createColumn extracts created id from payload", async () => {

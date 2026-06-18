@@ -51,11 +51,11 @@ export const runCli = (args: ReadonlyArray<string>) =>
 			case "help":
 			case "--help":
 			case "-h":
-				console.log(topUsage());
+				yield* Console.log(topUsage());
 				return;
 			case "setup": {
 				if (hasHelp(rest)) {
-					console.log(setupUsage());
+					yield* Console.log(setupUsage());
 					return;
 				}
 
@@ -63,11 +63,11 @@ export const runCli = (args: ReadonlyArray<string>) =>
 				if (input.list) {
 					const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
 					if (boards.length === 0) {
-						console.log("(no boards)");
+						yield* Console.log("(no boards)");
 						return;
 					}
 
-					console.log(
+					yield* Console.log(
 						renderTable(boards, [
 							{ header: "id", value: (board) => board.id },
 							{ header: "name", value: (board) => board.name },
@@ -77,7 +77,7 @@ export const runCli = (args: ReadonlyArray<string>) =>
 				}
 
 				const config = yield* withSpinner("Initializing Fizzy workflow...", setup(input));
-				console.log(`created ${config.configPath}`);
+				yield* Console.log(`created ${config.configPath}`);
 				return;
 			}
 			case "auth":
@@ -130,14 +130,14 @@ const runFlow = (args: ReadonlyArray<string>) =>
 		const [command = "help", ...rest] = args;
 
 		if (isHelpCommand(command)) {
-			console.log(flowUsage());
+			yield* Console.log(flowUsage());
 			return;
 		}
 
 		switch (command) {
 			case "sync": {
 				if (hasHelp(rest)) {
-					console.log(flowSyncUsage());
+					yield* Console.log(flowSyncUsage());
 					return;
 				}
 				const cache = yield* withSpinner(
@@ -147,12 +147,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* syncBoard(env);
 					}),
 				);
-				console.error(`synced cards=${cache.cards.length} not_now=${cache.notNow.length}`);
+				yield* Console.log(`synced cards=${cache.cards.length} not_now=${cache.notNow.length}`);
 				return;
 			}
 			case "mine": {
 				if (hasHelp(rest)) {
-					console.log(flowMineUsage());
+					yield* Console.log(flowMineUsage());
 					return;
 				}
 				const fresh = rest.includes("--fresh");
@@ -164,13 +164,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* mine(env, { fresh, user });
 					}),
 				);
-				console.log(`# ${result.name}: ${result.userId}`);
-				console.log(printCards(result.cards));
+				yield* Console.log(`# ${result.name}: ${result.userId}`);
+				yield* Console.log(printCards(result.cards));
 				return;
 			}
 			case "status": {
 				if (hasHelp(rest)) {
-					console.log(flowStatusUsage());
+					yield* Console.log(flowStatusUsage());
 					return;
 				}
 				const result = yield* withSpinner(
@@ -180,9 +180,9 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* status(env, { fresh: rest.includes("--fresh") });
 					}),
 				);
-				console.log(`# board cache age: ${result.age}s`);
-				console.log("");
-				console.log(
+				yield* Console.log(`# board cache age: ${result.age}s`);
+				yield* Console.log("");
+				yield* Console.log(
 					printCards(
 						result.cache.cards.filter((card) =>
 							["INPROGRESS", "TODO"].includes(card.column?.name || ""),
@@ -190,14 +190,14 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					),
 				);
 				if (result.cache.notNow.length > 0) {
-					console.log(`\n# not_now (${result.cache.notNow.length})`);
-					console.log(printCards(result.cache.notNow));
+					yield* Console.log(`\n# not_now (${result.cache.notNow.length})`);
+					yield* Console.log(printCards(result.cache.notNow));
 				}
 				return;
 			}
 			case "next": {
 				if (hasHelp(rest)) {
-					console.log(flowNextUsage());
+					yield* Console.log(flowNextUsage());
 					return;
 				}
 				const result = yield* withSpinner(
@@ -208,16 +208,16 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					}),
 				);
 				if (!result.card) {
-					console.log(`no TODO card for ${result.user.name}`);
+					yield* Console.log(`no TODO card for ${result.user.name}`);
 					return;
 				}
-				console.log(`#${result.card.number} ${result.card.title}`);
-				console.log(`next: fizzyx flow start ${result.card.number}`);
+				yield* Console.log(`#${result.card.number} ${result.card.title}`);
+				yield* Console.log(`next: fizzyx flow start ${result.card.number}`);
 				return;
 			}
 			case "show": {
 				if (hasHelp(rest)) {
-					console.log(flowShowUsage());
+					yield* Console.log(flowShowUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -228,12 +228,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* show(env, number);
 					}),
 				);
-				console.log(printCardDetail(result.card, result.comments));
+				yield* Console.log(printCardDetail(result.card, result.comments));
 				return;
 			}
 			case "start": {
 				if (hasHelp(rest)) {
-					console.log(flowStartUsage());
+					yield* Console.log(flowStartUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -244,12 +244,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* start(env, number);
 					}),
 				);
-				console.log(`started #${number}`);
+				yield* Console.log(`started #${number}`);
 				return;
 			}
 			case "done": {
 				if (hasHelp(rest)) {
-					console.log(flowDoneUsage());
+					yield* Console.log(flowDoneUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -265,12 +265,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* done(env, number, ref);
 					}),
 				);
-				console.log(`closed #${result.number} (${result.ref})`);
+				yield* Console.log(`closed #${result.number} (${result.ref})`);
 				return;
 			}
 			case "block": {
 				if (hasHelp(rest)) {
-					console.log(flowBlockUsage());
+					yield* Console.log(flowBlockUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -282,12 +282,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* block(env, number, reason);
 					}),
 				);
-				console.log(`blocked #${result.number}: ${result.reason}`);
+				yield* Console.log(`blocked #${result.number}: ${result.reason}`);
 				return;
 			}
 			case "assign": {
 				if (hasHelp(rest)) {
-					console.log(flowAssignUsage());
+					yield* Console.log(flowAssignUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -302,19 +302,19 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* assign(env, number, users);
 					}),
 				);
-				console.log(`assigned #${result.number} to ${result.userIds.join(", ")}`);
+				yield* Console.log(`assigned #${result.number} to ${result.userIds.join(", ")}`);
 				return;
 			}
 			case "comment-template": {
 				if (hasHelp(rest)) {
-					console.log(flowCommentTemplateUsage());
+					yield* Console.log(flowCommentTemplateUsage());
 					return;
 				}
 				const [kind] = rest;
 				if (!isValidCommentTemplateKind(kind)) {
 					throw new Error(flowCommentTemplateUsage());
 				}
-				console.log(getStandardizedCommentTemplate(kind));
+				yield* Console.log(getStandardizedCommentTemplate(kind));
 				return;
 			}
 			case "workflow": {
@@ -368,7 +368,7 @@ const runFlow = (args: ReadonlyArray<string>) =>
 			}
 			case "repair-markdown": {
 				if (hasHelp(rest)) {
-					console.log(flowRepairMarkdownUsage());
+					yield* Console.log(flowRepairMarkdownUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -379,12 +379,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* repairMarkdownDescription(env, number);
 					}),
 				);
-				console.log(`repaired #${repaired}`);
+				yield* Console.log(`repaired #${repaired}`);
 				return;
 			}
 			case "complete-steps": {
 				if (hasHelp(rest)) {
-					console.log(flowCompleteStepsUsage());
+					yield* Console.log(flowCompleteStepsUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -396,16 +396,16 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					}),
 				);
 				const plural = result.updatedCount === 1 ? "" : "s";
-				console.log(`completed ${result.updatedCount} step${plural} for #${result.number}`);
+				yield* Console.log(`completed ${result.updatedCount} step${plural} for #${result.number}`);
 				if (result.contents.length > 0) {
-					console.log(result.contents.map((content) => `- ${content}`).join("\n"));
+					yield* Console.log(result.contents.map((content) => `- ${content}`).join("\n"));
 				}
 				return;
 			}
 			case "std":
 			case "standardize-card": {
 				if (hasHelp(rest)) {
-					console.log(flowStdUsage());
+					yield* Console.log(flowStdUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -416,13 +416,13 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* standardizeCard(env, number);
 					}),
 				);
-				console.log(formatStandardizeResult(result));
+				yield* Console.log(formatStandardizeResult(result));
 				return;
 			}
 			case "std-all":
 			case "standardize-board": {
 				if (hasHelp(rest)) {
-					console.log(flowStdAllUsage());
+					yield* Console.log(flowStdAllUsage());
 					return;
 				}
 				const result = yield* withSpinner(
@@ -432,15 +432,15 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* standardizeBoard(env);
 					}),
 				);
-				console.log(result.results.map(formatStandardizeResult).join("\n"));
-				console.log(
+				yield* Console.log(result.results.map(formatStandardizeResult).join("\n"));
+				yield* Console.log(
 					`total=${result.total} descriptions=${result.descriptionUpdated} steps_created=${result.stepsCreated} steps_updated=${result.stepsUpdated} steps_completed=${result.stepsCompleted}`,
 				);
 				return;
 			}
 			case "add": {
 				if (hasHelp(rest)) {
-					console.log(flowAddUsage());
+					yield* Console.log(flowAddUsage());
 					return;
 				}
 				const user = rest[0];
@@ -457,12 +457,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* add(env, { user, title, description });
 					}),
 				);
-				console.log(number);
+				yield* Console.log(number);
 				return;
 			}
 			case "steps-from-desc": {
 				if (hasHelp(rest)) {
-					console.log(flowStepsUsage());
+					yield* Console.log(flowStepsUsage());
 					return;
 				}
 				const number = parseNumber(rest[0]);
@@ -473,7 +473,7 @@ const runFlow = (args: ReadonlyArray<string>) =>
 						return yield* stepsFromDescription(env, number);
 					}),
 				);
-				console.log(printSteps(steps));
+				yield* Console.log(printSteps(steps));
 				return;
 			}
 			case "template": {
@@ -488,7 +488,7 @@ const runFlow = (args: ReadonlyArray<string>) =>
 			}
 			case "doctor": {
 				if (hasHelp(rest)) {
-					console.log(flowDoctorUsage());
+					yield* Console.log(flowDoctorUsage());
 					return;
 				}
 				const result = yield* withSpinner(
@@ -500,9 +500,20 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				);
 				const lines: string[] = [];
 				lines.push("=== Board Health ===");
-				for (const col of result.columns) {
-					const status = col.found ? "✓" : "✗";
-					lines.push(`  ${status} ${col.name}${col.id ? ` (${col.id})` : ""}`);
+				lines.push(`account: ${result.account}`);
+				lines.push(`board: ${result.boardId}`);
+				lines.push(`api: ${result.apiUrl}`);
+				lines.push("");
+				lines.push("API-visible columns:");
+				for (const col of result.allColumns) {
+					const isExpected = result.columns.some((c) => c.id === col.id);
+					const status = isExpected ? "✓" : "•";
+					lines.push(`  ${status} ${col.name} (${col.id})`);
+				}
+				lines.push("");
+				lines.push("Implicit system actions:");
+				for (const action of result.systemActions) {
+					lines.push(`  ✓ ${action.name} via ${action.via} (not listed by columns API)`);
 				}
 				if (result.info.length > 0) {
 					lines.push("");
@@ -523,11 +534,11 @@ const runFlow = (args: ReadonlyArray<string>) =>
 			}
 			case "init": {
 				if (hasHelp(rest)) {
-					console.log(flowInitUsage());
+					yield* Console.log(flowInitUsage());
 					return;
 				}
 				const env = yield* withSpinner("Initializing workflow config...", makeFlowEnv);
-				console.log(
+				yield* Console.log(
 					`flow configured: todo=${env.config.flow.columns.todo} in_progress=${env.config.flow.columns.inProgress}`,
 				);
 				return;
@@ -535,7 +546,7 @@ const runFlow = (args: ReadonlyArray<string>) =>
 			case "help":
 			case "--help":
 			case "-h":
-				console.log(flowUsage());
+				yield* Console.log(flowUsage());
 				return;
 			default:
 				throw new Error(`unknown flow command: ${command}\n\n${flowUsage()}`);
@@ -547,7 +558,7 @@ const runAuth = (args: ReadonlyArray<string>) =>
 		const [command = "help", ...rest] = args;
 
 		if (isHelpCommand(command)) {
-			console.log(authUsage());
+			yield* Console.log(authUsage());
 			return;
 		}
 
@@ -557,34 +568,34 @@ const runAuth = (args: ReadonlyArray<string>) =>
 					throw new Error(authLoginUsage());
 				}
 				const account = yield* withSpinner("Saving credentials...", authLogin(rest[0]));
-				console.log(`token saved for ${account}`);
+				yield* Console.log(`token saved for ${account}`);
 				return;
 			}
 			case "status": {
 				if (hasHelp(rest)) {
-					console.log(authStatusUsage());
+					yield* Console.log(authStatusUsage());
 					return;
 				}
 				const result = yield* withSpinner("Checking auth status...", authStatus);
-				console.log(`account: ${result.account}`);
-				console.log(`board: ${result.board}`);
-				console.log(`authenticated: ${result.authenticated}`);
+				yield* Console.log(`account: ${result.account}`);
+				yield* Console.log(`board: ${result.board}`);
+				yield* Console.log(`authenticated: ${result.authenticated}`);
 				if (result.identity) {
-					console.log(`user: ${result.identity.name || ""}`);
-					console.log(`user_id: ${result.identity.userId}`);
-					console.log(`email: ${result.identity.email || ""}`);
+					yield* Console.log(`user: ${result.identity.name || ""}`);
+					yield* Console.log(`user_id: ${result.identity.userId}`);
+					yield* Console.log(`email: ${result.identity.email || ""}`);
 				} else if (result.identityError) {
-					console.log(`identity_error: ${result.identityError}`);
+					yield* Console.log(`identity_error: ${result.identityError}`);
 				}
 				return;
 			}
 			case "logout": {
 				if (hasHelp(rest)) {
-					console.log(authLogoutUsage());
+					yield* Console.log(authLogoutUsage());
 					return;
 				}
 				const account = yield* withSpinner("Clearing credentials...", authLogout);
-				console.log(`token removed for ${account}`);
+				yield* Console.log(`token removed for ${account}`);
 				return;
 			}
 			default:
@@ -724,7 +735,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 						);
 						yield* Console.log("");
 					}
-					yield* Console.error(`Configuring keys for [${env}]:`);
+					yield* Console.log(`Configuring keys for [${env}]:`);
 					const accessKeyId = yield* promptSecret(`  Access Key ID: `);
 					const secretAccessKey = yield* promptSecret(`  Secret Access Key: `);
 					if (!accessKeyId || !secretAccessKey) {
@@ -745,7 +756,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 					throw new Error(ossSetupUsage());
 				}
 
-				yield* Console.error(`Configuring OSS [${env}]:`);
+				yield* Console.log(`Configuring OSS [${env}]:`);
 				const accessKeyId = yield* promptSecret(`  Access Key ID: `);
 				const secretAccessKey = yield* promptSecret(`  Secret Access Key: `);
 				if (!accessKeyId || !secretAccessKey) {

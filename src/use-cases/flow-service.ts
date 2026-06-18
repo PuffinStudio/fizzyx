@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Console, Effect } from "effect";
 import { ApiError, AuthError, ConfigError, FileError, ValidationError } from "../domain/errors";
 import type {
 	BoardCache,
@@ -450,14 +450,24 @@ export const done = (env: InitializedEnv, number: number, ref?: string) =>
 			});
 		}
 
-		const cache = yield* env.cacheRepo.read();
-		const doneColumn = cache!.columns.find((c) => c.name.toLowerCase() === "done")!;
-		yield* env.api.moveCard(number, doneColumn.id);
+		const cache = yield* env.cacheRepo.read().pipe(Effect.catch(() => Effect.succeed(null)));
+		let doneColumn = cache?.columns?.find((c) => c.name.toLowerCase() === "done");
+		if (!doneColumn) {
+			const columns = yield* env.api.listColumns().pipe(Effect.catch(() => Effect.succeed([])));
+			doneColumn = columns.find((c) => c.name.toLowerCase() === "done");
+		}
+		if (doneColumn) {
+			yield* env.api
+				.moveCard(number, doneColumn.id)
+				.pipe(Effect.catch(() => Effect.succeed(undefined)));
+		}
 
 		const finalRef = ref || "done";
-		yield* env.api.comment(number, buildStandardizedCommentBody("done", finalRef));
 		yield* env.api.closeCard(number);
-		yield* syncBoard(env);
+		yield* env.api
+			.comment(number, buildStandardizedCommentBody("done", finalRef))
+			.pipe(Effect.catch(() => Effect.succeed(undefined)));
+		yield* syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined)));
 		return { number, ref: finalRef };
 	});
 
@@ -720,7 +730,7 @@ const ensureFlowConfig = (args: {
 			});
 		}
 
-		console.error("flow config missing; initializing...");
+		yield* Console.log("flow config missing; initializing...");
 		const columns = yield* args.api.listColumns();
 		const todoColumn = yield* ensureColumn(columns, "TODO", () => args.api.createColumn("TODO"));
 		const inProgressColumn = yield* ensureColumn(columns, "INPROGRESS", () =>
@@ -819,7 +829,12 @@ export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray
 	});
 
 export interface DoctorResult {
+	account: string;
+	apiUrl: string;
+	boardId: string;
 	columns: { name: string; id: string; found: boolean }[];
+	allColumns: ReadonlyArray<BoardColumn>;
+	systemActions: ReadonlyArray<{ name: string; via: string }>;
 	configUpdated: boolean;
 	info: string[];
 	fixes: string[];
@@ -846,6 +861,7 @@ export const doctor = (env: InitializedEnv): Effect.Effect<DoctorResult, unknown
 			if (!match) {
 				fixes.push(`Created missing column "${name}"`);
 				const created = yield* env.api.createColumn(name);
+				columnsData = columnsData.concat(created);
 				columns.push({ name, id: created.id, found: true });
 			} else {
 				columns.push({ name, id: match.id, found: true });
@@ -870,7 +886,20 @@ export const doctor = (env: InitializedEnv): Effect.Effect<DoctorResult, unknown
 			configUpdated = true;
 		}
 
-		return { columns, configUpdated, info, fixes };
+		return {
+			account: config.account,
+			apiUrl: config.apiUrl,
+			boardId: config.board ?? "(unknown)",
+			columns,
+			allColumns: columnsData,
+			systemActions: [
+				{ name: "DONE", via: "closure endpoint" },
+				{ name: "NOT_NOW", via: "not_now endpoint" },
+			],
+			configUpdated,
+			info,
+			fixes,
+		};
 	});
 
 const findUserName = (cache: BoardCache, userId: string): string | undefined =>

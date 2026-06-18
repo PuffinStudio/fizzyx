@@ -438,6 +438,57 @@ test("done posts standardized escaped comment and closes card", async () => {
 	expect(comments).toEqual(["<p>done: commit &lt;x&gt; &amp; &quot;y&quot;</p>"]);
 });
 
+test("done closes card when DONE column is not visible", async () => {
+	const calls: string[] = [];
+	const api = defaultApi();
+	api.showCard = () =>
+		Effect.succeed({
+			number: 20,
+			title: "Done task",
+			steps: [],
+		});
+	api.listColumns = () => Effect.succeed([]);
+	api.closeCard = () => {
+		calls.push("close");
+		return Effect.succeed(undefined);
+	};
+	api.comment = () => {
+		calls.push("comment");
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(done(makeEnv(api), 20, "commit abc: done"));
+
+	expect(result).toEqual({ number: 20, ref: "commit abc: done" });
+	expect(calls).toEqual(["close", "comment"]);
+});
+
+test("done closes card when DONE column move fails", async () => {
+	const calls: string[] = [];
+	const api = defaultApi();
+	api.showCard = () =>
+		Effect.succeed({
+			number: 20,
+			title: "Done task",
+			steps: [],
+		});
+	api.listColumns = () => Effect.succeed([{ id: "done-col", name: "DONE" }]);
+	api.moveCard = () => Effect.fail(new ApiError({ message: "move failed" }));
+	api.closeCard = () => {
+		calls.push("close");
+		return Effect.succeed(undefined);
+	};
+	api.comment = () => {
+		calls.push("comment");
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(done(makeEnv(api), 20, "commit abc: done"));
+
+	expect(result).toEqual({ number: 20, ref: "commit abc: done" });
+	expect(calls).toEqual(["close", "comment"]);
+});
+
 test("block posts standardized escaped comment", async () => {
 	const comments: string[] = [];
 	const api = defaultApi();

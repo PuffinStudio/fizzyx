@@ -465,8 +465,8 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 		moveCard: (number, columnId) =>
 			requestVoid("POST", `/cards/${number}/triage.json`, { column_id: columnId }),
 		comment: (number, body) => requestVoid("POST", `/cards/${number}/comments.json`, { body }),
-		closeCard: (number) => requestVoid("POST", `/cards/${number}/close.json`),
-		postponeCard: (number) => requestVoid("POST", `/cards/${number}/postpone.json`),
+		closeCard: (number) => requestVoid("POST", `/cards/${number}/closure.json`),
+		postponeCard: (number) => requestVoid("POST", `/cards/${number}/not_now.json`),
 		createStep: (number, content, completed) =>
 			requestVoid("POST", `/cards/${number}/steps.json`, {
 				content,

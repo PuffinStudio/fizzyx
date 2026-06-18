@@ -746,7 +746,7 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 		});
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).toContain("flow config missing; initializing...");
+		expect(result.stdout).toContain("flow config missing; initializing...");
 		expect(result.stdout).toContain("flow configured:");
 
 		const second = await runCli(["flow", "init"], {
@@ -755,7 +755,7 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 		});
 
 		expect(second.exitCode).toBe(0);
-		expect(second.stderr).not.toContain("flow config missing; initializing...");
+		expect(second.stdout).not.toContain("flow config missing; initializing...");
 		expect(second.stdout).toContain("flow configured:");
 		expect(readFileSync(configPath, "utf8")).toContain("flow:");
 		expect(readFileSync(configPath, "utf8")).toContain("todo: todo-id");
@@ -824,7 +824,7 @@ test("flow init preserves existing flow users while adding identity and assignee
 		});
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).not.toContain("flow config missing; initializing...");
+		expect(result.stdout).not.toContain("flow config missing; initializing...");
 		expect(result.stdout).toContain("flow configured:");
 
 		const configText = readFileSync(configPath, "utf8");
@@ -919,7 +919,7 @@ test("flow init retries when token is denied and migrates official credentials",
 		});
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).toContain("flow config missing; initializing...");
+		expect(result.stdout).toContain("flow config missing; initializing...");
 		expect(requests[0]!.auth).toBe("Bearer test-token");
 		expect(requests.some((request) => request.auth === "Bearer official-token")).toBe(true);
 		expect(readFileSync(credentialsPath, "utf8")).toContain("official-token");
