@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
@@ -15,7 +15,23 @@ import type {
 	ColumnRef,
 	Step,
 } from "../domain/models";
-import type { FizzyApi } from "../ports/fizzy-api";
+import { FizzyApi } from "../ports/fizzy-api";
+import { ConfigRepo } from "../ports/config-repository";
+
+export const Live = Layer.effect(FizzyApi)(
+	Effect.gen(function* () {
+		const configRepo = yield* ConfigRepo;
+		const config = yield* configRepo.loadProjectConfig();
+		const credentials = yield* configRepo
+			.loadCredentials(config.account)
+			.pipe(
+				Effect.catch(() =>
+					Effect.fail(new ApiError({ message: "Not logged in. Run: fizzyx auth login" })),
+				),
+			);
+		return makeFetchFizzyApi(config, credentials.token);
+	}),
+);
 
 type JsonObject = Record<string, unknown>;
 type HttpMethod = "GET" | "POST" | "PATCH";

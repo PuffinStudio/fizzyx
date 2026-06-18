@@ -29,6 +29,7 @@ export interface ProjectConfig {
 	account: string;
 	board?: string;
 	flow?: FlowConfig;
+	oss?: OssConfig;
 	configPath: string;
 	rootDir: string;
 }
@@ -100,4 +101,67 @@ export interface BoardCache {
 export interface BoardColumn {
 	id: string;
 	name: string;
+}
+
+// ─── OSS / S3-compatible storage ────────────────────────────
+
+export type OssEnvironmentName = string;
+
+export interface OssCredentials {
+	accessKeyId: string;
+	secretAccessKey: string;
+}
+
+export interface OssEnvironmentConfig {
+	endpoint: string;
+	region: string;
+	bucket: string;
+	accessKeyId?: string;
+	secretAccessKey?: string;
+}
+
+export interface OssSyncConfig {
+	localDir: string;
+	remotePrefix: string;
+	concurrency: number;
+}
+
+export interface OssConfig {
+	environments: Record<string, OssEnvironmentConfig>;
+	sync: OssSyncConfig;
+}
+
+export interface SyncEntry {
+	mtimeMs: number;
+	size: number;
+	hash: string;
+}
+
+export interface SyncManifest {
+	version: 1;
+	localDir: string;
+	remotePrefix: string;
+	lastSyncedAt: string;
+	files: Record<string, SyncEntry>;
+}
+
+export interface OssSyncSummary {
+	env: OssEnvironmentName;
+	endpoint: string;
+	bucket: string;
+	remotePrefix: string;
+	uploaded: number;
+	skipped: number;
+	uploadedKeys: ReadonlyArray<string>;
+	durationMs: number;
+	errors: ReadonlyArray<string>;
+}
+
+export interface OssStatusResult {
+	env: OssEnvironmentName;
+	pendingUploads: number;
+	pendingDeletions: number;
+	totalLocal: number;
+	manifestEntries: number;
+	manifestPath: string;
 }

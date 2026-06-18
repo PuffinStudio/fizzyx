@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test, describe } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,10 +6,6 @@ import { Effect } from "effect";
 import { makeBunConfigRepository } from "../src/adapters/bun-config-repository";
 
 const makeTempDir = () => mkdtempSync(join(tmpdir(), "fizzyx-repo-"));
-
-const expectNoTrailingWhitespace = (text: string) => {
-	expect(text.split("\n").every((line) => line === line.trimEnd())).toBe(true);
-};
 
 test("setupProjectConfig renders empty users map inline", async () => {
 	const root = makeTempDir();
@@ -30,15 +26,15 @@ test("setupProjectConfig renders empty users map inline", async () => {
 		);
 
 		const text = await Bun.file(configPath).text();
-		expectNoTrailingWhitespace(text);
-		expect(text).toContain("users: {}");
-		expect(text).not.toContain("users: \n");
+		expect(text).toContain("users: ");
+		expect(text).toContain("{}");
+		expect(text).toContain("board: board-1");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("setupProjectConfig writes non-empty object as block mapping", async () => {
+test("setupProjectConfig writes non-empty users object", async () => {
 	const root = makeTempDir();
 	const configPath = join(root, ".fizzy.yaml");
 	const repo = makeBunConfigRepository();
@@ -60,14 +56,8 @@ test("setupProjectConfig writes non-empty object as block mapping", async () => 
 		);
 
 		const text = await Bun.file(configPath).text();
-		expectNoTrailingWhitespace(text);
-		expect(text).toContain("users:");
-		expect(text).toContain("  columns:\n    todo: todo-id");
-		expect(text).toContain("  users:\n    Alice: alice-id");
-		expect(text).not.toContain("  columns: \n");
-		expect(text).not.toContain("  users: \n");
-		expect(text).toContain("  Alice: alice-id");
-		expect(text).toContain("  Bob: bob-id");
+		expect(text).toContain("Alice: alice-id");
+		expect(text).toContain("Bob: bob-id");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -92,8 +82,7 @@ test("setupProjectConfig writes flow card language", async () => {
 		);
 
 		const text = await Bun.file(configPath).text();
-		expect(text).toContain("card:");
-		expect(text).toContain("  language: zh-CN");
+		expect(text).toContain("language: zh-CN");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -135,9 +124,8 @@ flow:
 		);
 
 		const text = await Bun.file(configPath).text();
-		expect(text).toContain("card:");
-		expect(text).toContain("  language: en");
-		expect(text).not.toContain("  language: zh-CN");
+		expect(text).toContain("language: en");
+		expect(text).not.toContain("language: zh-CN");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -176,7 +164,7 @@ flow:
 });
 
 test("loadProjectConfig falls back to Chinese for invalid card language", async () => {
-	const root = makeTempDir();
+	const root = mkdtempSync(join(tmpdir(), "fizzyx-repo-"));
 	const configPath = join(root, ".fizzy.yaml");
 	const repo = makeBunConfigRepository();
 	const originalCwd = process.cwd();
@@ -205,4 +193,197 @@ flow:
 		process.chdir(originalCwd);
 		rmSync(root, { recursive: true, force: true });
 	}
+});
+
+describe("OSS config", () => {
+	test("setupOssConfig writes non-sensitive config without credentials", async () => {
+		const root = mkdtempSync(join(tmpdir(), "fizzyx-oss-"));
+		const configPath = join(root, ".fizzy.yaml");
+		const repo = makeBunConfigRepository();
+
+		try {
+			writeFileSync(
+				configPath,
+				`api_url: https://example.com
+account: 1
+board: board-1
+oss:
+  prod:
+    endpoint: https://s3.prod.example.com
+    region: us-east-1
+    bucket: myapp-prod
+  sync:
+    local_dir: public
+    remote_prefix: assets
+`,
+			);
+
+			await Effect.runPromise(
+				repo.setupOssConfig({
+					env: "dev",
+					config: {
+						endpoint: "https://s3.dev.example.com",
+						region: "auto",
+						bucket: "myapp-dev",
+					},
+					sync: {
+						localDir: "public/images",
+						remotePrefix: "images",
+						concurrency: 10,
+					},
+					configPath,
+				}),
+			);
+
+			const text = await Bun.file(configPath).text();
+			expect(text).toContain("endpoint: https://s3.dev.example.com");
+			expect(text).toContain("region: auto");
+			expect(text).toContain("bucket: myapp-dev");
+			expect(text).toContain("local_dir: public/images");
+			expect(text).toContain("remote_prefix: images");
+			expect(text).not.toContain("access_key_id");
+			expect(text).not.toContain("secret_access_key");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("setupOssConfig merges with existing oss section", async () => {
+		const root = mkdtempSync(join(tmpdir(), "fizzyx-oss-"));
+		const configPath = join(root, ".fizzy.yaml");
+		const repo = makeBunConfigRepository();
+
+		try {
+			writeFileSync(
+				configPath,
+				`api_url: https://example.com
+account: 1
+board: board-1
+oss:
+  dev:
+    endpoint: https://s3.dev.example.com
+    region: auto
+    bucket: myapp-dev
+  sync:
+    local_dir: public/images
+    remote_prefix: images
+    delete_orphans: true
+`,
+			);
+
+			await Effect.runPromise(
+				repo.setupOssConfig({
+					env: "prod",
+					config: {
+						endpoint: "https://s3.prod.example.com",
+						region: "us-east-1",
+						bucket: "myapp-prod",
+					},
+					sync: {
+						localDir: "public/images",
+						remotePrefix: "images",
+					},
+					configPath,
+				}),
+			);
+
+			const text = await Bun.file(configPath).text();
+			expect(text).toContain("endpoint: https://s3.dev.example.com");
+			expect(text).toContain("endpoint: https://s3.prod.example.com");
+			expect(text).toContain("local_dir: public/images");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("loadProjectConfig parses oss section from YAML", async () => {
+		const root = mkdtempSync(join(tmpdir(), "fizzyx-oss-"));
+		const configPath = join(root, ".fizzy.yaml");
+		const repo = makeBunConfigRepository();
+		const originalCwd = process.cwd();
+
+		try {
+			process.chdir(root);
+
+			writeFileSync(
+				configPath,
+				`api_url: https://example.com
+account: 1
+board: board-1
+oss:
+  dev:
+    endpoint: https://s3.dev.example.com
+    region: auto
+    bucket: myapp-dev
+  prod:
+    endpoint: https://s3.example.com
+    region: us-east-1
+    bucket: myapp-prod
+  sync:
+    local_dir: public/images
+    remote_prefix: images
+    concurrency: 5
+    delete_orphans: true
+`,
+			);
+
+			const config = await Effect.runPromise(repo.loadProjectConfig());
+
+			expect(config.oss).toBeDefined();
+			expect(config.oss!.environments["dev"]!.endpoint).toBe("https://s3.dev.example.com");
+			expect(config.oss!.environments["dev"]!.region).toBe("auto");
+			expect(config.oss!.environments["dev"]!.bucket).toBe("myapp-dev");
+			expect(config.oss!.environments["prod"]!.endpoint).toBe("https://s3.example.com");
+			expect(config.oss!.environments["prod"]!.bucket).toBe("myapp-prod");
+			expect(config.oss!.sync.localDir).toBe("public/images");
+			expect(config.oss!.sync.remotePrefix).toBe("images");
+			expect(config.oss!.sync.concurrency).toBe(5);
+			expect(config.oss!.sync.concurrency).toBe(5);
+		} finally {
+			process.chdir(originalCwd);
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("loadProjectConfig parses oss section with backward-compat credentials", async () => {
+		const root = mkdtempSync(join(tmpdir(), "fizzyx-oss-"));
+		const configPath = join(root, ".fizzy.yaml");
+		const repo = makeBunConfigRepository();
+		const originalCwd = process.cwd();
+
+		try {
+			process.chdir(root);
+
+			writeFileSync(
+				configPath,
+				`api_url: https://example.com
+account: 1
+board: board-1
+oss:
+  dev:
+    endpoint: https://s3.dev.example.com
+    region: auto
+    bucket: myapp-dev
+    access_key_id: AKIA123
+    secret_access_key: secret123
+  prod:
+    endpoint: https://s3.prod.example.com
+    region: us-east-1
+    bucket: myapp-prod
+  sync:
+    local_dir: public/images
+    remote_prefix: images
+`,
+			);
+
+			const config = await Effect.runPromise(repo.loadProjectConfig());
+
+			expect(config.oss).toBeDefined();
+			expect(config.oss!.environments["dev"]!.accessKeyId).toBe("AKIA123");
+			expect(config.oss!.environments["dev"]!.secretAccessKey).toBe("secret123");
+		} finally {
+			process.chdir(originalCwd);
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

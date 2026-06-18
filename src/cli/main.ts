@@ -1,7 +1,15 @@
-import { Effect } from "effect";
+import { Console, Effect } from "effect";
 import { DEFAULT_FLOW_CARD_LANGUAGE, type FlowCardLanguage } from "../domain/models";
-import { makeBunConfigRepository } from "../adapters/bun-config-repository";
-import type { SetupProjectConfigInput } from "../ports/config-repository";
+import { ConfigRepo } from "../ports/config-repository";
+import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
+import {
+	ossInitBlank,
+	ossSetup,
+	ossStoreCredentials,
+	ossSync,
+	ossStatus,
+} from "../use-cases/oss-service";
+import { Live as ConfigRepoLive } from "../adapters/bun-config-repository";
 import {
 	add,
 	assign,
@@ -18,7 +26,6 @@ import {
 	repairMarkdownDescription,
 	resolveDoneRefFromGit,
 	listBoards,
-	resolveUser,
 	setup,
 	show,
 	start,
@@ -32,51 +39,57 @@ import { printCardDetail, printCards, printSteps, renderTable } from "./render";
 import { withSpinner } from "./spinner";
 
 export const runCli = (args: ReadonlyArray<string>) =>
-	Effect.gen(function* () {
-		const [command = "help", ...rest] = args;
-		switch (command) {
-			case "help":
-			case "--help":
-			case "-h":
-				console.log(topUsage());
-				return;
-			case "setup": {
-				if (hasHelp(rest)) {
-					console.log(setupUsage());
+	Effect.provide(
+		Effect.gen(function* () {
+			const [command = "help", ...rest] = args;
+			switch (command) {
+				case "help":
+				case "--help":
+				case "-h":
+					console.log(topUsage());
 					return;
-				}
-
-				const input = parseSetup(rest);
-				if (input.list) {
-					const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
-					if (boards.length === 0) {
-						console.log("(no boards)");
+				case "setup": {
+					if (hasHelp(rest)) {
+						console.log(setupUsage());
 						return;
 					}
 
-					console.log(
-						renderTable(boards, [
-							{ header: "id", value: (board) => board.id },
-							{ header: "name", value: (board) => board.name },
-						]),
-					);
+					const input = parseSetup(rest);
+					if (input.list) {
+						const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
+						if (boards.length === 0) {
+							console.log("(no boards)");
+							return;
+						}
+
+						console.log(
+							renderTable(boards, [
+								{ header: "id", value: (board) => board.id },
+								{ header: "name", value: (board) => board.name },
+							]),
+						);
+						return;
+					}
+
+					const config = yield* withSpinner("Initializing Fizzy workflow...", setup(input));
+					console.log(`created ${config.configPath}`);
 					return;
 				}
-
-				const config = yield* withSpinner("Initializing Fizzy workflow...", setup(input));
-				console.log(`created ${config.configPath}`);
-				return;
+				case "auth":
+					yield* runAuth(rest);
+					return;
+				case "flow":
+					yield* runFlow(rest);
+					return;
+				case "oss":
+					yield* runOss(rest);
+					return;
+				default:
+					throw new Error(legacyCommandErrorMessage(command));
 			}
-			case "auth":
-				yield* runAuth(rest);
-				return;
-			case "flow":
-				yield* runFlow(rest);
-				return;
-			default:
-				throw new Error(legacyCommandErrorMessage(command));
-		}
-	});
+		}),
+		ConfigRepoLive,
+	);
 
 const legacyFlowCommands = {
 	sync: "sync",
@@ -445,7 +458,7 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				}
 				const env = yield* withSpinner("Initializing workflow config...", makeFlowEnv);
 				console.log(
-					`flow configured with todo=${env.config.flow.columns.todo} in_progress=${env.config.flow.columns.inProgress}`,
+					`flow configured: todo=${env.config.flow.columns.todo} in_progress=${env.config.flow.columns.inProgress}`,
 				);
 				return;
 			}
@@ -509,6 +522,124 @@ const runAuth = (args: ReadonlyArray<string>) =>
 		}
 	});
 
+const runOss = (args: ReadonlyArray<string>) =>
+	Effect.gen(function* () {
+		const [command = "help", ...rest] = args;
+
+		if (isHelpCommand(command)) {
+			yield* Console.log(ossUsage());
+			return;
+		}
+
+		switch (command) {
+			case "sync": {
+				if (hasHelp(rest)) {
+					yield* Console.log(ossSyncUsage());
+					return;
+				}
+				const env = parseOssEnv(rest, "dev");
+				const full = rest.includes("--full");
+				const result = yield* withSpinner(`Syncing to ${env}...`, ossSync({ env, full }));
+				if (result.errors.length > 0) {
+					for (const err of result.errors) {
+						yield* Console.error(`  error: ${err}`);
+					}
+				}
+				yield* Console.log(
+					`${env}: uploaded=${result.uploaded} skipped=${result.skipped} duration=${result.durationMs}ms`,
+				);
+				for (const key of result.uploadedKeys) {
+					yield* Console.log(`  ${result.endpoint}/${key}`);
+				}
+				return;
+			}
+			case "status": {
+				if (hasHelp(rest)) {
+					yield* Console.log(ossStatusUsage());
+					return;
+				}
+				const env = parseOssEnv(rest, "dev");
+				const result = yield* withSpinner("Checking OSS status...", ossStatus({ env }));
+				yield* Console.log(`env: ${result.env}`);
+				yield* Console.log(`total local files: ${result.totalLocal}`);
+				yield* Console.log(`manifest entries: ${result.manifestEntries}`);
+				yield* Console.log(`pending uploads: ${result.pendingUploads}`);
+				yield* Console.log(`pending deletions: ${result.pendingDeletions}`);
+				yield* Console.log(`manifest: ${result.manifestPath}`);
+				return;
+			}
+			case "setup": {
+				if (hasHelp(rest)) {
+					yield* Console.log(ossSetupUsage());
+					return;
+				}
+				const env = parseOssEnv(rest, "dev");
+				const endpoint = parseFlag(rest, "--endpoint");
+				const region = parseFlag(rest, "--region");
+				const bucket = parseFlag(rest, "--bucket");
+				const localDir = parseFlag(rest, "--local-dir");
+				const remotePrefix = parseFlag(rest, "--remote-prefix");
+
+				if (!endpoint && !region && !bucket && !localDir && remotePrefix === undefined) {
+					yield* withSpinner("Initializing OSS config...", ossInitBlank());
+					yield* Console.log("OSS scaffold written to .fizzy.yaml");
+					yield* Console.log("Edit endpoint, region, bucket, local_dir, remote_prefix in the file");
+					yield* Console.log("");
+					yield* Console.error(`Configuring keys for [${env}]:`);
+					const accessKeyId = yield* promptSecret(`  Access Key ID: `);
+					const secretAccessKey = yield* promptSecret(`  Secret Access Key: `);
+					if (!accessKeyId || !secretAccessKey) {
+						yield* Console.log(
+							"Keys not provided — add them later with: fizzyx oss setup --env <name>",
+						);
+						return;
+					}
+					yield* withSpinner(
+						"Storing credentials...",
+						ossStoreCredentials(env, accessKeyId, secretAccessKey),
+					);
+					yield* Console.log(`Credentials stored in OS keychain (service: fizzyx-oss)`);
+					return;
+				}
+
+				if (!endpoint || !region || !bucket || !localDir || remotePrefix === undefined) {
+					throw new Error(ossSetupUsage());
+				}
+
+				yield* Console.error(`Configuring OSS [${env}]:`);
+				const accessKeyId = yield* promptSecret(`  Access Key ID: `);
+				const secretAccessKey = yield* promptSecret(`  Secret Access Key: `);
+				if (!accessKeyId || !secretAccessKey) {
+					throw new Error("Access Key ID and Secret Access Key are required");
+				}
+
+				const input: OssSetupInput = {
+					env,
+					config: { endpoint, region, bucket, accessKeyId, secretAccessKey },
+					sync: { localDir, remotePrefix },
+				};
+				const result = yield* withSpinner("Writing OSS config...", ossSetup(input));
+				const resultEnvConfig = result.environments[env];
+				if (!resultEnvConfig) throw new Error(`OSS environment "${env}" not found after setup`);
+				yield* Console.log(`OSS ${env} config written to ${resultEnvConfig.endpoint}`);
+				yield* Console.log(`Credentials stored in OS keychain (service: fizzyx-oss)`);
+				return;
+			}
+			default:
+				throw new Error(`unknown oss command: ${command}\n\n${ossUsage()}`);
+		}
+	});
+
+const parseOssEnv = (args: ReadonlyArray<string>, defaultEnv: string): string => {
+	if (args.includes("--prod")) return "prod";
+	if (args.includes("--env")) {
+		const idx = args.indexOf("--env");
+		const val = args[idx + 1];
+		if (val) return val;
+	}
+	return defaultEnv;
+};
+
 const parseSetup = (args: ReadonlyArray<string>): SetupProjectConfigInput => {
 	const list = args.includes("--list");
 	const flags = args.filter((arg) => arg.startsWith("--"));
@@ -545,6 +676,22 @@ const parseFlag = (args: ReadonlyArray<string>, name: string): string | undefine
 const firstNonFlag = (args: ReadonlyArray<string>): string | undefined =>
 	args.find((arg) => !arg.startsWith("--"));
 
+const promptSecret = (message: string): Effect.Effect<string, Error> =>
+	Effect.tryPromise({
+		try: () =>
+			new Promise<string>((resolve) => {
+				const rl = require("node:readline").createInterface({
+					input: process.stdin,
+					output: process.stderr,
+				});
+				rl.question(message, (value: string) => {
+					rl.close();
+					resolve(value.trim());
+				});
+			}),
+		catch: (cause) => new Error(String(cause)),
+	});
+
 const readDescription = (path: string) =>
 	path === "-"
 		? Effect.tryPromise({
@@ -574,14 +721,14 @@ const isValidCommentTemplateKind = (value: string | undefined): value is FlowCom
 	value === "handoff" ||
 	value === "note";
 
-const loadFlowCardLanguage = () => {
-	const configRepo = makeBunConfigRepository();
-	return configRepo.loadProjectConfigOptional().pipe(
-		Effect.catchDefect(() => Effect.succeed(undefined)),
-		Effect.catch(() => Effect.succeed(undefined)),
-		Effect.map((projectConfig) => projectConfig?.flow?.card?.language || DEFAULT_CARD_LANGUAGE),
+const loadFlowCardLanguage = () =>
+	Effect.flatMap(ConfigRepo, (configRepo) =>
+		configRepo.loadProjectConfigOptional().pipe(
+			Effect.catchDefect(() => Effect.succeed(undefined)),
+			Effect.catch(() => Effect.succeed(undefined)),
+			Effect.map((projectConfig) => projectConfig?.flow?.card?.language || DEFAULT_CARD_LANGUAGE),
+		),
 	);
-};
 
 const flowWorkflow = (language: FlowCardLanguage): string => {
 	if (language === "en") {
@@ -597,6 +744,12 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 - edit card content and steps in /tmp/card.md
 - fizzyx flow add <user> "<title>" --desc /tmp/card.md
 
+## Column flow
+Cards move through columns: TODO → IN PROGRESS → DONE
+
+- \`fizzyx flow start <card>\` — moves card from TODO to IN PROGRESS, self-assigns
+- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — moves to DONE, comments, closes
+
 ## Daily
 - fizzyx flow mine --fresh
 - fizzyx flow start <card>
@@ -611,7 +764,7 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 ## Complete
 - fizzyx flow complete-steps <card>
 - fizzyx flow done <card> "commit <sha>: <subject>"
-- fizzyx flow done writes the standardized done comment and closes the card, so no separate close/comment step is needed.
+- \`flow done\` moves to DONE, writes the standardized done comment, and closes the card.
 
 ## Block
 - fizzyx flow block <card> "<reason>"
@@ -635,6 +788,12 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 - 编辑卡片描述和步骤后提交
 - fizzyx flow add <user> "<title>" --desc /tmp/card.md
 
+## Column flow / 列流转
+Cards: TODO → IN PROGRESS → DONE
+
+- \`fizzyx flow start <card>\` — TODO → IN PROGRESS, self-assign
+- \`fizzyx flow done <card>\` — → DONE + close
+
 ## Daily / 日常
 - fizzyx flow mine --fresh
 - fizzyx flow start <card>
@@ -649,7 +808,7 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 ## Done / 完成
 - fizzyx flow complete-steps <card>
 - fizzyx flow done <card> "commit <sha>: <subject>"
-- \`flow done\` 会写入标准完成评论并关闭卡片，无需额外进行 close/comment 操作。
+- \`flow done\` 移入 DONE 列、写入标准完成评论、关闭卡片。
 
 ## Block / 阻塞
 - fizzyx flow block <card> "<reason>"
@@ -672,6 +831,12 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 - 编辑模板并补充内容
 - fizzyx flow add <user> "<title>" --desc /tmp/card.md
 
+## 列流转
+卡片流转: TODO → IN PROGRESS → DONE
+
+- \`fizzyx flow start <card>\` — TODO → IN PROGRESS, 自指派
+- \`fizzyx flow done <card>\` — → DONE + 关闭
+
 ## 每日
 - fizzyx flow mine --fresh
 - fizzyx flow start <card>
@@ -686,7 +851,7 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 ## 完成
 - fizzyx flow complete-steps <card>
 - fizzyx flow done <card> "commit <sha>: <subject>"
-- \`flow done\` 会写入标准完成评论并关闭卡片，不要重复 close/comment。
+- \`flow done\` 移入 DONE 列、写入标准完成评论、关闭卡片。
 
 ## 阻塞
 - fizzyx flow block <card> "<reason>"
@@ -721,6 +886,18 @@ argument-hint: "[flow action] [args...]"
 
 Use \`fizzyx flow ...\` for board workflow. Do not use the legacy official CLI
 for project workflow. If \`fizzyx flow\` lacks an operation, stop and ask.
+
+## Workflow
+
+Cards move through columns: **TODO** → **IN PROGRESS** → **DONE**
+
+| Phase | Command | Action |
+|-------|---------|--------|
+| Start | \`fizzyx flow start <card>\` | Move TODO → IN PROGRESS, self-assign |
+| Steps | \`fizzyx flow complete-steps <card>\` | Mark all pending steps done |
+| Done | \`fizzyx flow done <card> "commit <sha>: <subject>"\` | Move to DONE, comment, close |
+
+**Never** close a card directly without \`flow done\`.
 
 ## Context Loading
 
@@ -791,8 +968,7 @@ fizzyx flow std-all
 
 - Do not create cards for typo fixes or tiny chore commits.
 - Do not maintain a parallel progress document; board is execution state.
-- Before closing, run \`fizzyx flow complete-steps <card>\`.
-- Close with \`fizzyx flow done <card> "commit <sha>: <subject>"\`.
+- Before closing: run \`fizzyx flow complete-steps <card>\` then \`fizzyx flow done <card>\`.
 - Keep comments concise; use \`fizzyx flow comment-template <kind>\` for format.`;
 
 const isHelpCommand = (value: string | undefined): value is "help" | "--help" | "-h" =>
@@ -802,10 +978,11 @@ const hasHelp = (args: ReadonlyArray<string>): boolean => args.some(isHelpComman
 
 const topUsage = (): string => `fizzyx <command>
 
-			commands:
+commands:
   setup
   auth
   flow
+  oss
 
 Use:
   fizzyx <command> -h
@@ -992,3 +1169,19 @@ const getTemplateLabels = (language: FlowCardLanguage) => {
 const authLoginUsage = (): string => "fizzyx auth login <token>";
 const authStatusUsage = (): string => "fizzyx auth status";
 const authLogoutUsage = (): string => "fizzyx auth logout";
+
+const ossUsage = (): string => `fizzyx oss <command>
+
+commands:
+  sync [--env <name>] [--full]
+  status [--env <name>]
+  setup [--env <name> --endpoint <url> --region <region> --bucket <name>
+         --local-dir <path> --remote-prefix <prefix>]`;
+
+const ossSyncUsage = (): string =>
+	"fizzyx oss sync [--env <name>] [--full]\n  --full: ignore manifest, force full upload";
+
+const ossStatusUsage = (): string => "fizzyx oss status [--env <name>]";
+
+const ossSetupUsage = (): string =>
+	`fizzyx oss setup --env <name> --endpoint <url> --region <region> --bucket <name> --local-dir <path> --remote-prefix <prefix>\n  With no flags: init blank OSS scaffold in .fizzy.yaml, then prompt for keys\nKeys are prompted interactively (not from args) to avoid shell history.`;

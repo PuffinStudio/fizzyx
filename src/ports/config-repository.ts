@@ -1,7 +1,14 @@
 import type { Effect } from "effect";
+import { Context } from "effect";
 import type { ConfigError, FileError } from "../domain/errors";
-import type { InitializedProjectConfig, ProjectConfig } from "../domain/models";
-import type { Credentials } from "../domain/models";
+import type {
+	Credentials,
+	InitializedProjectConfig,
+	OssConfig,
+	OssEnvironmentConfig,
+	OssEnvironmentName,
+	ProjectConfig,
+} from "../domain/models";
 
 export interface ConfigRepository {
 	loadProjectConfig: () => Effect.Effect<ProjectConfig, ConfigError | FileError>;
@@ -12,6 +19,7 @@ export interface ConfigRepository {
 	setupProjectConfig: (
 		input: SetupProjectConfigInput,
 	) => Effect.Effect<InitializedProjectConfig, FileError>;
+	setupOssConfig: (input: OssSetupInput) => Effect.Effect<OssConfig, FileError>;
 	loadCredentials: (profile: string) => Effect.Effect<Credentials, FileError>;
 	migrateCredentialsFromOfficial: (profile: string) => Effect.Effect<Credentials, FileError>;
 	saveCredentials: (profile: string, credentials: Credentials) => Effect.Effect<void, FileError>;
@@ -26,5 +34,18 @@ export interface SetupProjectConfigInput {
 	inProgressColumn?: string;
 	users?: Record<string, string>;
 	apiUrl?: string;
+	configPath?: string;
+}
+
+export const ConfigRepo = Context.Service<ConfigRepository>("ConfigRepo");
+
+export interface OssSetupInput {
+	env: OssEnvironmentName;
+	config: OssEnvironmentConfig;
+	sync: {
+		localDir: string;
+		remotePrefix: string;
+		concurrency?: number;
+	};
 	configPath?: string;
 }

@@ -22,4 +22,16 @@ export class FileError extends Data.TaggedError("FileError")<{
 	path?: string;
 }> {}
 
-export type FizzyxError = ConfigError | AuthError | ApiError | ValidationError | FileError;
+export class OssError extends Data.TaggedError("OssError")<{
+	message: string;
+	key?: string;
+	status?: number;
+}> {}
+
+export type FizzyxError =
+	| ConfigError
+	| AuthError
+	| ApiError
+	| ValidationError
+	| FileError
+	| OssError;

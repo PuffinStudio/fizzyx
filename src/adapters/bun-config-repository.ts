@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { existsSync } from "node:fs";
 import { ConfigError, FileError } from "../domain/errors";
 import { DEFAULT_FLOW_CARD_LANGUAGE, type FlowCardLanguage } from "../domain/models";
@@ -6,9 +6,17 @@ import type {
 	Credentials,
 	FlowConfig,
 	InitializedProjectConfig,
+	OssConfig,
+	OssEnvironmentConfig,
+	OssSyncConfig,
 	ProjectConfig,
 } from "../domain/models";
-import type { ConfigRepository, SetupProjectConfigInput } from "../ports/config-repository";
+import type {
+	ConfigRepository,
+	OssSetupInput,
+	SetupProjectConfigInput,
+} from "../ports/config-repository";
+import { ConfigRepo } from "../ports/config-repository";
 
 const CONFIG_FILE = ".fizzy.yaml";
 const OFFICIAL_CONFIG_FILE = ".config/fizzy/config.yaml";
@@ -44,6 +52,22 @@ export const makeBunConfigRepository = (): ConfigRepository => ({
 			const config = renderProjectConfig(input, existingText);
 			yield* writeText(path, config, 0o600);
 			return parseProjectConfig(config, path, dirname(path)) as InitializedProjectConfig;
+		}),
+
+	setupOssConfig: (input) =>
+		Effect.gen(function* () {
+			const path = input.configPath || `${process.cwd()}/${CONFIG_FILE}`;
+			const existingText = yield* readOptionalText(path);
+			const config = renderOssConfig(input, existingText);
+			yield* writeText(path, config, 0o600);
+			const parsed = parseOssConfig(parseYaml(config).oss);
+			if (!parsed) {
+				return yield* new FileError({
+					message: "Failed to parse OSS config after writing",
+					path,
+				});
+			}
+			return parsed;
 		}),
 
 	loadCredentials: (profile) =>
@@ -89,6 +113,8 @@ export const makeBunConfigRepository = (): ConfigRepository => ({
 			});
 		}),
 });
+
+export const Live = Layer.sync(ConfigRepo, () => makeBunConfigRepository());
 
 const saveCredentials = (
 	profile: string,
@@ -225,12 +251,14 @@ const parseProjectConfig = (text: string, configPath: string, rootDir: string): 
 	const apiUrl = stringValue(raw.api_url) || DEFAULT_API_URL;
 	const board = stringValue(raw.board) || undefined;
 	const flow = parseFlowConfig(raw.flow);
+	const oss = parseOssConfig(raw.oss);
 	if (!board) {
 		return {
 			apiUrl,
 			account,
 			board: undefined,
 			flow,
+			oss,
 			configPath,
 			rootDir,
 		};
@@ -241,6 +269,7 @@ const parseProjectConfig = (text: string, configPath: string, rootDir: string): 
 		account,
 		board,
 		flow,
+		oss,
 		configPath,
 		rootDir,
 	};
@@ -274,103 +303,38 @@ const parseFlowConfig = (raw: unknown): FlowConfig | undefined => {
 };
 
 const renderProjectConfig = (input: SetupProjectConfigInput, existingText = ""): string => {
-	const apiUrl = input.apiUrl || DEFAULT_API_URL;
-	const account = input.account || DEFAULT_ACCOUNT;
-	const board = input.board || "";
+	const existing = parseYaml(existingText);
+	const existingFlow = objectValue(existing.flow);
+
+	const cardLanguage = parseCardLanguage(existingFlow.card) || DEFAULT_FLOW_CARD_LANGUAGE;
+
 	const flow = {
 		columns: {
-			todo: input.todoColumn || "",
-			in_progress: input.inProgressColumn || "",
+			todo: input.todoColumn || stringValue(objectValue(existingFlow.columns).todo) || "",
+			in_progress:
+				input.inProgressColumn || stringValue(objectValue(existingFlow.columns).in_progress) || "",
 		},
 		users: parseUsersInput(input.users || {}),
-		card: {
-			language: DEFAULT_FLOW_CARD_LANGUAGE,
-		},
-		wip_limit: DEFAULT_WIP_LIMIT,
-		cache_ttl: DEFAULT_CACHE_TTL_SECONDS,
+		card: { language: cardLanguage },
+		wip_limit: numberValue(existingFlow.wip_limit) || DEFAULT_WIP_LIMIT,
+		cache_ttl: numberValue(existingFlow.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
 	} satisfies YamlObject;
 
-	const existing = parseYaml(existingText);
-	const mergedEntries = mergeFlowIntoConfig(existing, flow, account, board, apiUrl);
-	return serializeYaml(mergedEntries);
-};
+	const ordered: YamlObject = {};
 
-const mergeFlowIntoConfig = (
-	existing: YamlObject,
-	flow: YamlObject,
-	account: string,
-	board: string,
-	apiUrl: string,
-): Array<[string, YamlValue]> => {
-	const entries: Array<[string, YamlValue]> = [];
-	const keys = new Set(Object.keys(existing));
+	ordered.api_url = input.apiUrl || DEFAULT_API_URL;
+	ordered.account = input.account || DEFAULT_ACCOUNT;
+	ordered.board = input.board || "";
 
-	if (!keys.has("api_url")) {
-		entries.push(["api_url", apiUrl]);
-	}
-	if (!keys.has("account")) {
-		entries.push(["account", account]);
-	}
-	if (!keys.has("board")) {
-		entries.push(["board", board]);
-	}
-
-	let hasFlow = false;
-	for (const [key, value] of Object.entries(existing)) {
-		if (key === "api_url") {
-			entries.push([key, apiUrl]);
-			continue;
+	for (const key of Object.keys(existing)) {
+		if (key !== "api_url" && key !== "account" && key !== "board" && key !== "flow") {
+			ordered[key] = existing[key] as YamlValue;
 		}
-		if (key === "account") {
-			entries.push([key, account]);
-			continue;
-		}
-		if (key === "board") {
-			entries.push([key, board]);
-			continue;
-		}
-		if (key === "flow") {
-			hasFlow = true;
-			entries.push([key, mergeFlowConfig(objectValue(value), flow)]);
-			continue;
-		}
-		entries.push([key, value]);
 	}
 
-	if (!hasFlow) {
-		entries.push(["flow", flow]);
-	}
+	ordered.flow = flow;
 
-	return entries;
-};
-
-const mergeFlowConfig = (current: YamlObject, next: YamlObject): YamlObject => {
-	const currentColumns = objectValue(current.columns);
-	const nextColumns = objectValue(next.columns);
-	const nextUsers = objectValue(next.users);
-	const currentCard = objectValue(current.card);
-	const nextCard = objectValue(next.card);
-
-	const cardLanguage =
-		parseCardLanguage(currentCard) || parseCardLanguage(nextCard) || DEFAULT_FLOW_CARD_LANGUAGE;
-
-	return {
-		...current,
-		columns: {
-			todo: stringValue(nextColumns.todo) || stringValue(currentColumns.todo) || "",
-			in_progress:
-				stringValue(nextColumns.in_progress) || stringValue(currentColumns.in_progress) || "",
-		},
-		users: nextUsers,
-		wip_limit: numberValue(next.wip_limit) || numberValue(current.wip_limit) || DEFAULT_WIP_LIMIT,
-		cache_ttl:
-			numberValue(next.cache_ttl) || numberValue(current.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
-		card: {
-			...currentCard,
-			...nextCard,
-			language: cardLanguage,
-		},
-	};
+	return Bun.YAML.stringify(ordered, null, 2);
 };
 
 const parseCardLanguage = (value: unknown): FlowCardLanguage | undefined => {
@@ -382,59 +346,88 @@ const parseCardLanguage = (value: unknown): FlowCardLanguage | undefined => {
 	return undefined;
 };
 
-const serializeYaml = (entries: Array<[string, YamlValue]>, indent = 0): string => {
-	const lines = renderYamlEntries(entries, indent);
-	lines.push("");
-	return lines.join("\n");
+// ─── OSS config ──────────────────────────────────────────────
+
+const parseOssConfig = (raw: unknown): OssConfig | undefined => {
+	const oss = objectValue(raw);
+	if (!oss) return undefined;
+
+	const sync = parseOssSyncConfig(oss.sync);
+	if (!sync) return undefined;
+
+	const environments: Record<string, OssEnvironmentConfig> = {};
+	for (const key of Object.keys(oss)) {
+		if (key === "sync") continue;
+		const env = parseOssEnvConfig(oss[key]);
+		if (env) environments[key] = env;
+	}
+
+	if (Object.keys(environments).length === 0) return undefined;
+
+	return { environments, sync };
 };
 
-const renderYamlEntries = (entries: Array<[string, YamlValue]>, indent: number): string[] => {
-	const spaces = " ".repeat(indent);
-	const lines: string[] = [];
+const parseOssEnvConfig = (raw: unknown): OssEnvironmentConfig | undefined => {
+	const obj = objectValue(raw);
+	const endpoint = stringValue(obj.endpoint);
+	const region = stringValue(obj.region);
+	const bucket = stringValue(obj.bucket);
+	if (!endpoint || !region || !bucket) return undefined;
+	const config: OssEnvironmentConfig = { endpoint, region, bucket };
+	const accessKeyId = stringValue(obj.access_key_id);
+	const secretAccessKey = stringValue(obj.secret_access_key);
+	if (accessKeyId) config.accessKeyId = accessKeyId;
+	if (secretAccessKey) config.secretAccessKey = secretAccessKey;
+	return config;
+};
 
-	for (const [key, value] of entries) {
-		const rendered = formatYamlValue(value, indent);
-		if (rendered.startsWith("\n")) {
-			lines.push(`${spaces}${key}:${rendered}`);
+const parseOssSyncConfig = (raw: unknown): OssSyncConfig | undefined => {
+	const obj = objectValue(raw);
+	const localDir = stringValue(obj.local_dir);
+	const remotePrefix = stringValue(obj.remote_prefix);
+	if (!localDir || remotePrefix === undefined) return undefined;
+	return {
+		localDir,
+		remotePrefix,
+		concurrency: numberValue(obj.concurrency) || 10,
+	};
+};
+
+const renderOssConfig = (input: OssSetupInput, existingText: string): string => {
+	const existing = parseYaml(existingText);
+	const envKey = input.env;
+
+	const existingOss = objectValue(existing.oss);
+
+	const mergedOss: YamlObject = {
+		...existingOss,
+		[envKey]: {
+			...(existingOss[envKey] as YamlObject | undefined),
+			endpoint: input.config.endpoint,
+			region: input.config.region,
+			bucket: input.config.bucket,
+		},
+		sync: {
+			...(existingOss.sync as YamlObject | undefined),
+			local_dir: input.sync.localDir,
+			remote_prefix: input.sync.remotePrefix,
+			concurrency: input.sync.concurrency ?? 10,
+		},
+	};
+
+	const ordered: YamlObject = {};
+	for (const [key, value] of Object.entries(existing)) {
+		if (key === "oss") {
+			ordered[key] = mergedOss;
 		} else {
-			lines.push(`${spaces}${key}: ${rendered}`);
+			ordered[key] = value;
 		}
 	}
-
-	return lines;
-};
-
-const formatYamlValue = (value: YamlValue, indent: number): string => {
-	if (value === null || typeof value === "number" || typeof value === "boolean") {
-		return JSON.stringify(value);
+	if (!("oss" in existing)) {
+		ordered.oss = mergedOss;
 	}
 
-	if (typeof value === "string") {
-		return value;
-	}
-
-	if (Array.isArray(value)) {
-		if (value.length === 0) return "[]";
-		const itemIndent = indent + 2;
-		const items = value.map((entry) => formatYamlArrayItem(entry, itemIndent));
-		return `\n${items.join("\n")}`;
-	}
-
-	if (Object.keys(value).length === 0) {
-		return "{}";
-	}
-
-	const lines = renderYamlEntries(Object.entries(value), indent + 2).join("\n");
-	return `\n${lines}`;
-};
-
-const formatYamlArrayItem = (value: YamlValue, indent: number): string => {
-	const spaces = " ".repeat(indent);
-	const rendered = formatYamlValue(value, indent);
-	if (rendered.startsWith("\n")) {
-		return `${spaces}-\n${rendered.slice(1)}`;
-	}
-	return `${spaces}- ${rendered}`;
+	return Bun.YAML.stringify(ordered, null, 2);
 };
 
 type YamlValue = string | number | boolean | null | YamlObject | readonly YamlValue[];

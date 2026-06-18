@@ -13,8 +13,8 @@ import type {
 import type { CacheRepository } from "../ports/cache-repository";
 import type { ConfigRepository, SetupProjectConfigInput } from "../ports/config-repository";
 import type { FizzyApi } from "../ports/fizzy-api";
+import { ConfigRepo } from "../ports/config-repository";
 import { makeBunCacheRepository } from "../adapters/bun-cache-repository";
-import { makeBunConfigRepository } from "../adapters/bun-config-repository";
 import { makeFetchFizzyApi } from "../adapters/fetch-fizzy-api";
 
 export interface Env {
@@ -97,7 +97,7 @@ export const getStandardizedCommentTemplate = (
 };
 
 export const makeEnv = Effect.gen(function* () {
-	const configRepo = makeBunConfigRepository();
+	const configRepo = yield* ConfigRepo;
 	const config = yield* configRepo.loadProjectConfig();
 	const board = yield* requireBoard(config);
 	const credentials = yield* configRepo.loadCredentials(config.account).pipe(
@@ -115,7 +115,7 @@ export const makeEnv = Effect.gen(function* () {
 });
 
 export const makeFlowEnv = Effect.gen(function* () {
-	const configRepo = makeBunConfigRepository();
+	const configRepo = yield* ConfigRepo;
 	const config = yield* configRepo.loadProjectConfig();
 	const board = yield* requireBoard(config);
 	const credentials = yield* configRepo.loadCredentials(config.account).pipe(
@@ -185,7 +185,7 @@ const requireBoard = (config: ProjectConfig): Effect.Effect<string, ValidationEr
 
 export const setup = (input: SetupProjectConfigInput) =>
 	Effect.gen(function* () {
-		const configRepo = makeBunConfigRepository();
+		const configRepo = yield* ConfigRepo;
 		if (!input.board) {
 			return yield* new ValidationError({ message: "board is required" });
 		}
@@ -232,7 +232,7 @@ export const setup = (input: SetupProjectConfigInput) =>
 
 export const listBoards = () =>
 	Effect.gen(function* () {
-		const configRepo = makeBunConfigRepository();
+		const configRepo = yield* ConfigRepo;
 		const config = yield* loadConfigOrDefaults(configRepo);
 		const credentials = yield* configRepo.loadCredentials(config.account).pipe(
 			Effect.catch(() =>
@@ -334,14 +334,14 @@ export const initFlow = () =>
 
 export const authLogin = (token: string) =>
 	Effect.gen(function* () {
-		const configRepo = makeBunConfigRepository();
+		const configRepo = yield* ConfigRepo;
 		const config = yield* loadConfigOrDefaults(configRepo);
 		yield* configRepo.saveCredentials(config.account, { token });
 		return config.account;
 	});
 
 export const authStatus = Effect.gen(function* () {
-	const configRepo = makeBunConfigRepository();
+	const configRepo = yield* ConfigRepo;
 	const config = yield* loadConfigOrDefaults(configRepo);
 	const credentials = yield* configRepo.loadCredentials(config.account).pipe(Effect.option);
 	if (credentials._tag === "None") {
@@ -373,7 +373,7 @@ export const authStatus = Effect.gen(function* () {
 });
 
 export const authLogout = Effect.gen(function* () {
-	const configRepo = makeBunConfigRepository();
+	const configRepo = yield* ConfigRepo;
 	const config = yield* loadConfigOrDefaults(configRepo);
 	yield* configRepo.deleteCredentials(config.account);
 	return config.account;
@@ -478,6 +478,10 @@ export const done = (env: InitializedEnv, number: number, ref?: string) =>
 				message: `Cannot close #${number}: unfinished steps remain\n${formatted}`,
 			});
 		}
+
+		const columns = yield* env.api.listColumns();
+		const doneColumnId = yield* ensureColumn(columns, "DONE", () => env.api.createColumn("DONE"));
+		yield* env.api.moveCard(number, doneColumnId);
 
 		const finalRef = ref || "done";
 		yield* env.api.comment(
@@ -755,7 +759,6 @@ const ensureFlowConfig = (args: {
 		const inProgressColumn = yield* ensureColumn(columns, "INPROGRESS", () =>
 			args.api.createColumn("INPROGRESS"),
 		);
-
 		return yield* args.configRepo.setupProjectConfig({
 			account: args.config.account,
 			board: args.config.board,
@@ -823,7 +826,9 @@ const resolveBoardUser = (boardUsers: Record<string, string>, user: string): str
 		const knownIds = Object.values(boardUsers);
 		if (!knownIds.includes(user)) {
 			const members = Object.keys(boardUsers).join(", ");
-			throw new ValidationError({ message: `User ID ${user} is not a board member. Known members: ${members}` });
+			throw new ValidationError({
+				message: `User ID ${user} is not a board member. Known members: ${members}`,
+			});
 		}
 		return user;
 	}
@@ -833,11 +838,14 @@ const resolveBoardUser = (boardUsers: Record<string, string>, user: string): str
 
 export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
-		if (users.length === 0) return yield* new ValidationError({ message: "At least one user is required" });
+		if (users.length === 0)
+			return yield* new ValidationError({ message: "At least one user is required" });
 		const cache = yield* ensureCache(env, false);
 		const boardUsers = { ...cache.users };
 		const userIds = users.map((u) => resolveBoardUser(boardUsers, u));
-		yield* Effect.forEach(userIds, (userId) => env.api.assignCard(number, userId), { concurrency: 1 });
+		yield* Effect.forEach(userIds, (userId) => env.api.assignCard(number, userId), {
+			concurrency: 1,
+		});
 		yield* syncBoard(env);
 		return { number, userIds };
 	});

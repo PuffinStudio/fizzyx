@@ -58,6 +58,8 @@ const makeConfigRepo = (): ConfigRepository =>
 			Effect.fail(new FileError({ message: "config repo not mocked" })),
 		saveCredentials: () => Effect.succeed(undefined),
 		deleteCredentials: () => Effect.succeed(undefined),
+		setupOssConfig: () =>
+			Effect.fail(new FileError({ message: "config repo not mocked", path: "/tmp/.fizzy.yaml" })),
 	}) as ConfigRepository;
 
 const defaultApi = () =>
@@ -411,6 +413,8 @@ test("done posts standardized escaped comment and closes card", async () => {
 		return Effect.succeed(undefined);
 	};
 	api.closeCard = () => Effect.succeed(undefined);
+	api.moveCard = () => Effect.succeed(undefined);
+	api.listColumns = () => Effect.succeed([{ id: "done-col", name: "DONE" }]);
 	api.identity = () => Effect.succeed({ userId: "identity-id" });
 	api.listCards = (options) => {
 		return Effect.succeed(Array.isArray(options?.all) ? [] : []);

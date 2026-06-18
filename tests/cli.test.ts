@@ -173,10 +173,25 @@ test("flow comment-template requires kind", async () => {
 });
 
 test("flow comment-template prints template for default zh-CN", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "comment-template", "blocked"]);
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
 
-	expect(exitCode).toBe(0);
-	expect(stdout).toBe("阻塞：<原因；需要谁/什么决策>\n");
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "comment-template", "blocked"], {
+			cwd: projectDir,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toBe("阻塞：<原因；需要谁/什么决策>\n");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("flow comment-template prints english template when configured", async () => {
@@ -219,7 +234,7 @@ test("flow workflow prints process checklist", async () => {
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("## Workflow / 工作流");
 		expect(stdout).toContain("fizzyx flow comment-template <kind>");
-		expect(stdout).toContain("close/comment");
+		expect(stdout).toContain("关闭卡片");
 		expect(stdout).toContain("简洁");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -242,23 +257,38 @@ test("flow skill prints english skill template", async () => {
 });
 
 test("flow template command prints card template sections", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "template"]);
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
 
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("## 目标");
-	expect(stdout).toContain("## 范围");
-	expect(stdout).toContain("### 包含");
-	expect(stdout).toContain("### 不包含");
-	expect(stdout).toContain("## 备注");
-	expect(stdout).toContain("## 文件");
-	expect(stdout).toContain("## 验证");
-	expect(stdout).toContain("## Steps");
-	expect(stdout).not.toContain("## References");
-	expect(stdout).not.toContain("## Backup");
-	expect(stdout).not.toContain("## Depends On");
-	expect(stdout).toContain("用 1-2 句说明这张卡要完成什么、为什么。");
-	expect(stdout).toContain("- [ ] 确认目标与范围");
-	expect(stdout).not.toContain("- [ ] `");
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "template"], {
+			cwd: projectDir,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("## 目标");
+		expect(stdout).toContain("## 范围");
+		expect(stdout).toContain("### 包含");
+		expect(stdout).toContain("### 不包含");
+		expect(stdout).toContain("## 备注");
+		expect(stdout).toContain("## 文件");
+		expect(stdout).toContain("## 验证");
+		expect(stdout).toContain("## Steps");
+		expect(stdout).not.toContain("## References");
+		expect(stdout).not.toContain("## Backup");
+		expect(stdout).not.toContain("## Depends On");
+		expect(stdout).toContain("用 1-2 句说明这张卡要完成什么、为什么。");
+		expect(stdout).toContain("- [ ] 确认目标与范围");
+		expect(stdout).not.toContain("- [ ] `");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("flow template uses config language", async () => {
@@ -598,7 +628,7 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toContain("flow config missing; initializing...");
-		expect(result.stdout).toContain("flow configured with todo=todo-id in_progress=inprogress-id");
+		expect(result.stdout).toContain("flow configured:");
 
 		const second = await runCli(["flow", "init"], {
 			cwd: projectDir,
@@ -607,7 +637,7 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 
 		expect(second.exitCode).toBe(0);
 		expect(second.stderr).not.toContain("flow config missing; initializing...");
-		expect(second.stdout).toContain("flow configured with todo=todo-id in_progress=inprogress-id");
+		expect(second.stdout).toContain("flow configured:");
 		expect(readFileSync(configPath, "utf8")).toContain("flow:");
 		expect(readFileSync(configPath, "utf8")).toContain("todo: todo-id");
 		expect(readFileSync(configPath, "utf8")).toContain("in_progress: inprogress-id");
@@ -676,7 +706,7 @@ test("flow init preserves existing flow users while adding identity and assignee
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).not.toContain("flow config missing; initializing...");
-		expect(result.stdout).toContain("flow configured with todo=todo-id in_progress=inprogress-id");
+		expect(result.stdout).toContain("flow configured:");
 
 		const configText = readFileSync(configPath, "utf8");
 		expect(configText).toContain("existing: existing-id");

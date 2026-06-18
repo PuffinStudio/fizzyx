@@ -1,7 +1,17 @@
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { FileError } from "../domain/errors";
 import type { BoardCache } from "../domain/models";
 import type { CacheRepository } from "../ports/cache-repository";
+import { CacheRepo } from "../ports/cache-repository";
+import { ConfigRepo } from "../ports/config-repository";
+
+export const Live = Layer.effect(CacheRepo)(
+	Effect.gen(function* () {
+		const configRepo = yield* ConfigRepo;
+		const config = yield* configRepo.loadProjectConfig();
+		return makeBunCacheRepository(config.account, config.board ?? "");
+	}),
+);
 
 const CACHE_ROOT = ".config/fizzyx/cache";
 

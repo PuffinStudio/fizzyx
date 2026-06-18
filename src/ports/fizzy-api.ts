@@ -1,4 +1,4 @@
-import type { Effect } from "effect";
+import { Context, type Effect } from "effect";
 import type { ApiError } from "../domain/errors";
 import type { Board, BoardColumn, Card, CardNumber, Comment, Identity } from "../domain/models";
 
@@ -39,3 +39,5 @@ export interface FizzyApi {
 		completed?: boolean,
 	) => Effect.Effect<void, ApiError>;
 }
+
+export const FizzyApi = Context.Service<FizzyApi>("FizzyApi");
