@@ -14,6 +14,7 @@ import type { CacheRepository } from "../ports/cache-repository";
 import type { ConfigRepository, SetupProjectConfigInput } from "../ports/config-repository";
 import type { FizzyApi } from "../ports/fizzy-api";
 import { ConfigRepo } from "../ports/config-repository";
+import { isTaggedError, isTaggedErrorWithMessage } from "../_shared/helpers";
 import { makeBunCacheRepository } from "../adapters/bun-cache-repository";
 import { makeFetchFizzyApi } from "../adapters/fetch-fizzy-api";
 
@@ -163,18 +164,6 @@ const loadConfigOrDefaults = (
 
 const isMissingConfigError = (message: string): boolean =>
 	message.startsWith(`No ${CONFIG_FILE} found from`);
-
-const isTaggedError = (error: unknown, tag: string): error is { _tag: string } =>
-	typeof error === "object" &&
-	error !== null &&
-	"_tag" in error &&
-	(error as { _tag: unknown })._tag === tag;
-
-const isTaggedErrorWithMessage = (
-	error: unknown,
-	tag: string,
-): error is { _tag: string; message: string } =>
-	isTaggedError(error, tag) && typeof (error as { message?: unknown }).message === "string";
 
 const requireBoard = (config: ProjectConfig): Effect.Effect<string, ValidationError> =>
 	config.board
@@ -847,10 +836,65 @@ export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray
 		const boardUsers = { ...cache.users };
 		const userIds = users.map((u) => resolveBoardUser(boardUsers, u));
 		yield* Effect.forEach(userIds, (userId) => env.api.assignCard(number, userId), {
-			concurrency: 1,
+			discard: true,
 		});
 		yield* syncBoard(env);
 		return { number, userIds };
+	});
+
+export interface DoctorResult {
+	columns: { name: string; id: string; found: boolean }[];
+	configUpdated: boolean;
+	info: string[];
+	fixes: string[];
+}
+
+export const doctor = (env: InitializedEnv): Effect.Effect<DoctorResult, unknown> =>
+	Effect.gen(function* () {
+		const cache = yield* env.cacheRepo.read().pipe(Effect.catch(() => Effect.succeed(null)));
+		const config = env.config;
+		const info: string[] = [];
+		const fixes: string[] = [];
+		let columnsData = cache?.columns;
+
+		if (!columnsData || columnsData.length === 0) {
+			info.push("Fetched columns from API (not cached)");
+			columnsData = yield* env.api.listColumns();
+		}
+
+		const expected = ["TODO", "INPROGRESS"];
+		const columns: DoctorResult["columns"] = [];
+
+		for (const name of expected) {
+			const match = columnsData.find((c) => c.name.toLowerCase() === name.toLowerCase());
+			if (!match) {
+				fixes.push(`Created missing column "${name}"`);
+				const created = yield* env.api.createColumn(name);
+				columns.push({ name, id: created.id, found: true });
+			} else {
+				columns.push({ name, id: match.id, found: true });
+			}
+		}
+
+		const todoId = columns[0]!.id;
+		const inProgressId = columns[1]!.id;
+		let configUpdated = false;
+
+		if (config.flow?.columns.todo !== todoId || config.flow?.columns.inProgress !== inProgressId) {
+			fixes.push("Updated column IDs in config");
+			yield* env.configRepo.setupProjectConfig({
+				account: config.account,
+				board: config.board,
+				todoColumn: todoId,
+				inProgressColumn: inProgressId,
+				users: config.flow?.users,
+				apiUrl: config.apiUrl,
+				configPath: config.configPath,
+			});
+			configUpdated = true;
+		}
+
+		return { columns, configUpdated, info, fixes };
 	});
 
 const findUserName = (cache: BoardCache, userId: string): string | undefined =>

@@ -166,6 +166,49 @@ export const printSteps = (steps: ReadonlyArray<Pick<Step, "content" | "complete
 	return steps.map((step) => `  + ${step.completed ? "[x]" : "[ ]"} ${step.content}`).join("\n");
 };
 
+export const buildKeyTree = (objects: { key: string; size?: number }[]): string[] => {
+	const formatSize = (bytes: number): string => {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	};
+
+	type Entry = { size?: number; children: Record<string, Entry> };
+	const root: Entry = { children: {} };
+	for (const obj of objects) {
+		const parts = obj.key.split("/");
+		let node = root;
+		for (const part of parts) {
+			if (part === "") continue;
+			if (!node.children[part]) node.children[part] = { children: {} };
+			node = node.children[part] as Entry;
+		}
+		node.size = obj.size;
+	}
+
+	const lines: string[] = [];
+	const walk = (entry: Entry, prefix: string, names: string[]) => {
+		for (let i = 0; i < names.length; i++) {
+			const name = names[i] as string;
+			const child = entry.children[name] as Entry | undefined;
+			if (!child) continue;
+			const childNames = Object.keys(child.children);
+			const last = i === names.length - 1;
+			const indent = prefix + (last ? "    " : "│   ");
+			const sizeLabel = child.size !== undefined ? `  ${formatSize(child.size)}` : "";
+			lines.push(
+				`${prefix}${last ? "└── " : "├── "}${name}${childNames.length > 0 ? "/" : ""}${sizeLabel}`,
+			);
+			if (childNames.length > 0) {
+				walk(child, indent, childNames);
+			}
+		}
+	};
+
+	walk(root, "", Object.keys(root.children));
+	return lines;
+};
+
 const columnName = (card: Card): string => card.column?.name || "TRIAGE";
 
 const assignees = (card: Card): string => {

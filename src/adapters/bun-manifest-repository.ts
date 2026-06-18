@@ -1,7 +1,10 @@
-import { Effect } from "effect";
-import { FileError } from "../domain/errors";
+import { Effect, Layer } from "effect";
+import { dirname } from "node:path";
+import { FileError, ConfigError } from "../domain/errors";
 import type { SyncManifest } from "../domain/models";
 import type { ManifestRepository } from "../ports/manifest-repository";
+import { ManifestRepo } from "../ports/manifest-repository";
+import { ConfigRepo } from "../ports/config-repository";
 
 const MANIFEST_VERSION = 1 as const;
 
@@ -42,12 +45,6 @@ export const makeBunManifestRepository = (projectDir: string): ManifestRepositor
 	return { read, write, path: manifestPath };
 };
 
-const dirname = (p: string): string => {
-	const normalized = p.replace(/\/+$/, "");
-	const index = normalized.lastIndexOf("/");
-	return index <= 0 ? "/" : normalized.slice(0, index);
-};
-
 export const makeEmptyManifest = (localDir: string, remotePrefix: string): SyncManifest => ({
 	version: MANIFEST_VERSION,
 	localDir,
@@ -55,3 +52,12 @@ export const makeEmptyManifest = (localDir: string, remotePrefix: string): SyncM
 	lastSyncedAt: new Date().toISOString(),
 	files: {},
 });
+
+export const Live = Layer.effect(
+	ManifestRepo,
+	Effect.gen(function* () {
+		const configRepo = yield* ConfigRepo;
+		const config = yield* configRepo.loadProjectConfig();
+		return makeBunManifestRepository(config.rootDir);
+	}),
+);

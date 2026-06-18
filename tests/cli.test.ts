@@ -915,13 +915,26 @@ test("auth status preserves existing fizzyx credentials when official one exists
 	const credentialsPath = join(homeDir, ".config", "fizzyx", "credentials", "1.json");
 
 	try {
+		const api = Bun.serve({
+			port: 0,
+			async fetch(req) {
+				if (new URL(req.url).pathname === "/my/identity.json" && req.method === "GET") {
+					return Response.json({
+						user_id: "existing-user",
+						user: { name: "Existing User", email: "existing@example.com" },
+					});
+				}
+				return new Response("not found", { status: 404 });
+			},
+		});
+
 		mkdirSync(projectDir, { recursive: true });
 		mkdirSync(join(homeDir, ".config", "fizzy", "credentials"), {
 			recursive: true,
 		});
 		writeFileSync(
 			officialConfigPath,
-			`token: official-token\naccount: 1\napi_url: https://example.com\nboard: board-1\n`,
+			`token: local-token\naccount: 1\napi_url: http://127.0.0.1:${api.port}\nboard: board-1\n`,
 		);
 		mkdirSync(join(homeDir, ".config", "fizzyx", "credentials"), { recursive: true });
 		writeFileSync(credentialsPath, JSON.stringify({ token: "local-token" }, null, 2));
@@ -936,6 +949,8 @@ test("auth status preserves existing fizzyx credentials when official one exists
 
 		const credentials = JSON.parse(readFileSync(credentialsPath, "utf8"));
 		expect(credentials).toEqual({ token: "local-token" });
+
+		api.stop();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

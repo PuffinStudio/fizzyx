@@ -10,7 +10,6 @@ import {
 	ossStatus,
 	ossList,
 } from "../use-cases/oss-service";
-import { Live as ConfigRepoLive } from "../adapters/bun-config-repository";
 import {
 	add,
 	assign,
@@ -18,6 +17,7 @@ import {
 	authLogout,
 	authStatus,
 	block,
+	doctor,
 	getStandardizedCommentTemplate,
 	completeSteps,
 	done,
@@ -36,61 +36,58 @@ import {
 	stepsFromDescription,
 	syncBoard,
 } from "../use-cases/flow-service";
-import { printCardDetail, printCards, printSteps, renderTable } from "./render";
+import { buildKeyTree, printCardDetail, printCards, printSteps, renderTable } from "./render";
 import { withSpinner } from "./spinner";
 
 export const runCli = (args: ReadonlyArray<string>) =>
-	Effect.provide(
-		Effect.gen(function* () {
-			const [command = "help", ...rest] = args;
-			switch (command) {
-				case "help":
-				case "--help":
-				case "-h":
-					console.log(topUsage());
-					return;
-				case "setup": {
-					if (hasHelp(rest)) {
-						console.log(setupUsage());
-						return;
-					}
-
-					const input = parseSetup(rest);
-					if (input.list) {
-						const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
-						if (boards.length === 0) {
-							console.log("(no boards)");
-							return;
-						}
-
-						console.log(
-							renderTable(boards, [
-								{ header: "id", value: (board) => board.id },
-								{ header: "name", value: (board) => board.name },
-							]),
-						);
-						return;
-					}
-
-					const config = yield* withSpinner("Initializing Fizzy workflow...", setup(input));
-					console.log(`created ${config.configPath}`);
+	Effect.gen(function* () {
+		const [command = "help", ...rest] = args;
+		switch (command) {
+			case "help":
+			case "--help":
+			case "-h":
+				console.log(topUsage());
+				return;
+			case "setup": {
+				if (hasHelp(rest)) {
+					console.log(setupUsage());
 					return;
 				}
-				case "auth":
-					yield* runAuth(rest);
+
+				const input = parseSetup(rest);
+				if (input.list) {
+					const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
+					if (boards.length === 0) {
+						console.log("(no boards)");
+						return;
+					}
+
+					console.log(
+						renderTable(boards, [
+							{ header: "id", value: (board) => board.id },
+							{ header: "name", value: (board) => board.name },
+						]),
+					);
 					return;
-				case "flow":
-					yield* runFlow(rest);
-					return;
-				case "oss":
-					yield* runOss(rest);
-					return;
-				default:
-					throw new Error(legacyCommandErrorMessage(command));
+				}
+
+				const config = yield* withSpinner("Initializing Fizzy workflow...", setup(input));
+				console.log(`created ${config.configPath}`);
+				return;
 			}
-		}),
-		ConfigRepoLive,
-	);
+			case "auth":
+				yield* runAuth(rest);
+				return;
+			case "flow":
+				yield* runFlow(rest);
+				return;
+			case "oss":
+				yield* runOss(rest);
+				return;
+			default:
+				throw new Error(legacyCommandErrorMessage(command));
+		}
+	});
 
 const legacyFlowCommands = {
 	sync: "sync",
@@ -450,6 +447,41 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				}
 				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
 				console.log(flowTemplate(language));
+				return;
+			}
+			case "doctor": {
+				if (hasHelp(rest)) {
+					console.log(flowDoctorUsage());
+					return;
+				}
+				const result = yield* withSpinner(
+					"Checking flow health...",
+					Effect.gen(function* () {
+						const env = yield* makeFlowEnv;
+						return yield* doctor(env);
+					}),
+				);
+				const lines: string[] = [];
+				lines.push("=== Board Health ===");
+				for (const col of result.columns) {
+					const status = col.found ? "✓" : "✗";
+					lines.push(`  ${status} ${col.name}${col.id ? ` (${col.id})` : ""}`);
+				}
+				if (result.info.length > 0) {
+					lines.push("");
+					for (const msg of result.info) {
+						lines.push(`  i ${msg}`);
+					}
+				}
+				if (result.fixes.length > 0) {
+					lines.push("\nFixes:");
+					for (const fix of result.fixes) {
+						lines.push(`  • ${fix}`);
+					}
+				} else {
+					lines.push("\nAll good!");
+				}
+				yield* Console.log(lines.join("\n"));
 				return;
 			}
 			case "init": {
@@ -1106,6 +1138,7 @@ commands:
     template
     steps-from-desc <card>
     init
+    doctor
     flow help`;
 
 const flowSyncUsage = (): string => "fizzyx flow sync";
@@ -1128,6 +1161,7 @@ const flowAssignUsage = (): string => "fizzyx flow assign <card> <user> [user...
 const flowTemplateUsage = (): string => "fizzyx flow template";
 const flowStepsUsage = (): string => "fizzyx flow steps-from-desc <card>";
 const flowInitUsage = (): string => "fizzyx flow init";
+const flowDoctorUsage = (): string => "fizzyx flow doctor";
 
 const DEFAULT_CARD_LANGUAGE: FlowCardLanguage = DEFAULT_FLOW_CARD_LANGUAGE;
 
@@ -1271,46 +1305,3 @@ const ossStatusUsage = (): string => "fizzyx oss status [--env <name>]";
 
 const ossSetupUsage = (): string =>
 	`fizzyx oss setup --env <name> --endpoint <url> --region <region> --local-dir <path> [--bucket <name>] [--remote-prefix <prefix>]\n  With no flags: init blank OSS scaffold in .fizzy.yaml, then prompt for keys\n  --bucket and --remote-prefix are optional; omit if endpoint already contains bucket name\nKeys are prompted interactively (not from args) to avoid shell history.`;
-
-const buildKeyTree = (objects: { key: string; size?: number }[]): string[] => {
-	const formatSize = (bytes: number): string => {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-	};
-
-	type Entry = { size?: number; children: Record<string, Entry> };
-	const root: Entry = { children: {} };
-	for (const obj of objects) {
-		const parts = obj.key.split("/");
-		let node = root;
-		for (const part of parts) {
-			if (part === "") continue;
-			if (!node.children[part]) node.children[part] = { children: {} };
-			node = node.children[part] as Entry;
-		}
-		node.size = obj.size;
-	}
-
-	const lines: string[] = [];
-	const walk = (entry: Entry, prefix: string, names: string[]) => {
-		for (let i = 0; i < names.length; i++) {
-			const name = names[i] as string;
-			const child = entry.children[name] as Entry | undefined;
-			if (!child) continue;
-			const childNames = Object.keys(child.children);
-			const last = i === names.length - 1;
-			const indent = prefix + (last ? "    " : "│   ");
-			const sizeLabel = child.size !== undefined ? `  ${formatSize(child.size)}` : "";
-			lines.push(
-				`${prefix}${last ? "└── " : "├── "}${name}${childNames.length > 0 ? "/" : ""}${sizeLabel}`,
-			);
-			if (childNames.length > 0) {
-				walk(child, indent, childNames);
-			}
-		}
-	};
-
-	walk(root, "", Object.keys(root.children));
-	return lines;
-};

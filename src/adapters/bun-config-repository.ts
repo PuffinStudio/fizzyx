@@ -1,5 +1,6 @@
 import { Effect, Layer } from "effect";
 import { existsSync } from "node:fs";
+import { dirname } from "node:path";
 import { ConfigError, FileError } from "../domain/errors";
 import { DEFAULT_FLOW_CARD_LANGUAGE, type FlowCardLanguage } from "../domain/models";
 import type {
@@ -17,6 +18,7 @@ import type {
 	SetupProjectConfigInput,
 } from "../ports/config-repository";
 import { ConfigRepo } from "../ports/config-repository";
+import { isTaggedError } from "../_shared/helpers";
 
 const CONFIG_FILE = ".fizzy.yaml";
 const OFFICIAL_CONFIG_FILE = ".config/fizzy/config.yaml";
@@ -170,12 +172,6 @@ const officialConfigPath = (): Effect.Effect<string, FileError> =>
 				: Effect.fail(new FileError({ message: String(error) })),
 		),
 	);
-
-const isTaggedError = (error: unknown, tag: string): error is { _tag: string } =>
-	typeof error === "object" &&
-	error !== null &&
-	"_tag" in error &&
-	(error as { _tag: unknown })._tag === tag;
 
 const readText = (path: string): Effect.Effect<string, FileError> =>
 	Effect.tryPromise({
@@ -496,9 +492,3 @@ const numberValue = (value: unknown): number => {
 const objectValue = (value: unknown): YamlObject =>
 	value && typeof value === "object" && !Array.isArray(value) ? (value as YamlObject) : {};
 const safeName = (value: string): string => value.replace(/[^a-zA-Z0-9_.-]/g, "_");
-
-const dirname = (path: string): string => {
-	const normalized = path.replace(/\/+$/, "");
-	const index = normalized.lastIndexOf("/");
-	return index <= 0 ? "/" : normalized.slice(0, index);
-};

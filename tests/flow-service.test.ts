@@ -10,6 +10,7 @@ import {
 	add,
 	completeSteps,
 	buildStandardizedCommentBody,
+	convertDescription,
 	getStandardizedCommentTemplate,
 	done,
 	resolveDoneRefFromGit,
@@ -628,4 +629,20 @@ test("standardizeBoard standardizes unique open and closed cards", async () => {
 
 	expect(result.total).toBe(3);
 	expect(standardized.sort()).toEqual([40, 41, 42]);
+});
+
+test("convertDescription converts rich text to HTML", () => {
+	const html = convertDescription("<div>html</div>");
+	expect(html).toInclude("html");
+
+	const bold = convertDescription("**bold**");
+	expect(bold).toInclude("<strong>bold</strong>");
+
+	const task = convertDescription("- [x] done");
+	expect(task).toInclude('type="checkbox"');
+});
+
+test("convertDescription passes through plain text unchanged", () => {
+	expect(convertDescription("hello world")).toBe("hello world");
+	expect(convertDescription("")).toBe("");
 });
