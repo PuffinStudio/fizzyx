@@ -1,6 +1,4 @@
 import { Console, Effect } from "effect";
-import { DEFAULT_FLOW_CARD_LANGUAGE, type FlowCardLanguage } from "../domain/models";
-import { ConfigRepo } from "../ports/config-repository";
 import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
 import {
 	ossInitBlank,
@@ -37,6 +35,13 @@ import {
 	syncBoard,
 } from "../use-cases/flow-service";
 import { buildKeyTree, printCardDetail, printCards, printSteps, renderTable } from "./render";
+import {
+	formatFlowScaffoldResult,
+	initFlowScaffold,
+	loadFlowSkillContent,
+	loadFlowTemplateContent,
+	loadFlowWorkflowContent,
+} from "./flow-content";
 import { withSpinner } from "./spinner";
 
 export const runCli = (args: ReadonlyArray<string>) =>
@@ -309,25 +314,56 @@ const runFlow = (args: ReadonlyArray<string>) =>
 				if (!isValidCommentTemplateKind(kind)) {
 					throw new Error(flowCommentTemplateUsage());
 				}
-				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
-				console.log(getStandardizedCommentTemplate(language, kind));
+				console.log(getStandardizedCommentTemplate(kind));
 				return;
 			}
 			case "workflow": {
 				if (hasHelp(rest)) {
-					console.log(flowWorkflowUsage());
+					yield* Console.log(flowWorkflowUsage());
 					return;
 				}
-				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
-				console.log(flowWorkflow(language));
+				yield* Console.log(
+					yield* withSpinner("Reading local workflow template...", loadFlowWorkflowContent()),
+				);
 				return;
 			}
 			case "skill": {
-				if (hasHelp(rest)) {
-					console.log(flowSkillUsage());
+				const [subcommand, ...skillRest] = rest;
+
+				if (subcommand === "init") {
+					if (hasHelp(skillRest)) {
+						yield* Console.log(flowSkillInitUsage());
+						return;
+					}
+
+					for (const arg of skillRest) {
+						if (arg !== "--force") {
+							throw new Error(flowSkillInitUsage());
+						}
+					}
+
+					const force = skillRest.includes("--force");
+					const results = yield* withSpinner(
+						"Writing flow skill scaffold...",
+						initFlowScaffold({ force }),
+					);
+					for (const result of results) {
+						yield* Console.log(formatFlowScaffoldResult(result));
+					}
 					return;
 				}
-				console.log(flowSkill());
+
+				if (hasHelp(rest)) {
+					yield* Console.log(flowSkillUsage());
+					return;
+				}
+
+				if (subcommand !== undefined) {
+					throw new Error(flowSkillUsage());
+				}
+
+				const skill = yield* withSpinner("Reading local skill file...", loadFlowSkillContent());
+				yield* Console.log(skill);
 				return;
 			}
 			case "repair-markdown": {
@@ -442,11 +478,12 @@ const runFlow = (args: ReadonlyArray<string>) =>
 			}
 			case "template": {
 				if (hasHelp(rest)) {
-					console.log(flowTemplateUsage());
+					yield* Console.log(flowTemplateUsage());
 					return;
 				}
-				const language = yield* withSpinner("Reading flow config...", loadFlowCardLanguage());
-				console.log(flowTemplate(language));
+				yield* Console.log(
+					yield* withSpinner("Reading local card template...", loadFlowTemplateContent()),
+				);
 				return;
 			}
 			case "doctor": {
@@ -823,267 +860,6 @@ const isValidCommentTemplateKind = (value: string | undefined): value is FlowCom
 	value === "handoff" ||
 	value === "note";
 
-const loadFlowCardLanguage = () =>
-	Effect.flatMap(ConfigRepo, (configRepo) =>
-		configRepo.loadProjectConfigOptional().pipe(
-			Effect.catchDefect(() => Effect.succeed(undefined)),
-			Effect.catch(() => Effect.succeed(undefined)),
-			Effect.map((projectConfig) => projectConfig?.flow?.card?.language || DEFAULT_CARD_LANGUAGE),
-		),
-	);
-
-const flowWorkflow = (language: FlowCardLanguage): string => {
-	if (language === "en") {
-		return `## Workflow
-
-## Setup
-- fizzyx setup <board-id>
-- fizzyx auth login <token>
-- fizzyx auth status
-
-## Create
-- fizzyx flow template > /tmp/card.md
-- edit card content and steps in /tmp/card.md
-- fizzyx flow add <user> "<title>" --desc /tmp/card.md
-
-## Column flow
-Cards move through columns: TODO → IN PROGRESS → DONE
-
-- \`fizzyx flow start <card>\` — moves card from TODO to IN PROGRESS, self-assigns
-- \`fizzyx flow done <card>\` — moves to DONE, auto-detects git ref, comments, closes
-- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — with explicit ref
-
-## Daily
-- fizzyx flow mine --fresh
-- fizzyx flow start <card>
-- fizzyx flow show <card>
-
-## Work
-- Inspect task goal and constraints
-- Draft clear implementation steps
-- Implement changes
-- Verify tests and acceptance criteria
-
-## Complete
-- fizzyx flow complete-steps <card>   — mark all pending steps done (required before done)
-- fizzyx flow done <card>             — moves to DONE, writes comment, closes (ref auto-detected from git)
-- fizzyx flow done <card> "message"   — with explicit ref
-- \`flow done\` REQUIRES all steps complete; otherwise it fails with an error listing unfinished steps.
-
-## Block
-- fizzyx flow block <card> "<reason>"
-- Use \`fizzyx flow comment-template <kind>\` for manual comments, and keep comments concise.
-
-## Card structure
-- Description stores context
-- Steps become Fizzy checklist items`;
-	}
-
-	if (language === "mixed") {
-		return `## Workflow / 工作流
-
-## Setup / 准备
-- fizzyx setup <board-id>
-- fizzyx auth login <token>
-- fizzyx auth status
-
-## Create / 创建
-- fizzyx flow template > /tmp/card.md
-- 编辑卡片描述和步骤后提交
-- fizzyx flow add <user> "<title>" --desc /tmp/card.md
-
-## Column flow / 列流转
-Cards: TODO → IN PROGRESS → DONE
-
-- \`fizzyx flow start <card>\` — TODO → IN PROGRESS, self-assign
-- \`fizzyx flow done <card>\` — → DONE + close (git ref auto-detected)
-- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — explicit ref
-
-## Daily / 日常
-- fizzyx flow mine --fresh
-- fizzyx flow start <card>
-- fizzyx flow show <card>
-
-## Work / 进行中
-- 明确目标与约束
-- 复现并拆分实现步骤
-- 执行变更
-- 验收测试与自检
-
-## Done / 完成
-- fizzyx flow complete-steps <card>   — 标记所有步骤完成（done 前必须先执行）
-- fizzyx flow done <card>             — 移入 DONE 列、写入评论、关闭（自动获取 git ref）
-- fizzyx flow done <card> "message"   — 指定 ref
-- \`flow done\` 要求所有步骤已完成，否则报错列出未完成的步骤。
-
-## Block / 阻塞
-- fizzyx flow block <card> "<reason>"
-- 使用 \`fizzyx flow comment-template <kind>\` 进行手动注释，保持内容简洁。
-
-## 卡片结构 / Card structure
-- Description = 卡片背景与上下文
-- Steps = 任务清单`;
-	}
-
-	return `## 工作流
-
-## 准备
-- fizzyx setup <board-id>
-- fizzyx auth login <token>
-- fizzyx auth status
-
-## 创建
-- fizzyx flow template > /tmp/card.md
-- 编辑模板并补充内容
-- fizzyx flow add <user> "<title>" --desc /tmp/card.md
-
-## 列流转
-卡片流转: TODO → IN PROGRESS → DONE
-
-- \`fizzyx flow start <card>\` — TODO → IN PROGRESS, 自指派
-- \`fizzyx flow done <card>\` — → DONE + 关闭（自动获取 git ref）
-- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — 指定 ref
-
-## 每日
-- fizzyx flow mine --fresh
-- fizzyx flow start <card>
-- fizzyx flow show <card>
-
-## 任务执行
-- 明确目标与约束
-- 拆解实施步骤
-- 执行变更
-- 验证测试与验收
-
-## 完成
-- fizzyx flow complete-steps <card>   — 标记所有步骤完成（done 前必须先执行）
-- fizzyx flow done <card>             — 移入 DONE 列、写入评论、关闭卡片（自动获取 git ref）
-- fizzyx flow done <card> "message"   — 指定 ref
-- \`flow done\` 要求所有步骤已完成，否则报错列出未完成的步骤。
-
-## 阻塞
-- fizzyx flow block <card> "<reason>"
-- 使用 \`flow comment-template <kind>\` 进行手动评论并保持内容简洁。
-
-## 卡片结构
-- description 为上下文
-- steps 会变成 Fizzy checklist`;
-};
-
-const flowSkill = (): string => `---
-name: fizzyx
-description: Manage this repository's board through fizzyx flow commands.
-triggers:
-  - fizzyx
-  - /fizzyx
-  - create card
-  - close card
-  - move card
-  - assign card
-  - add comment
-  - add step
-  - my cards
-  - my tasks
-  - board status
-  - card workflow
-invocable: true
-argument-hint: "[flow action] [args...]"
----
-
-# fizzyx
-
-Use \`fizzyx flow ...\` for board workflow. Do not use the legacy official CLI
-for project workflow. If \`fizzyx flow\` lacks an operation, stop and ask.
-
-## Workflow
-
-Cards move through columns: **TODO** → **IN PROGRESS** → **DONE**
-
-| Phase | Command | Action |
-|-------|---------|--------|
-| Start | \`fizzyx flow start <card>\` | Move TODO → IN PROGRESS, self-assign |
-| Steps | \`fizzyx flow complete-steps <card>\` | Mark all pending steps done |
-| Done | \`fizzyx flow done <card> "commit <sha>: <subject>"\` | Move to DONE, comment, close |
-
-**Never** close a card directly without \`flow done\`.
-
-## Context Loading
-
-- Treat this skill as generic. Do not hardcode board IDs, column IDs, users,
-  scopes, title formats, or assignment rules here.
-- Project data comes from \`.fizzy.yaml\`, the repo's \`AGENTS.md\`, and local
-  workflow docs referenced by \`AGENTS.md\`.
-- The CLI reads \`.fizzy.yaml\` automatically from the current repository.
-- Before creating or assigning cards, inspect the project's local tracking rules
-  instead of guessing from this skill.
-- If project context is missing, run \`fizzyx setup <board-id>\` for machine
-  config, then create or update a local project workflow doc such as
-  \`docs/fizzy-workflow.md\` and link it from \`AGENTS.md\`.
-
-## Project Workflow Doc
-
-Keep project-specific board details out of this skill. Put them in a local doc
-near the repo's other docs, usually \`docs/fizzy-workflow.md\`.
-
-Minimum sections:
-
-- Install/auth/setup commands.
-- Board/account/API/cache context.
-- Column meanings and IDs.
-- Card title formats and allowed scopes.
-- Assignment rules and user IDs.
-- Local delivery rules that differ from \`fizzyx flow workflow\`.
-
-If any of these facts are unknown, ask before creating cards that depend on
-them.
-
-## Identity
-
-- \`my work\`, \`my cards\`, and \`my tasks\` mean the authenticated fizzyx user.
-- Do not infer identity from git user, OS user, commit author, branch, or card assignee.
-- For identity-sensitive requests, run \`fizzyx auth status\` first.
-- Then run \`fizzyx flow mine --fresh\`.
-- Use \`fizzyx flow status --fresh\` only as extra board context.
-
-## Commands
-
-\`\`\`bash
-fizzyx auth status
-fizzyx flow workflow
-fizzyx flow status --fresh
-fizzyx flow mine --fresh
-fizzyx flow show <card>
-fizzyx flow start <card>
-fizzyx flow template
-fizzyx flow add <user> "<title>" --desc <file|->
-fizzyx flow comment-template <done|blocked|unblocked|handoff|note>
-fizzyx flow complete-steps <card>
-fizzyx flow done <card> "commit <sha>: <subject>"
-fizzyx flow block <card> "<reason>"
-fizzyx flow std <card>
-fizzyx flow std-all
-\`\`\`
-
-## Cards
-
-- Generate new card bodies with \`fizzyx flow template\`.
-- Description is context only. Field language follows \`flow.card.language\`.
-- Put work checklist under \`## Steps\`; \`flow add\` converts it to card steps.
-- Step labels must be plain text: no Markdown links, backticks, or bold.
-- Normalize existing cards with \`fizzyx flow std <card>\`.
-
-## Delivery
-
-- Do not create cards for typo fixes or tiny chore commits.
-- Do not maintain a parallel progress document; board is execution state.
-- **Always close cards through the CLI**, never by clicking close in the UI.
-- Close sequence:
-  1. \`fizzyx flow complete-steps <card>\`  — mark all pending steps done
-  2. \`fizzyx flow done <card>\`             — move to DONE, comment, close (ref auto-detected from git)
-  3. \`fizzyx flow done <card> "message"\`   — with explicit ref (optional)
-- \`flow done\` requires all steps to be complete; it will fail with an error if any step is unfinished.
-- Keep comments concise; use \`fizzyx flow comment-template <kind>\` for format.`;
-
 const isHelpCommand = (value: string | undefined): value is "help" | "--help" | "-h" =>
 	value === "help" || value === "--help" || value === "-h";
 
@@ -1153,6 +929,7 @@ const flowRepairMarkdownUsage = (): string => "fizzyx flow repair-markdown <card
 const flowCommentTemplateUsage = (): string => "fizzyx flow comment-template <kind>";
 const flowWorkflowUsage = (): string => "fizzyx flow workflow";
 const flowSkillUsage = (): string => "fizzyx flow skill";
+const flowSkillInitUsage = (): string => "fizzyx flow skill init [--force]";
 const flowCompleteStepsUsage = (): string => "fizzyx flow complete-steps <card>";
 const flowStdUsage = (): string => "fizzyx flow std <card>  (alias: standardize-card)";
 const flowStdAllUsage = (): string => "fizzyx flow std-all  (alias: standardize-board)";
@@ -1162,125 +939,6 @@ const flowTemplateUsage = (): string => "fizzyx flow template";
 const flowStepsUsage = (): string => "fizzyx flow steps-from-desc <card>";
 const flowInitUsage = (): string => "fizzyx flow init";
 const flowDoctorUsage = (): string => "fizzyx flow doctor";
-
-const DEFAULT_CARD_LANGUAGE: FlowCardLanguage = DEFAULT_FLOW_CARD_LANGUAGE;
-
-const flowTemplate = (language: FlowCardLanguage): string => {
-	const labels = getTemplateLabels(language);
-	const text = getTemplateText(language);
-
-	return `## ${labels.goal}
-${text.goal}
-
-## ${labels.scope}
-### ${labels.include}
-- ${text.include}
-
-### ${labels.exclude}
-- ${text.exclude}
-
-## ${labels.notes}
-- ${text.noteSmall}
-- ${text.notePattern}
-
-## ${labels.files}
-- ${text.files}
-
-## ${labels.verification}
-- ${text.verification}
-
-## Steps
-
-- [ ] ${text.stepGoal}
-- [ ] ${text.stepImplementation}
-- [ ] ${text.stepPlain}
-- [ ] ${text.stepClose}`;
-};
-
-const getTemplateText = (language: FlowCardLanguage) => {
-	if (language === "en") {
-		return {
-			goal: "Define the ticket objective in 1-2 concise sentences.",
-			include: "What should be included",
-			exclude: "What should not be included",
-			noteSmall: "Keep changes small and deterministic",
-			notePattern: "Prefer existing patterns",
-			files: "Files to touch (relative path)",
-			verification: "Validation and acceptance checks to run before handoff",
-			stepGoal: "Replace goal + scope text with final content",
-			stepImplementation: "Add or update implementation files",
-			stepPlain: "Keep step descriptions in plain text",
-			stepClose: "Confirm checks and run `fizzyx flow done <number>` to close",
-		};
-	}
-
-	if (language === "mixed") {
-		return {
-			goal: "用 1-2 句说明目标；代码/API 名称可保留英文。",
-			include: "In scope / 本卡包含的工作",
-			exclude: "Out of scope / 本卡不包含的工作",
-			noteSmall: "Keep changes small / 保持变更小且确定",
-			notePattern: "Prefer existing patterns / 优先沿用现有模式",
-			files: "Files to touch / 相关文件路径",
-			verification: "Checks to run / 需要执行的验证",
-			stepGoal: "Finalize goal and scope / 确认目标与范围",
-			stepImplementation: "Implement required changes / 完成实现",
-			stepPlain: "Keep step labels plain text / step 文本不写 Markdown",
-			stepClose:
-				"Run checks and run `fizzyx flow done <number>` to close / 通过检查后用 fizzyx flow done 关卡",
-		};
-	}
-
-	return {
-		goal: "用 1-2 句说明这张卡要完成什么、为什么。",
-		include: "本卡包含的工作",
-		exclude: "本卡不包含的工作",
-		noteSmall: "保持变更小且确定",
-		notePattern: "优先沿用现有模式",
-		files: "相关文件路径",
-		verification: "交付前需要执行的检查或验收",
-		stepGoal: "确认目标与范围",
-		stepImplementation: "完成实现文件变更",
-		stepPlain: "保持 step 文本为纯文本",
-		stepClose: "运行 `fizzyx flow done <number>` 关闭卡片",
-	};
-};
-
-const getTemplateLabels = (language: FlowCardLanguage) => {
-	if (language === "en") {
-		return {
-			scope: "Scope",
-			goal: "Goal",
-			include: "In",
-			exclude: "Out",
-			files: "Files",
-			verification: "Verification",
-			notes: "Notes",
-		};
-	}
-
-	if (language === "mixed") {
-		return {
-			scope: "Scope / 范围",
-			goal: "Goal / 目标",
-			include: "In / 包含",
-			exclude: "Out / 不包含",
-			files: "Files / 文件",
-			verification: "Verification / 验证",
-			notes: "Notes / 备注",
-		};
-	}
-
-	return {
-		scope: "范围",
-		goal: "目标",
-		include: "包含",
-		exclude: "不包含",
-		files: "文件",
-		verification: "验证",
-		notes: "备注",
-	};
-};
 
 const authLoginUsage = (): string => "fizzyx auth login <token>";
 const authStatusUsage = (): string => "fizzyx auth status";

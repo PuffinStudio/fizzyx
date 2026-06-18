@@ -20,9 +20,6 @@ const makeConfig = (): ProjectConfig => ({
 			inProgress: "inprogress-column",
 		},
 		users: {},
-		card: {
-			language: "zh-CN",
-		},
 		wipLimit: 1,
 		cacheTtlSeconds: 60,
 	},

@@ -63,7 +63,7 @@ test("setupProjectConfig writes non-empty users object", async () => {
 	}
 });
 
-test("setupProjectConfig writes flow card language", async () => {
+test("setupProjectConfig writes flow section without card language", async () => {
 	const root = makeTempDir();
 	const configPath = join(root, ".fizzy.yaml");
 	const repo = makeBunConfigRepository();
@@ -82,13 +82,15 @@ test("setupProjectConfig writes flow card language", async () => {
 		);
 
 		const text = await Bun.file(configPath).text();
-		expect(text).toContain("language: zh-CN");
+		expect(text).not.toContain("card:");
+		expect(text).toContain("wip_limit: 5");
+		expect(text).toContain("cache_ttl: 900");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("setupProjectConfig preserves existing card language", async () => {
+test("setupProjectConfig preserves custom flow settings", async () => {
 	const root = makeTempDir();
 	const configPath = join(root, ".fizzy.yaml");
 	const repo = makeBunConfigRepository();
@@ -104,8 +106,6 @@ flow:
     todo: todo-id
     in_progress: inprogress-id
   users: {}
-  card:
-    language: en
   wip_limit: 10
   cache_ttl: 1200
 `,
@@ -124,14 +124,14 @@ flow:
 		);
 
 		const text = await Bun.file(configPath).text();
-		expect(text).toContain("language: en");
-		expect(text).not.toContain("language: zh-CN");
+		expect(text).toContain("wip_limit: 10");
+		expect(text).toContain("cache_ttl: 1200");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("loadProjectConfig falls back to Chinese card language when absent", async () => {
+test("loadProjectConfig applies flow defaults when card language fields are absent", async () => {
 	const root = makeTempDir();
 	const configPath = join(root, ".fizzy.yaml");
 	const repo = makeBunConfigRepository();
@@ -154,7 +154,6 @@ flow:
 		const config = await Effect.runPromise(repo.loadProjectConfig());
 
 		expect(config.flow).toBeDefined();
-		expect(config.flow!.card.language).toBe("zh-CN");
 		expect(config.flow!.wipLimit).toBe(5);
 		expect(config.flow!.cacheTtlSeconds).toBe(900);
 	} finally {
@@ -163,7 +162,7 @@ flow:
 	}
 });
 
-test("loadProjectConfig falls back to Chinese for invalid card language", async () => {
+test("loadProjectConfig ignores invalid legacy flow.card.language values", async () => {
 	const root = mkdtempSync(join(tmpdir(), "fizzyx-repo-"));
 	const configPath = join(root, ".fizzy.yaml");
 	const repo = makeBunConfigRepository();
@@ -188,7 +187,7 @@ flow:
 		const config = await Effect.runPromise(repo.loadProjectConfig());
 
 		expect(config.flow).toBeDefined();
-		expect(config.flow!.card.language).toBe("zh-CN");
+		expect(config.flow!.wipLimit).toBe(5);
 	} finally {
 		process.chdir(originalCwd);
 		rmSync(root, { recursive: true, force: true });

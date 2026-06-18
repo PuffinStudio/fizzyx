@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { ConfigError, FileError } from "../domain/errors";
-import { DEFAULT_FLOW_CARD_LANGUAGE, type FlowCardLanguage } from "../domain/models";
+
 import type {
 	Credentials,
 	FlowConfig,
@@ -290,9 +290,6 @@ const parseFlowConfig = (raw: unknown): FlowConfig | undefined => {
 			inProgress,
 		},
 		users: parsedUsers,
-		card: {
-			language: parseCardLanguage(flow.card) || DEFAULT_FLOW_CARD_LANGUAGE,
-		},
 		wipLimit: numberValue(flow.wip_limit) || DEFAULT_WIP_LIMIT,
 		cacheTtlSeconds: numberValue(flow.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
 	};
@@ -302,8 +299,6 @@ const renderProjectConfig = (input: SetupProjectConfigInput, existingText = ""):
 	const existing = parseYaml(existingText);
 	const existingFlow = objectValue(existing.flow);
 
-	const cardLanguage = parseCardLanguage(existingFlow.card) || DEFAULT_FLOW_CARD_LANGUAGE;
-
 	const flow = {
 		columns: {
 			todo: input.todoColumn || stringValue(objectValue(existingFlow.columns).todo) || "",
@@ -311,7 +306,6 @@ const renderProjectConfig = (input: SetupProjectConfigInput, existingText = ""):
 				input.inProgressColumn || stringValue(objectValue(existingFlow.columns).in_progress) || "",
 		},
 		users: parseUsersInput(input.users || {}),
-		card: { language: cardLanguage },
 		wip_limit: numberValue(existingFlow.wip_limit) || DEFAULT_WIP_LIMIT,
 		cache_ttl: numberValue(existingFlow.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
 	} satisfies YamlObject;
@@ -331,15 +325,6 @@ const renderProjectConfig = (input: SetupProjectConfigInput, existingText = ""):
 	ordered.flow = flow;
 
 	return Bun.YAML.stringify(ordered, null, 2);
-};
-
-const parseCardLanguage = (value: unknown): FlowCardLanguage | undefined => {
-	if (typeof value === "object" && value !== null) {
-		const raw = (value as YamlObject).language;
-		if (raw === "en" || raw === "mixed" || raw === "zh-CN") return raw;
-	}
-
-	return undefined;
 };
 
 // ─── OSS config ──────────────────────────────────────────────

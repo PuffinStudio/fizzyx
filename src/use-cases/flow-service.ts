@@ -4,7 +4,6 @@ import type {
 	BoardCache,
 	BoardColumn,
 	Card,
-	FlowCardLanguage,
 	Step,
 	Identity,
 	InitializedProjectConfig,
@@ -14,7 +13,7 @@ import type { CacheRepository } from "../ports/cache-repository";
 import type { ConfigRepository, SetupProjectConfigInput } from "../ports/config-repository";
 import type { FizzyApi } from "../ports/fizzy-api";
 import { ConfigRepo } from "../ports/config-repository";
-import { isTaggedError, isTaggedErrorWithMessage } from "../_shared/helpers";
+import { isTaggedErrorWithMessage } from "../_shared/helpers";
 import { makeBunCacheRepository } from "../adapters/bun-cache-repository";
 import { makeFetchFizzyApi } from "../adapters/fetch-fizzy-api";
 
@@ -43,58 +42,39 @@ const escapeHtml = (value: string): string =>
 		.replace(/"/g, "&quot;")
 		.replace(/'/g, "&#39;");
 
-const standardizedCommentTemplate = (
-	language: FlowCardLanguage,
-	kind: StandardizedCommentKind,
-): string => {
-	if (language === "en") {
-		return {
-			done: "done: ",
-			blocked: "blocked: ",
-			unblocked: "unblocked: ",
-			handoff: "handoff: ",
-			note: "note: ",
-		}[kind];
-	}
-
+const standardizedCommentTemplate = (kind: StandardizedCommentKind): string => {
 	return {
-		done: "完成：",
-		blocked: "阻塞：",
-		unblocked: "已解锁：",
-		handoff: "交接：",
-		note: "备注：",
+		done: "done: ",
+		blocked: "blocked: ",
+		unblocked: "unblocked: ",
+		handoff: "handoff: ",
+		note: "note: ",
 	}[kind];
 };
 
 export const buildStandardizedCommentBody = (
-	language: FlowCardLanguage,
 	kind: StandardizedCommentKind,
 	value: string,
-): string => `<p>${standardizedCommentTemplate(language, kind)}${escapeHtml(value)}</p>`;
+): string => `<p>${standardizedCommentTemplate(kind)}${escapeHtml(value)}</p>`;
 
-export const getStandardizedCommentTemplate = (
-	language: FlowCardLanguage,
-	kind: StandardizedCommentKind,
-): string => {
+export const getStandardizedCommentTemplate = (kind: StandardizedCommentKind): string => {
 	if (kind === "done") {
-		return language === "en" ? `done: commit <sha>: <subject>` : `完成：commit <sha>: <subject>`;
+		return "done: commit <sha>: <subject>";
 	}
 
 	if (kind === "blocked") {
-		return language === "en"
-			? "blocked: <reason; owner/decision needed>"
-			: "阻塞：<原因；需要谁/什么决策>";
+		return "blocked: <reason; owner/decision needed>";
 	}
 
 	if (kind === "unblocked") {
-		return language === "en" ? "unblocked: <resource/decision ready>" : "已解锁：<资源/决策已就绪>";
+		return "unblocked: <resource/decision ready>";
 	}
 
 	if (kind === "handoff") {
-		return language === "en" ? "handoff: <current state; next step>" : "交接：<当前状态；下一步>";
+		return "handoff: <current state; next step>";
 	}
 
-	return language === "en" ? "note: <brief note>" : "备注：<简短说明>";
+	return "note: <brief note>";
 };
 
 export const makeEnv = Effect.gen(function* () {
@@ -475,10 +455,7 @@ export const done = (env: InitializedEnv, number: number, ref?: string) =>
 		yield* env.api.moveCard(number, doneColumn.id);
 
 		const finalRef = ref || "done";
-		yield* env.api.comment(
-			number,
-			buildStandardizedCommentBody(env.config.flow.card.language, "done", finalRef),
-		);
+		yield* env.api.comment(number, buildStandardizedCommentBody("done", finalRef));
 		yield* env.api.closeCard(number);
 		yield* syncBoard(env);
 		return { number, ref: finalRef };
@@ -504,8 +481,7 @@ export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
 export const block = (env: InitializedEnv, number: number, reason: string) =>
 	Effect.gen(function* () {
 		if (!reason.trim()) return yield* new ValidationError({ message: "Block reason is required" });
-		const language = env.config.flow.card.language;
-		yield* env.api.comment(number, buildStandardizedCommentBody(language, "blocked", reason));
+		yield* env.api.comment(number, buildStandardizedCommentBody("blocked", reason));
 		yield* env.api.postponeCard(number);
 		yield* syncBoard(env);
 		return { number, reason };
@@ -639,7 +615,7 @@ const standardizeLoadedCard = (env: InitializedEnv, card: Card) =>
 		const source = card.descriptionHtml || card.description || "";
 		const plain = markdownishText(source);
 		const sections = parseDescriptionSections(plain);
-		const nextMarkdown = buildStandardDescription(env.config.flow.card.language, card, sections);
+		const nextMarkdown = buildStandardDescription(card, sections);
 		const nextDescription = convertDescription(nextMarkdown);
 		const currentDescription = card.descriptionHtml || card.description || "";
 		const descriptionUpdated =
@@ -1034,15 +1010,8 @@ const cleanSectionLines = (lines: ReadonlyArray<string>): string[] =>
 		.filter((line) => line.length > 0)
 		.map((line) => line.replace(/^[-*]\s+/, "- "));
 
-const buildStandardDescription = (
-	language: FlowCardLanguage,
-	card: Card,
-	sections: DescriptionSections,
-): string => {
-	const labels =
-		language === "en"
-			? { goal: "Goal", files: "Files", verification: "Verification", notes: "Notes" }
-			: { goal: "目标", files: "文件", verification: "验证", notes: "备注" };
+const buildStandardDescription = (card: Card, sections: DescriptionSections): string => {
+	const labels = { goal: "Goal", files: "Files", verification: "Verification", notes: "Notes" };
 	const goal = firstSection(sections, ["goal", "目标"]) || card.title;
 	const files = firstSection(sections, ["files", "文件"]);
 	const verification = mergeUniqueLines(

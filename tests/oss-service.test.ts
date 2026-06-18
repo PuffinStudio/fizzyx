@@ -6,14 +6,14 @@ import type { ProjectConfig } from "../src/domain/models";
 import { ConfigError, FileError } from "../src/domain/errors";
 import { ConfigRepo } from "../src/ports/config-repository";
 
-const makeConfig = (overrides?: Partial<ProjectConfig>): ProjectConfig =>
+const makeConfig = (overrides: Partial<ProjectConfig> = {}): ProjectConfig =>
 	({
 		apiUrl: "https://example.com",
 		account: "1",
 		board: "board-1",
 		configPath: "/tmp/.fizzy.yaml",
 		rootDir: "/tmp",
-		...(overrides || {}),
+		...overrides,
 	}) as ProjectConfig;
 
 test("getOssSecretName returns a deterministic hash per project+env", () => {

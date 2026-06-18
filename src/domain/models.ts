@@ -1,13 +1,5 @@
 export type CardNumber = number;
 
-export type FlowCardLanguage = "zh-CN" | "en" | "mixed";
-
-export const DEFAULT_FLOW_CARD_LANGUAGE: FlowCardLanguage = "zh-CN";
-
-export interface FlowCardConfig {
-	language: FlowCardLanguage;
-}
-
 export interface FlowConfig {
 	columns: {
 		todo: string;
@@ -16,7 +8,6 @@ export interface FlowConfig {
 	users: Record<string, string>;
 	wipLimit: number;
 	cacheTtlSeconds: number;
-	card: FlowCardConfig;
 }
 
 export interface Board {

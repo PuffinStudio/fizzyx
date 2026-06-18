@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import { dirname } from "node:path";
-import { FileError, ConfigError } from "../domain/errors";
+import { FileError } from "../domain/errors";
 import type { SyncManifest } from "../domain/models";
 import type { ManifestRepository } from "../ports/manifest-repository";
 import { ManifestRepo } from "../ports/manifest-repository";

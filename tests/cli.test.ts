@@ -172,7 +172,7 @@ test("flow comment-template requires kind", async () => {
 	expect(stderr).toContain("fizzyx flow comment-template <kind>");
 });
 
-test("flow comment-template prints template for default zh-CN", async () => {
+test("flow comment-template prints standard English template", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 
@@ -188,13 +188,13 @@ test("flow comment-template prints template for default zh-CN", async () => {
 		});
 
 		expect(exitCode).toBe(0);
-		expect(stdout).toBe("阻塞：<原因；需要谁/什么决策>\n");
+		expect(stdout).toBe("blocked: <reason; owner/decision needed>\n");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("flow comment-template prints english template when configured", async () => {
+test("flow comment-template ignores deprecated language settings and prints English", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 
@@ -232,10 +232,9 @@ test("flow workflow prints process checklist", async () => {
 		});
 
 		expect(exitCode).toBe(0);
-		expect(stdout).toContain("## Workflow / 工作流");
+		expect(stdout).toContain("## Workflow");
 		expect(stdout).toContain("fizzyx flow comment-template <kind>");
-		expect(stdout).toContain("关闭");
-		expect(stdout).toContain("简洁");
+		expect(stdout).toContain("flow done");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -256,6 +255,118 @@ test("flow skill prints english skill template", async () => {
 	expect(stdout).not.toContain("AGENTS.md 片段");
 });
 
+test("flow workflow prefers local override content", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const overridePath = join(projectDir, ".agents", "skills", "fizzyx", "WORKFLOW.md");
+
+	try {
+		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
+		writeFileSync(overridePath, "## Local Workflow\n- custom workflow\n");
+
+		const { stdout, exitCode } = await runCli(["flow", "workflow"], {
+			cwd: projectDir,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("## Local Workflow");
+		expect(stdout).toContain("custom workflow");
+		expect(stdout).not.toContain("## Workflow / 工作流");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow template prefers local override content", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const overridePath = join(projectDir, ".agents", "skills", "fizzyx", "CARD_TEMPLATE.md");
+
+	try {
+		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
+		writeFileSync(
+			overridePath,
+			"## Goal\n- custom goal\n\n## Steps\n- [ ] verify local template\n",
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "template"], {
+			cwd: projectDir,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("## Goal");
+		expect(stdout).toContain("custom goal");
+		expect(stdout).toContain("- [ ] verify local template");
+		expect(stdout).not.toContain("## 目标");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow skill prints local override content", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const overridePath = join(projectDir, ".agents", "skills", "fizzyx", "SKILL.md");
+
+	try {
+		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
+		writeFileSync(overridePath, "---\nname: local-fizzyx\n---\n# local\n");
+
+		const { stdout, exitCode } = await runCli(["flow", "skill"], {
+			cwd: projectDir,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("name: local-fizzyx");
+		expect(stdout).not.toContain("name: fizzyx");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow skill init skips existing files and overwrites with --force", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const skillPath = join(projectDir, ".agents", "skills", "fizzyx", "SKILL.md");
+	const workflowPath = join(projectDir, ".agents", "skills", "fizzyx", "WORKFLOW.md");
+	const templatePath = join(projectDir, ".agents", "skills", "fizzyx", "CARD_TEMPLATE.md");
+
+	try {
+		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
+		writeFileSync(skillPath, "old skill\n");
+		writeFileSync(workflowPath, "old workflow\n");
+		writeFileSync(templatePath, "old template\n");
+
+		const skip = await runCli(["flow", "skill", "init"], {
+			cwd: projectDir,
+			env: { HOME: join(root, "home") },
+		});
+
+		expect(skip.exitCode).toBe(0);
+		expect(skip.stdout).toContain("skipped: .agents/skills/fizzyx/SKILL.md");
+		expect(skip.stdout).toContain("skipped: .agents/skills/fizzyx/WORKFLOW.md");
+		expect(skip.stdout).toContain("skipped: .agents/skills/fizzyx/CARD_TEMPLATE.md");
+		expect(readFileSync(skillPath, "utf8")).toBe("old skill\n");
+		expect(readFileSync(workflowPath, "utf8")).toBe("old workflow\n");
+		expect(readFileSync(templatePath, "utf8")).toBe("old template\n");
+
+		const overwritten = await runCli(["flow", "skill", "init", "--force"], {
+			cwd: projectDir,
+			env: { HOME: join(root, "home") },
+		});
+
+		expect(overwritten.exitCode).toBe(0);
+		expect(overwritten.stdout).toContain("overwritten: .agents/skills/fizzyx/SKILL.md");
+		expect(overwritten.stdout).toContain("overwritten: .agents/skills/fizzyx/WORKFLOW.md");
+		expect(overwritten.stdout).toContain("overwritten: .agents/skills/fizzyx/CARD_TEMPLATE.md");
+		expect(readFileSync(skillPath, "utf8")).toContain("name: fizzyx");
+		expect(readFileSync(workflowPath, "utf8")).toContain("## Workflow");
+		expect(readFileSync(templatePath, "utf8")).toContain("## Goal");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("flow template command prints card template sections", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
@@ -272,26 +383,26 @@ test("flow template command prints card template sections", async () => {
 		});
 
 		expect(exitCode).toBe(0);
-		expect(stdout).toContain("## 目标");
-		expect(stdout).toContain("## 范围");
-		expect(stdout).toContain("### 包含");
-		expect(stdout).toContain("### 不包含");
-		expect(stdout).toContain("## 备注");
-		expect(stdout).toContain("## 文件");
-		expect(stdout).toContain("## 验证");
+		expect(stdout).toContain("## Goal");
+		expect(stdout).toContain("## Scope");
+		expect(stdout).toContain("### In");
+		expect(stdout).toContain("### Out");
+		expect(stdout).toContain("## Notes");
+		expect(stdout).toContain("## Files");
+		expect(stdout).toContain("## Verification");
 		expect(stdout).toContain("## Steps");
 		expect(stdout).not.toContain("## References");
 		expect(stdout).not.toContain("## Backup");
 		expect(stdout).not.toContain("## Depends On");
-		expect(stdout).toContain("用 1-2 句说明这张卡要完成什么、为什么。");
-		expect(stdout).toContain("- [ ] 确认目标与范围");
+		expect(stdout).toContain("Define the ticket objective in 1-2 concise sentences.");
+		expect(stdout).toContain("- [ ] Replace goal + scope text with final content");
 		expect(stdout).not.toContain("- [ ] `");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("flow template uses config language", async () => {
+test("flow template uses English defaults when config has legacy language", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 

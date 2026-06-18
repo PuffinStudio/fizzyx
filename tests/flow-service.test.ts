@@ -32,9 +32,6 @@ const baseConfig = {
 			inProgress: "inprogress-id",
 		},
 		users: {},
-		card: {
-			language: "zh-CN" as const,
-		},
 		wipLimit: 2,
 		cacheTtlSeconds: 900,
 	},
@@ -286,9 +283,6 @@ test("add with template extracts markdown step list into fizzy steps", async () 
 			...baseConfig,
 			flow: {
 				...baseConfig.flow,
-				card: {
-					language: "zh-CN" as const,
-				},
 				users: {
 					me: "user-id",
 				},
@@ -366,9 +360,6 @@ test("add without template steps section preserves card body conversion and skip
 			...baseConfig,
 			flow: {
 				...baseConfig.flow,
-				card: {
-					language: "zh-CN" as const,
-				},
 				users: {
 					me: "user-id",
 				},
@@ -388,16 +379,13 @@ test("add without template steps section preserves card body conversion and skip
 });
 
 test("buildStandardizedCommentBody escapes html in values", () => {
-	const body = buildStandardizedCommentBody("zh-CN", "done", 'feat: <a> & b "c" d\'');
+	const body = buildStandardizedCommentBody("done", 'feat: <a> & b "c" d\'');
 
-	expect(body).toBe("<p>完成：feat: &lt;a&gt; &amp; b &quot;c&quot; d&#39;</p>");
+	expect(body).toBe("<p>done: feat: &lt;a&gt; &amp; b &quot;c&quot; d&#39;</p>");
 });
 
-test("getStandardizedCommentTemplate returns localized placeholders", () => {
-	expect(getStandardizedCommentTemplate("en", "done")).toBe("done: commit <sha>: <subject>");
-	expect(getStandardizedCommentTemplate("zh-CN", "done")).toBe("完成：commit <sha>: <subject>");
-	expect(getStandardizedCommentTemplate("mixed", "done")).toBe("完成：commit <sha>: <subject>");
-	expect(getStandardizedCommentTemplate("mixed", "blocked")).toBe("阻塞：<原因；需要谁/什么决策>");
+test("getStandardizedCommentTemplate returns English placeholders", () => {
+	expect(getStandardizedCommentTemplate("done")).toBe("done: commit <sha>: <subject>");
 });
 
 test("done posts standardized escaped comment and closes card", async () => {
@@ -427,9 +415,6 @@ test("done posts standardized escaped comment and closes card", async () => {
 			...baseConfig,
 			flow: {
 				...baseConfig.flow,
-				card: {
-					language: "en" as const,
-				},
 			},
 		},
 		cacheRepo: {
@@ -470,9 +455,6 @@ test("block posts standardized escaped comment", async () => {
 			...baseConfig,
 			flow: {
 				...baseConfig.flow,
-				card: {
-					language: "zh-CN" as const,
-				},
 			},
 		},
 	};
@@ -480,7 +462,7 @@ test("block posts standardized escaped comment", async () => {
 	const result = await Effect.runPromise(block(env, 21, 'bad <html> & chars "x"'));
 
 	expect(result).toEqual({ number: 21, reason: 'bad <html> & chars "x"' });
-	expect(comments).toEqual(["<p>阻塞：bad &lt;html&gt; &amp; chars &quot;x&quot;</p>"]);
+	expect(comments).toEqual(["<p>blocked: bad &lt;html&gt; &amp; chars &quot;x&quot;</p>"]);
 });
 
 test("standardizeCard extracts old markdown sections and normalizes steps", async () => {
@@ -531,10 +513,10 @@ Ray`,
 		stepsUpdated: 1,
 		stepsCompleted: 0,
 	});
-	expect(descriptions[0]).toContain("<h2>目标</h2>");
+	expect(descriptions[0]).toContain("<h2>Goal</h2>");
 	expect(descriptions[0]).toContain("Shrink radius tokens.");
-	expect(descriptions[0]).toContain("<h2>文件</h2>");
-	expect(descriptions[0]).toContain("<h2>验证</h2>");
+	expect(descriptions[0]).toContain("<h2>Files</h2>");
+	expect(descriptions[0]).toContain("<h2>Verification</h2>");
 	expect(descriptions[0]).not.toContain("References");
 	expect(descriptions[0]).not.toContain("Backup");
 	expect(created).toEqual([]);
