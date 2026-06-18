@@ -65,7 +65,7 @@ const makeConfigRepo = (): ConfigRepository =>
 const defaultApi = () =>
 	({
 		identity: () => Effect.fail(new ApiError({ message: "identity not mocked" })),
-		listColumns: () => Effect.fail(new ApiError({ message: "listColumns not mocked" })),
+		listColumns: () => Effect.succeed([]),
 		listBoards: () => Effect.fail(new ApiError({ message: "listBoards not mocked" })),
 		listCards: () => Effect.fail(new ApiError({ message: "listCards not mocked" })),
 		showCard: () => Effect.fail(new ApiError({ message: "showCard not mocked" })),
@@ -430,6 +430,19 @@ test("done posts standardized escaped comment and closes card", async () => {
 					language: "en" as const,
 				},
 			},
+		},
+		cacheRepo: {
+			read: () =>
+				Effect.succeed({
+					identity: { userId: "identity-id", name: "Test", email: "" },
+					cards: [],
+					notNow: [],
+					columns: [{ id: "done-col", name: "DONE" }],
+					users: {},
+					syncedAt: "2026-01-01T00:00:00.000Z",
+				}),
+			write: () => Effect.succeed(undefined),
+			ageSeconds: () => Effect.succeed(0),
 		},
 	};
 

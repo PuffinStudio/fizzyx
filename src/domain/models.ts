@@ -94,6 +94,7 @@ export interface BoardCache {
 	identity: Identity;
 	cards: ReadonlyArray<Card>;
 	notNow: ReadonlyArray<Card>;
+	columns: ReadonlyArray<BoardColumn>;
 	users: Record<string, string>;
 	syncedAt: string;
 }

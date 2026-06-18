@@ -441,6 +441,10 @@ test("flow repair-markdown repairs card description and prints result", async ()
 					return Response.json([]);
 				}
 
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
+					return Response.json([]);
+				}
+
 				return new Response("not found", { status: 404 });
 			},
 		});
@@ -515,6 +519,10 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 				}
 
 				if (url.pathname === "/1/cards.json" && req.method === "GET") {
+					return Response.json([]);
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
 					return Response.json([]);
 				}
 

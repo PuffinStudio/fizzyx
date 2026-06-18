@@ -381,16 +381,18 @@ export const authLogout = Effect.gen(function* () {
 
 export const syncBoard = (env: Env) =>
 	Effect.gen(function* () {
-		const [identity, cards, notNow] = yield* Effect.all([
+		const [identity, cards, notNow, columns] = yield* Effect.all([
 			env.api.identity(),
 			env.api.listCards({ all: true }),
 			env.api.listCards({ indexedBy: "not_now", all: true }),
+			env.api.listColumns(),
 		]);
 		const users = buildUsers(env.config, cards);
 		const cache: BoardCache = {
 			identity,
 			cards,
 			notNow,
+			columns,
 			users,
 			syncedAt: new Date().toISOString(),
 		};
@@ -479,9 +481,9 @@ export const done = (env: InitializedEnv, number: number, ref?: string) =>
 			});
 		}
 
-		const columns = yield* env.api.listColumns();
-		const doneColumnId = yield* ensureColumn(columns, "DONE", () => env.api.createColumn("DONE"));
-		yield* env.api.moveCard(number, doneColumnId);
+		const cache = yield* env.cacheRepo.read();
+		const doneColumn = cache!.columns.find((c) => c.name.toLowerCase() === "done")!;
+		yield* env.api.moveCard(number, doneColumn.id);
 
 		const finalRef = ref || "done";
 		yield* env.api.comment(
