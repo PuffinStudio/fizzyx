@@ -37,6 +37,7 @@ import {
 import { buildKeyTree, printCardDetail, printCards, printSteps, renderTable } from "./render";
 import {
 	formatFlowScaffoldResult,
+	createFlowDraft,
 	initFlowScaffold,
 	loadFlowSkillContent,
 	loadFlowTemplateContent,
@@ -177,21 +178,24 @@ const runFlow = (args: ReadonlyArray<string>) =>
 					"Loading board status...",
 					Effect.gen(function* () {
 						const env = yield* makeFlowEnv;
-						return yield* status(env, { fresh: rest.includes("--fresh") });
+						const result = yield* status(env, { fresh: rest.includes("--fresh") });
+						return { env, result };
 					}),
 				);
-				yield* Console.log(`# board cache age: ${result.age}s`);
+				yield* Console.log(`# board cache age: ${result.result.age}s`);
 				yield* Console.log("");
+				const activeColumnIds = new Set([
+					result.env.config.flow.columns.inProgress,
+					result.env.config.flow.columns.todo,
+				]);
 				yield* Console.log(
 					printCards(
-						result.cache.cards.filter((card) =>
-							["INPROGRESS", "TODO"].includes(card.column?.name || ""),
-						),
+						result.result.cache.cards.filter((card) => activeColumnIds.has(card.column?.id || "")),
 					),
 				);
-				if (result.cache.notNow.length > 0) {
-					yield* Console.log(`\n# not_now (${result.cache.notNow.length})`);
-					yield* Console.log(printCards(result.cache.notNow));
+				if (result.result.cache.notNow.length > 0) {
+					yield* Console.log(`\n# not_now (${result.result.cache.notNow.length})`);
+					yield* Console.log(printCards(result.result.cache.notNow));
 				}
 				return;
 			}
@@ -479,6 +483,11 @@ const runFlow = (args: ReadonlyArray<string>) =>
 			case "template": {
 				if (hasHelp(rest)) {
 					yield* Console.log(flowTemplateUsage());
+					return;
+				}
+				if (rest.includes("--draft")) {
+					const draft = yield* withSpinner("Writing card draft...", createFlowDraft());
+					yield* Console.log(draft.path);
 					return;
 				}
 				yield* Console.log(
@@ -921,8 +930,8 @@ commands:
     std <card>
     std-all
     add <user> <title> --desc <file|->
-    assign <card> <user> [user...]
-    template
+    assign <card> <user|me> [user...]
+    template [--draft]
     steps-from-desc <card>
     init
     doctor
@@ -945,8 +954,8 @@ const flowCompleteStepsUsage = (): string => "fizzyx flow complete-steps <card>"
 const flowStdUsage = (): string => "fizzyx flow std <card>  (alias: standardize-card)";
 const flowStdAllUsage = (): string => "fizzyx flow std-all  (alias: standardize-board)";
 const flowAddUsage = (): string => "fizzyx flow add <user> <title> --desc <file|->";
-const flowAssignUsage = (): string => "fizzyx flow assign <card> <user> [user...]";
-const flowTemplateUsage = (): string => "fizzyx flow template";
+const flowAssignUsage = (): string => "fizzyx flow assign <card> <user|me> [user...]";
+const flowTemplateUsage = (): string => "fizzyx flow template [--draft]";
 const flowStepsUsage = (): string => "fizzyx flow steps-from-desc <card>";
 const flowInitUsage = (): string => "fizzyx flow init";
 const flowDoctorUsage = (): string => "fizzyx flow doctor";

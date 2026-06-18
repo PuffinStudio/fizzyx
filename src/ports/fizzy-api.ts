@@ -19,7 +19,6 @@ export interface FizzyApi {
 		board: string;
 	}) => Effect.Effect<Card, ApiError>;
 	assignCard: (number: CardNumber, userId: string) => Effect.Effect<void, ApiError>;
-	selfAssignCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	moveCard: (number: CardNumber, columnId: string) => Effect.Effect<void, ApiError>;
 	comment: (number: CardNumber, body: string) => Effect.Effect<void, ApiError>;
 	closeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;

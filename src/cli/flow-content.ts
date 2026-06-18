@@ -13,6 +13,10 @@ export interface FlowScaffoldFileResult {
 	readonly action: FlowScaffoldFileAction;
 }
 
+export interface FlowDraftResult {
+	readonly path: string;
+}
+
 const resolveProjectRoot = (): Effect.Effect<string, Error, ConfigRepository> =>
 	Effect.flatMap(ConfigRepo, (configRepo) =>
 		configRepo.loadProjectConfigOptional().pipe(
@@ -81,6 +85,29 @@ export const loadFlowSkillContent = (): Effect.Effect<string, Error, ConfigRepos
 export const loadFlowTemplateContent = (): Effect.Effect<string, Error, ConfigRepository> =>
 	resolveFlowFile(FLOW_TEMPLATE_FILE_PATH, () => getBuiltinTemplate());
 
+export const createFlowDraft = (): Effect.Effect<FlowDraftResult, Error, ConfigRepository> =>
+	Effect.gen(function* () {
+		const root = yield* resolveProjectRoot();
+		const content = yield* loadFlowTemplateContent();
+
+		for (let attempt = 0; attempt < 10; attempt += 1) {
+			const filename = `card-${crypto.randomUUID().slice(0, 8)}.md`;
+			const relativePath = join(".fizzyx", filename);
+			const absolutePath = join(root, relativePath);
+			const exists = yield* Effect.tryPromise({
+				try: () => Bun.file(absolutePath).exists(),
+				catch: (cause) => new Error(`failed to check ${absolutePath}: ${String(cause)}`),
+			});
+			if (exists) continue;
+
+			yield* ensureDirectory(absolutePath);
+			yield* writeText(absolutePath, `${content}\n`);
+			return { path: relativePath };
+		}
+
+		return yield* Effect.fail(new Error("failed to create unique draft path"));
+	});
+
 export const initFlowScaffold = ({
 	force,
 }: {
@@ -148,15 +175,17 @@ const getBuiltinWorkflow = (): string =>
 		"- fizzyx auth status",
 		"",
 		"## Create",
-		"- fizzyx flow template > /tmp/card.md",
-		"- edit card content and steps in /tmp/card.md",
-		'- fizzyx flow add <user> "<title>" --desc /tmp/card.md',
+		"- fizzyx flow template --draft",
+		"- edit card content and steps in .fizzyx/card-<random>.md",
+		'- fizzyx flow add <user> "<title>" --desc .fizzyx/card-<random>.md',
+		"- delete .fizzyx/card-<random>.md after the card is created",
+		"- Use a unique random suffix so multiple agents do not collide.",
 		"",
-		"## Column flow",
-		"Cards move through columns: TODO → IN PROGRESS → DONE",
+		"## Workflow",
+		"Cards move through workflow columns, then close into Done state.",
 		"",
 		"- fizzyx flow start <card> — moves card from TODO to IN PROGRESS, self-assigns",
-		"- fizzyx flow done <card> — moves to DONE, auto-detects git ref, comments, closes",
+		"- fizzyx flow done <card> — closes into Done, auto-detects git ref, comments",
 		'- fizzyx flow done <card> "commit <sha>: <subject>" — with explicit ref',
 		"",
 		"## Daily",
@@ -172,7 +201,7 @@ const getBuiltinWorkflow = (): string =>
 		"",
 		"## Complete",
 		"- fizzyx flow complete-steps <card>   — mark all pending steps done (required before done)",
-		"- fizzyx flow done <card>             — moves to DONE, writes comment, closes (ref auto-detected from git)",
+		"- fizzyx flow done <card>             — closes into Done and writes comment (ref auto-detected from git)",
 		'- fizzyx flow done <card> "message"   — with explicit ref',
 		"- flow done requires all steps complete; otherwise it fails with an error listing unfinished steps.",
 		"",
@@ -219,13 +248,13 @@ for project workflow. If fizzyx flow lacks an operation, stop and ask.
 
 ## Workflow
 
-Cards move through columns: **TODO** → **IN PROGRESS** → **DONE**
+Cards move through workflow columns, then close into **Done** state.
 
 | Phase | Command | Action |
 |-------|---------|--------|
 | Start | fizzyx flow start <card> | Move TODO → IN PROGRESS, self-assign |
 | Steps | fizzyx flow complete-steps <card> | Mark all pending steps done |
-| Done | fizzyx flow done <card> "commit <sha>: <subject>" | Move to DONE, comment, close |
+| Done | fizzyx flow done <card> "commit <sha>: <subject>" | Close into Done, comment |
 
 **Never** close a card directly without flow done.
 
@@ -288,6 +317,8 @@ fizzyx flow std-all
 ## Cards
 
 - Generate new card bodies with fizzyx flow template.
+- Prefer fizzyx flow template --draft for temporary card drafts; it creates .fizzyx/card-<random>.md with a unique suffix.
+- Delete the matching temporary draft after fizzyx flow add succeeds.
 - Description is context only. Card titles and fields are standardized in English.
 - Put work checklist under ## Steps; flow add converts it to card steps.
 - Step labels must be plain text: no Markdown links, code ticks, or bold.
@@ -300,7 +331,7 @@ fizzyx flow std-all
 - **Always close cards through the CLI**, never by clicking close in the UI.
 - Close sequence:
    1. fizzyx flow complete-steps <card>  — mark all pending steps done
-   2. fizzyx flow done <card>             — move to DONE, comment, close (ref auto-detected from git)
+   2. fizzyx flow done <card>             — close into Done and comment (ref auto-detected from git)
    3. fizzyx flow done <card> "message"   — with explicit ref (optional)
 - flow done requires all steps to be complete; it will fail with an error if any step is unfinished.
  - Keep comments concise; use fizzyx flow comment-template <kind> for format.`;

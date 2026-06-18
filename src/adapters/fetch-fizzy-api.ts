@@ -34,7 +34,7 @@ export const Live = Layer.effect(FizzyApi)(
 );
 
 type JsonObject = Record<string, unknown>;
-type HttpMethod = "GET" | "POST" | "PATCH";
+type HttpMethod = "GET" | "POST" | "PUT";
 type JsonValue = unknown;
 
 export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyApi => {
@@ -169,6 +169,11 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 			return String(value.error);
 		}
 		return `HTTP ${String(status)}`;
+	};
+
+	const parseCardNumberFromLocation = (location: string | undefined): number => {
+		const match = location?.match(/\/cards\/(\d+)(?:\.json)?(?:$|[?#])/);
+		return match?.[1] ? Number.parseInt(match[1], 10) : Number.NaN;
 	};
 
 	const decodeIdentity = (value: JsonValue): Effect.Effect<Identity, ApiError> =>
@@ -452,31 +457,56 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 				Effect.flatMap(decodeComments),
 			),
 		createCard: (input) =>
-			requestJson("POST", "/cards.json", {
-				board_id: input.board,
-				title: input.title,
-				description: input.description,
-			}).pipe(Effect.flatMap(decodeCard)),
+			Effect.gen(function* () {
+				const response = yield* executeRequest("POST", `/boards/${input.board}/cards.json`, {
+					card: {
+						title: input.title,
+						description: input.description,
+					},
+				});
+
+				const payload = yield* readPayload(response);
+				if (response.status < 200 || response.status >= 300) {
+					return yield* new ApiError({
+						message: responseMessage(payload, response.status),
+						status: response.status,
+					});
+				}
+
+				const fromBody = yield* decodeCard(envelopeData(payload)).pipe(
+					Effect.catch(() => Effect.succeed(undefined)),
+				);
+				if (fromBody) return fromBody;
+
+				const number = parseCardNumberFromLocation(response.headers.location);
+				if (!Number.isFinite(number)) {
+					return yield* new ApiError({ message: "Failed to create card: missing card response" });
+				}
+
+				return yield* requestJson("GET", `/cards/${number}.json`).pipe(Effect.flatMap(decodeCard));
+			}),
 		updateCardDescription: (number, description) =>
-			requestVoid("PATCH", `/cards/${number}.json`, { description }),
+			requestVoid("PUT", `/cards/${number}.json`, { card: { description } }),
 		assignCard: (number, userId) =>
 			requestVoid("POST", `/cards/${number}/assignments.json`, { assignee_id: userId }),
-		selfAssignCard: (number) => requestVoid("POST", `/cards/${number}/self_assignment.json`),
 		moveCard: (number, columnId) =>
 			requestVoid("POST", `/cards/${number}/triage.json`, { column_id: columnId }),
-		comment: (number, body) => requestVoid("POST", `/cards/${number}/comments.json`, { body }),
+		comment: (number, body) =>
+			requestVoid("POST", `/cards/${number}/comments.json`, { comment: { body } }),
 		closeCard: (number) => requestVoid("POST", `/cards/${number}/closure.json`),
 		postponeCard: (number) => requestVoid("POST", `/cards/${number}/not_now.json`),
 		createStep: (number, content, completed) =>
 			requestVoid("POST", `/cards/${number}/steps.json`, {
-				content,
-				completed: Boolean(completed),
+				step: {
+					content,
+					completed: Boolean(completed),
+				},
 			}),
 		updateStep: (number, stepId, input) => {
 			const body: JsonObject = {};
 			if (input.completed !== undefined) body.completed = input.completed;
 			if (input.content !== undefined) body.content = input.content;
-			return requestVoid("PATCH", `/cards/${number}/steps/${stepId}.json`, body);
+			return requestVoid("PUT", `/cards/${number}/steps/${stepId}.json`, { step: body });
 		},
 	};
 };

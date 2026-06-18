@@ -8,6 +8,7 @@ import type { ConfigRepository } from "../src/ports/config-repository";
 import type { FizzyApi } from "../src/ports/fizzy-api";
 import {
 	add,
+	assign,
 	completeSteps,
 	buildStandardizedCommentBody,
 	convertDescription,
@@ -71,7 +72,6 @@ const defaultApi = () =>
 		createColumn: () => Effect.fail(new ApiError({ message: "createColumn not mocked" })),
 		createCard: () => Effect.fail(new ApiError({ message: "createCard not mocked" })),
 		assignCard: () => Effect.fail(new ApiError({ message: "assignCard not mocked" })),
-		selfAssignCard: () => Effect.fail(new ApiError({ message: "selfAssignCard not mocked" })),
 		moveCard: () => Effect.fail(new ApiError({ message: "moveCard not mocked" })),
 		comment: () => Effect.fail(new ApiError({ message: "comment not mocked" })),
 		closeCard: () => Effect.fail(new ApiError({ message: "closeCard not mocked" })),
@@ -378,6 +378,46 @@ test("add without template steps section preserves card body conversion and skip
 	expect(templateSteps).toEqual([]);
 });
 
+test("assign supports current-user aliases and skips already assigned users", async () => {
+	const assigned: string[] = [];
+	const api = defaultApi();
+	api.assignCard = (_number, userId) => {
+		assigned.push(userId);
+		return Effect.succeed(undefined);
+	};
+	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity User" });
+	api.listCards = () => Effect.succeed([]);
+	api.listColumns = () => Effect.succeed([]);
+
+	const env = {
+		...makeEnv(api),
+		cacheRepo: {
+			read: () =>
+				Effect.succeed({
+					identity: { userId: "identity-id", name: "Identity User" },
+					cards: [
+						{
+							number: 23,
+							title: "Assign me",
+							assignees: [{ id: "other-id", name: "Other" }],
+						},
+					],
+					notNow: [],
+					columns: [],
+					users: { Other: "other-id" },
+					syncedAt: "2026-01-01T00:00:00.000Z",
+				}),
+			write: () => Effect.succeed(undefined),
+			ageSeconds: () => Effect.succeed(0),
+		},
+	};
+
+	const result = await Effect.runPromise(assign(env, 23, ["me", "Other"]));
+
+	expect(result).toEqual({ number: 23, userIds: ["identity-id"] });
+	expect(assigned).toEqual(["identity-id"]);
+});
+
 test("buildStandardizedCommentBody escapes html in values", () => {
 	const body = buildStandardizedCommentBody("done", 'feat: <a> & b "c" d\'');
 
@@ -402,8 +442,6 @@ test("done posts standardized escaped comment and closes card", async () => {
 		return Effect.succeed(undefined);
 	};
 	api.closeCard = () => Effect.succeed(undefined);
-	api.moveCard = () => Effect.succeed(undefined);
-	api.listColumns = () => Effect.succeed([{ id: "done-col", name: "DONE" }]);
 	api.identity = () => Effect.succeed({ userId: "identity-id" });
 	api.listCards = (options) => {
 		return Effect.succeed(Array.isArray(options?.all) ? [] : []);
@@ -417,19 +455,6 @@ test("done posts standardized escaped comment and closes card", async () => {
 				...baseConfig.flow,
 			},
 		},
-		cacheRepo: {
-			read: () =>
-				Effect.succeed({
-					identity: { userId: "identity-id", name: "Test", email: "" },
-					cards: [],
-					notNow: [],
-					columns: [{ id: "done-col", name: "DONE" }],
-					users: {},
-					syncedAt: "2026-01-01T00:00:00.000Z",
-				}),
-			write: () => Effect.succeed(undefined),
-			ageSeconds: () => Effect.succeed(0),
-		},
 	};
 
 	const result = await Effect.runPromise(done(env, 20, 'commit <x> & "y"'));
@@ -438,7 +463,7 @@ test("done posts standardized escaped comment and closes card", async () => {
 	expect(comments).toEqual(["<p>done: commit &lt;x&gt; &amp; &quot;y&quot;</p>"]);
 });
 
-test("done closes card when DONE column is not visible", async () => {
+test("done closes card without querying DONE column", async () => {
 	const calls: string[] = [];
 	const api = defaultApi();
 	api.showCard = () =>
@@ -447,7 +472,7 @@ test("done closes card when DONE column is not visible", async () => {
 			title: "Done task",
 			steps: [],
 		});
-	api.listColumns = () => Effect.succeed([]);
+	api.listColumns = () => Effect.fail(new ApiError({ message: "columns unavailable" }));
 	api.closeCard = () => {
 		calls.push("close");
 		return Effect.succeed(undefined);
@@ -463,7 +488,7 @@ test("done closes card when DONE column is not visible", async () => {
 	expect(calls).toEqual(["close", "comment"]);
 });
 
-test("done closes card when DONE column move fails", async () => {
+test("done closes card when cache refresh fails", async () => {
 	const calls: string[] = [];
 	const api = defaultApi();
 	api.showCard = () =>
@@ -472,8 +497,9 @@ test("done closes card when DONE column move fails", async () => {
 			title: "Done task",
 			steps: [],
 		});
-	api.listColumns = () => Effect.succeed([{ id: "done-col", name: "DONE" }]);
-	api.moveCard = () => Effect.fail(new ApiError({ message: "move failed" }));
+	api.identity = () => Effect.fail(new ApiError({ message: "identity failed" }));
+	api.listCards = () => Effect.fail(new ApiError({ message: "list cards failed" }));
+	api.listColumns = () => Effect.fail(new ApiError({ message: "columns unavailable" }));
 	api.closeCard = () => {
 		calls.push("close");
 		return Effect.succeed(undefined);

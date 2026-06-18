@@ -402,6 +402,34 @@ test("flow template command prints card template sections", async () => {
 	}
 });
 
+test("flow template --draft creates a unique project-local draft", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(
+			join(projectDir, ".fizzy.yaml"),
+			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n`,
+		);
+
+		const first = await runCli(["flow", "template", "--draft"], { cwd: projectDir });
+		const second = await runCli(["flow", "template", "--draft"], { cwd: projectDir });
+
+		expect(first.exitCode).toBe(0);
+		expect(second.exitCode).toBe(0);
+		const firstPath = first.stdout.trim();
+		const secondPath = second.stdout.trim();
+		expect(firstPath).toMatch(/^\.fizzyx\/card-[a-f0-9-]+\.md$/);
+		expect(secondPath).toMatch(/^\.fizzyx\/card-[a-f0-9-]+\.md$/);
+		expect(firstPath).not.toBe(secondPath);
+		expect(readFileSync(join(projectDir, firstPath), "utf8")).toContain("## Goal");
+		expect(readFileSync(join(projectDir, secondPath), "utf8")).toContain("## Steps");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("flow template uses English defaults when config has legacy language", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
@@ -543,7 +571,7 @@ test("flow repair-markdown repairs card description and prints result", async ()
 					});
 				}
 
-				if (url.pathname === "/1/cards/12.json" && req.method === "PATCH") {
+				if (url.pathname === "/1/cards/12.json" && req.method === "PUT") {
 					requestBodies.push((await new Response(req.body).json()) as { [key: string]: unknown });
 					return Response.json({});
 				}
@@ -573,8 +601,10 @@ test("flow repair-markdown repairs card description and prints result", async ()
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("repaired #12");
 		expect(requestBodies).toHaveLength(1);
-		expect(requestBodies[0]).toHaveProperty("description");
-		expect(typeof requestBodies[0]?.description).toBe("string");
+		expect(requestBodies[0]).toHaveProperty("card");
+		expect(typeof (requestBodies[0]?.card as { description?: unknown })?.description).toBe(
+			"string",
+		);
 		expect(calls.filter((call) => call === "GET /1/cards.json").length).toBe(3);
 
 		api.stop();
@@ -624,7 +654,7 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 					});
 				}
 
-				if (url.pathname.startsWith("/1/cards/77/steps/") && req.method === "PATCH") {
+				if (url.pathname.startsWith("/1/cards/77/steps/") && req.method === "PUT") {
 					updated.push(url.pathname);
 					return Response.json({});
 				}

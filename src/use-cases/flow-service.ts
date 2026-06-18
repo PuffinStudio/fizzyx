@@ -281,7 +281,6 @@ const makeFlowApiWithAuthRetry = (
 		updateCardDescription: (number, description) =>
 			withAuthRetry((api) => api.updateCardDescription(number, description)),
 		assignCard: (number, userId) => withAuthRetry((api) => api.assignCard(number, userId)),
-		selfAssignCard: (number) => withAuthRetry((api) => api.selfAssignCard(number)),
 		moveCard: (number, columnId) => withAuthRetry((api) => api.moveCard(number, columnId)),
 		comment: (number, body) => withAuthRetry((api) => api.comment(number, body)),
 		closeCard: (number) => withAuthRetry((api) => api.closeCard(number)),
@@ -410,7 +409,7 @@ export const show = (env: InitializedEnv, number: number) =>
 export const next = (env: InitializedEnv, options: { fresh: boolean }) =>
 	Effect.gen(function* () {
 		const result = yield* mine(env, { fresh: options.fresh });
-		const card = result.cards.find((item) => (item.column?.name || "") === "TODO");
+		const card = result.cards.find((item) => item.column?.id === env.config.flow.columns.todo);
 		return { user: result, card };
 	});
 
@@ -433,7 +432,7 @@ export const start = (env: InitializedEnv, number: number) =>
 		}
 		yield* env.api.moveCard(number, env.config.flow.columns.inProgress);
 		if (!target.assignees?.some((assignee) => assignee.id === userId)) {
-			yield* env.api.selfAssignCard(number);
+			yield* env.api.assignCard(number, userId);
 		}
 		yield* syncBoard(env);
 		return number;
@@ -448,18 +447,6 @@ export const done = (env: InitializedEnv, number: number, ref?: string) =>
 			return yield* new ValidationError({
 				message: `Cannot close #${number}: unfinished steps remain\n${formatted}`,
 			});
-		}
-
-		const cache = yield* env.cacheRepo.read().pipe(Effect.catch(() => Effect.succeed(null)));
-		let doneColumn = cache?.columns?.find((c) => c.name.toLowerCase() === "done");
-		if (!doneColumn) {
-			const columns = yield* env.api.listColumns().pipe(Effect.catch(() => Effect.succeed([])));
-			doneColumn = columns.find((c) => c.name.toLowerCase() === "done");
-		}
-		if (doneColumn) {
-			yield* env.api
-				.moveCard(number, doneColumn.id)
-				.pipe(Effect.catch(() => Effect.succeed(undefined)));
 		}
 
 		const finalRef = ref || "done";
@@ -814,18 +801,27 @@ const resolveBoardUser = (boardUsers: Record<string, string>, user: string): str
 	throw new ValidationError({ message: `Unknown user "${user}". Board members: ${members}` });
 };
 
+const isCurrentUserAlias = (user: string): boolean =>
+	["me", "self", "myself"].includes(user.toLowerCase());
+
 export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
 		if (users.length === 0)
 			return yield* new ValidationError({ message: "At least one user is required" });
 		const cache = yield* ensureCache(env, false);
 		const boardUsers = { ...cache.users };
-		const userIds = users.map((u) => resolveBoardUser(boardUsers, u));
-		yield* Effect.forEach(userIds, (userId) => env.api.assignCard(number, userId), {
+		const userIds = users.map((u) =>
+			isCurrentUserAlias(u) ? cache.identity.userId : resolveBoardUser(boardUsers, u),
+		);
+		const card =
+			cache.cards.find((item) => item.number === number) ?? (yield* env.api.showCard(number));
+		const existing = new Set(card.assignees?.map((assignee) => assignee.id) ?? []);
+		const toAssign = userIds.filter((userId) => !existing.has(userId));
+		yield* Effect.forEach(toAssign, (userId) => env.api.assignCard(number, userId), {
 			discard: true,
 		});
 		yield* syncBoard(env);
-		return { number, userIds };
+		return { number, userIds: toAssign };
 	});
 
 export interface DoctorResult {

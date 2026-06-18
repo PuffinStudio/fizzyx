@@ -8,6 +8,72 @@ CLI tool for Fizzy board workflow and OSS/S3-compatible storage management.
 bun add -g @puffinstudio/fizzyx
 ```
 
+## Flow Commands
+
+Manage a Fizzy board from a repository-local `.fizzy.yaml`.
+
+### Setup
+
+```sh
+fizzyx setup <board-id>
+fizzyx auth login <token>
+fizzyx auth status
+fizzyx flow doctor
+```
+
+`flow doctor` shows account, board, workflow columns, and whether the CLI is ready to operate on the board.
+
+### Create A Card
+
+Use `--draft` to create a unique project-local draft file. This automatically creates `.fizzyx/` when needed and avoids collisions between multiple agents.
+
+```sh
+draft=$(fizzyx flow template --draft)
+$EDITOR "$draft"
+fizzyx flow add Ellen "Implement feature" --desc "$draft"
+rm "$draft"
+```
+
+You can also pipe or provide your own file:
+
+```sh
+fizzyx flow template
+fizzyx flow add <user> "<title>" --desc <file|->
+```
+
+### Work A Card
+
+```sh
+fizzyx flow mine --fresh
+fizzyx flow next --fresh
+fizzyx flow show <card>
+fizzyx flow start <card>
+fizzyx flow complete-steps <card>
+fizzyx flow done <card> "commit <sha>: <subject>"
+```
+
+`flow done` requires all steps to be complete and closes the card into Done.
+
+### Other Flow Commands
+
+```sh
+fizzyx flow sync
+fizzyx flow status [--fresh]
+fizzyx flow assign <card> <user|me> [user...]
+fizzyx flow block <card> "<reason>"
+fizzyx flow repair-markdown <card>
+fizzyx flow std <card>
+fizzyx flow std-all
+fizzyx flow workflow
+fizzyx flow skill
+fizzyx flow skill init [--force]
+```
+
+- `flow assign <card> me` assigns the card to the authenticated Fizzy user.
+- `flow assign` skips users who are already assigned.
+- `flow block` moves the card to Not Now.
+- `flow workflow`, `flow skill`, and `flow template` prefer project-local overrides under `.agents/skills/fizzyx/`.
+
 ## OSS Commands
 
 Manage S3-compatible object storage (Alibaba Cloud OSS, AWS S3, MinIO, etc.).
