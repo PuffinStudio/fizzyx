@@ -566,19 +566,54 @@ const runOss = (args: ReadonlyArray<string>) =>
 				const env = parseOssEnv(rest, "dev");
 				const full = rest.includes("--full");
 				const showUrls = !rest.includes("--no-urls");
-				const result = yield* withSpinner(`Syncing to ${env}...`, ossSync({ env, full }));
+				const stderr = process.stderr;
+				const isTTY = stderr.isTTY;
+				const frames = ["◐", "◓", "◑", "◒"];
+				let frame = 0;
+				const actionIcon: Record<string, string> = {
+					checking: " ",
+					uploading: "↑",
+					skipping: "→",
+					error: "✗",
+				};
+				let lastTotal = 0;
+				const onProgress = (info: {
+					current: number;
+					total: number;
+					file: string;
+					action: string;
+				}) => {
+					lastTotal = info.total;
+					if (!isTTY) return;
+					const icon = actionIcon[info.action] ?? " ";
+					const spinner = frames[frame++ % frames.length];
+					const pct = Math.round((info.current / info.total) * 100);
+					const barWidth = 16;
+					const filled = Math.round((info.current / info.total) * barWidth);
+					const bar = "█".repeat(filled) + "░".repeat(Math.max(0, barWidth - filled));
+					const label = `  ${spinner} ${env} [${bar}] ${pct}%  ${icon} ${info.file}    `;
+					stderr.write(`\r${label}`);
+				};
+				const result = yield* ossSync({ env, full, onProgress });
+				if (isTTY && lastTotal > 0) {
+					stderr.write("\r\x1b[2K");
+				}
 				if (result.errors.length > 0) {
 					for (const err of result.errors) {
 						yield* Console.error(`  error: ${err}`);
 					}
 				}
+				const dur =
+					result.durationMs >= 1000
+						? `${(result.durationMs / 1000).toFixed(1)}s`
+						: `${result.durationMs}ms`;
 				yield* Console.log(
-					`${env}: uploaded=${result.uploaded} skipped=${result.skipped} duration=${result.durationMs}ms`,
+					`  ✓ ${env} synced · ${result.uploaded} uploaded · ${result.skipped} skipped · ${dur}`,
 				);
 				if (showUrls) {
 					const base = result.endpoint.replace(/\/+$/, "");
 					for (const key of result.allKeys) {
-						yield* Console.log(`  ${base}/${key}`);
+						yield* Console.log(`    ${base}/${key}`);
 					}
 				}
 				return;
@@ -603,7 +638,7 @@ const runOss = (args: ReadonlyArray<string>) =>
 					yield* Console.log(ossSetupUsage());
 					return;
 				}
-				const env = parseOssEnv(rest, "dev");
+				const env = parseOssEnv(rest, "default");
 				const endpoint = parseFlag(rest, "--endpoint");
 				const region = parseFlag(rest, "--region");
 				const bucket = parseFlag(rest, "--bucket");
@@ -611,12 +646,14 @@ const runOss = (args: ReadonlyArray<string>) =>
 				const remotePrefix = parseFlag(rest, "--remote-prefix");
 
 				if (!endpoint && !region && !bucket && !localDir && remotePrefix === undefined) {
-					yield* withSpinner("Initializing OSS config...", ossInitBlank());
-					yield* Console.log("OSS scaffold written to .fizzy.yaml");
-					yield* Console.log(
-						"Edit endpoint, region, local_dir, and optionally bucket/remote_prefix in the file",
-					);
-					yield* Console.log("");
+					const wrote = yield* withSpinner("Checking OSS config...", ossInitBlank());
+					if (wrote) {
+						yield* Console.log("OSS scaffold written to .fizzy.yaml");
+						yield* Console.log(
+							"Edit endpoint, region, local_dir, and optionally bucket/remote_prefix in the file",
+						);
+						yield* Console.log("");
+					}
 					yield* Console.error(`Configuring keys for [${env}]:`);
 					const accessKeyId = yield* promptSecret(`  Access Key ID: `);
 					const secretAccessKey = yield* promptSecret(`  Secret Access Key: `);

@@ -23,6 +23,33 @@ import path from "node:path";
 // ─── Bun.secrets constants ───────────────────────────────────
 
 export const OSS_SECRET_SERVICE = "fizzyx-oss";
+export const DEFAULT_OSS_ENV = "default";
+
+const tryGetSecret = (
+	config: ProjectConfig,
+	env: OssEnvironmentName,
+): Effect.Effect<OssCredentials | undefined, never> =>
+	Effect.gen(function* () {
+		const secretName = getOssSecretName(config, env);
+		let raw: string | null = null;
+		try {
+			raw = yield* Effect.promise(() =>
+				Bun.secrets.get({ service: OSS_SECRET_SERVICE, name: secretName }),
+			);
+		} catch {
+			return undefined;
+		}
+		if (!raw) return undefined;
+		try {
+			const parsed = JSON.parse(raw) as Record<string, string>;
+			const ak = parsed.accessKeyId;
+			const sk = parsed.secretAccessKey;
+			if (ak && sk) return { accessKeyId: ak, secretAccessKey: sk } satisfies OssCredentials;
+		} catch {
+			// invalid JSON
+		}
+		return undefined;
+	});
 
 export const getOssSecretName = (config: ProjectConfig, env: OssEnvironmentName): string => {
 	const projectKey = config.board
@@ -33,14 +60,14 @@ export const getOssSecretName = (config: ProjectConfig, env: OssEnvironmentName)
 
 // ─── Public API ──────────────────────────────────────────────
 
-export const ossInitBlank = (): Effect.Effect<void, FileError, ConfigRepository> =>
+export const ossInitBlank = (): Effect.Effect<boolean, FileError, ConfigRepository> =>
 	Effect.gen(function* () {
 		const configRepo = yield* ConfigRepo;
 		const config = yield* configRepo
 			.loadProjectConfigOptional()
 			.pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-		if (config?.oss) return;
+		if (config?.oss) return false;
 
 		const configPath = config?.configPath ?? `${process.cwd()}/.fizzy.yaml`;
 
@@ -65,6 +92,7 @@ export const ossInitBlank = (): Effect.Effect<void, FileError, ConfigRepository>
 			sync: { localDir: "./public" },
 			configPath,
 		});
+		return true;
 	});
 
 export const ossStoreCredentials = (
@@ -117,6 +145,12 @@ export const ossSetup = (input: OssSetupInput) =>
 export const ossSync = (options: {
 	env: OssEnvironmentName;
 	full: boolean;
+	onProgress?: (info: {
+		current: number;
+		total: number;
+		file: string;
+		action: "checking" | "uploading" | "skipping" | "error";
+	}) => void;
 }): Effect.Effect<
 	OssSyncSummary,
 	ConfigError | FileError | OssError | ValidationError,
@@ -152,9 +186,22 @@ export const ossSync = (options: {
 		let uploaded = 0;
 		let skipped = 0;
 
-		for (const { absolutePath, relativePath } of localFiles) {
+		for (let i = 0; i < localFiles.length; i++) {
+			const { absolutePath, relativePath } = localFiles[i]!;
 			const key = [remotePrefix, relativePath].filter(Boolean).join("/");
 			allKeys.push(key);
+
+			if (options.onProgress) {
+				yield* Effect.sync(() =>
+					options.onProgress!({
+						current: i + 1,
+						total: localFiles.length,
+						file: relativePath,
+						action: "checking",
+					}),
+				);
+			}
+
 			const result = yield* syncFile(
 				ossRepo,
 				resolvedLocalDir,
@@ -164,11 +211,41 @@ export const ossSync = (options: {
 				relativePath,
 			);
 			if (result._tag === "uploaded") {
+				if (options.onProgress) {
+					yield* Effect.sync(() =>
+						options.onProgress!({
+							current: i + 1,
+							total: localFiles.length,
+							file: relativePath,
+							action: "uploading",
+						}),
+					);
+				}
 				uploaded++;
 				uploadedKeys.push(result.key);
 			} else if (result._tag === "skipped") {
+				if (options.onProgress) {
+					yield* Effect.sync(() =>
+						options.onProgress!({
+							current: i + 1,
+							total: localFiles.length,
+							file: relativePath,
+							action: "skipping",
+						}),
+					);
+				}
 				skipped++;
 			} else {
+				if (options.onProgress) {
+					yield* Effect.sync(() =>
+						options.onProgress!({
+							current: i + 1,
+							total: localFiles.length,
+							file: relativePath,
+							action: "error",
+						}),
+					);
+				}
 				errors.push(result.error);
 			}
 		}
@@ -289,26 +366,12 @@ const resolveOssCredentials = (
 	envConfig: OssEnvironmentConfig,
 ): Effect.Effect<OssCredentials, OssError> =>
 	Effect.gen(function* () {
-		const secretName = getOssSecretName(config, env);
+		const fromSecrets = yield* tryGetSecret(config, env);
+		if (fromSecrets) return fromSecrets;
 
-		let fromSecretsRaw: string | null = null;
-		try {
-			fromSecretsRaw = yield* Effect.promise(() =>
-				Bun.secrets.get({ service: OSS_SECRET_SERVICE, name: secretName }),
-			);
-		} catch {
-			// secrets not available — fall through
-		}
-
-		if (fromSecretsRaw) {
-			try {
-				const parsed = JSON.parse(fromSecretsRaw) as Record<string, string>;
-				const ak = parsed.accessKeyId;
-				const sk = parsed.secretAccessKey;
-				if (ak && sk) return { accessKeyId: ak, secretAccessKey: sk } satisfies OssCredentials;
-			} catch {
-				// invalid JSON in secrets, fall through
-			}
+		if (env !== DEFAULT_OSS_ENV) {
+			const fallback = yield* tryGetSecret(config, DEFAULT_OSS_ENV);
+			if (fallback) return fallback;
 		}
 
 		const prefix = `OSS_${env.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}`;
@@ -325,7 +388,7 @@ const resolveOssCredentials = (
 		}
 
 		return yield* new OssError({
-			message: `No OSS credentials for ${env} (service="${OSS_SECRET_SERVICE}" name="${secretName}"). Store with: fizzyx oss setup --env ${env} --access-key-id <key> --secret-access-key <secret>`,
+			message: `No OSS credentials for ${env}. Store with: fizzyx oss setup [--env <name>]`,
 		});
 	});
 
