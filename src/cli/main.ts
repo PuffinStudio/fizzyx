@@ -818,7 +818,8 @@ const flowWorkflow = (language: FlowCardLanguage): string => {
 Cards move through columns: TODO → IN PROGRESS → DONE
 
 - \`fizzyx flow start <card>\` — moves card from TODO to IN PROGRESS, self-assigns
-- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — moves to DONE, comments, closes
+- \`fizzyx flow done <card>\` — moves to DONE, auto-detects git ref, comments, closes
+- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — with explicit ref
 
 ## Daily
 - fizzyx flow mine --fresh
@@ -832,9 +833,10 @@ Cards move through columns: TODO → IN PROGRESS → DONE
 - Verify tests and acceptance criteria
 
 ## Complete
-- fizzyx flow complete-steps <card>
-- fizzyx flow done <card> "commit <sha>: <subject>"
-- \`flow done\` moves to DONE, writes the standardized done comment, and closes the card.
+- fizzyx flow complete-steps <card>   — mark all pending steps done (required before done)
+- fizzyx flow done <card>             — moves to DONE, writes comment, closes (ref auto-detected from git)
+- fizzyx flow done <card> "message"   — with explicit ref
+- \`flow done\` REQUIRES all steps complete; otherwise it fails with an error listing unfinished steps.
 
 ## Block
 - fizzyx flow block <card> "<reason>"
@@ -862,7 +864,8 @@ Cards move through columns: TODO → IN PROGRESS → DONE
 Cards: TODO → IN PROGRESS → DONE
 
 - \`fizzyx flow start <card>\` — TODO → IN PROGRESS, self-assign
-- \`fizzyx flow done <card>\` — → DONE + close
+- \`fizzyx flow done <card>\` — → DONE + close (git ref auto-detected)
+- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — explicit ref
 
 ## Daily / 日常
 - fizzyx flow mine --fresh
@@ -876,9 +879,10 @@ Cards: TODO → IN PROGRESS → DONE
 - 验收测试与自检
 
 ## Done / 完成
-- fizzyx flow complete-steps <card>
-- fizzyx flow done <card> "commit <sha>: <subject>"
-- \`flow done\` 移入 DONE 列、写入标准完成评论、关闭卡片。
+- fizzyx flow complete-steps <card>   — 标记所有步骤完成（done 前必须先执行）
+- fizzyx flow done <card>             — 移入 DONE 列、写入评论、关闭（自动获取 git ref）
+- fizzyx flow done <card> "message"   — 指定 ref
+- \`flow done\` 要求所有步骤已完成，否则报错列出未完成的步骤。
 
 ## Block / 阻塞
 - fizzyx flow block <card> "<reason>"
@@ -905,7 +909,8 @@ Cards: TODO → IN PROGRESS → DONE
 卡片流转: TODO → IN PROGRESS → DONE
 
 - \`fizzyx flow start <card>\` — TODO → IN PROGRESS, 自指派
-- \`fizzyx flow done <card>\` — → DONE + 关闭
+- \`fizzyx flow done <card>\` — → DONE + 关闭（自动获取 git ref）
+- \`fizzyx flow done <card> "commit <sha>: <subject>"\` — 指定 ref
 
 ## 每日
 - fizzyx flow mine --fresh
@@ -919,9 +924,10 @@ Cards: TODO → IN PROGRESS → DONE
 - 验证测试与验收
 
 ## 完成
-- fizzyx flow complete-steps <card>
-- fizzyx flow done <card> "commit <sha>: <subject>"
-- \`flow done\` 移入 DONE 列、写入标准完成评论、关闭卡片。
+- fizzyx flow complete-steps <card>   — 标记所有步骤完成（done 前必须先执行）
+- fizzyx flow done <card>             — 移入 DONE 列、写入评论、关闭卡片（自动获取 git ref）
+- fizzyx flow done <card> "message"   — 指定 ref
+- \`flow done\` 要求所有步骤已完成，否则报错列出未完成的步骤。
 
 ## 阻塞
 - fizzyx flow block <card> "<reason>"
@@ -1038,7 +1044,12 @@ fizzyx flow std-all
 
 - Do not create cards for typo fixes or tiny chore commits.
 - Do not maintain a parallel progress document; board is execution state.
-- Before closing: run \`fizzyx flow complete-steps <card>\` then \`fizzyx flow done <card>\`.
+- **Always close cards through the CLI**, never by clicking close in the UI.
+- Close sequence:
+  1. \`fizzyx flow complete-steps <card>\`  — mark all pending steps done
+  2. \`fizzyx flow done <card>\`             — move to DONE, comment, close (ref auto-detected from git)
+  3. \`fizzyx flow done <card> "message"\`   — with explicit ref (optional)
+- \`flow done\` requires all steps to be complete; it will fail with an error if any step is unfinished.
 - Keep comments concise; use \`fizzyx flow comment-template <kind>\` for format.`;
 
 const isHelpCommand = (value: string | undefined): value is "help" | "--help" | "-h" =>
@@ -1165,7 +1176,7 @@ const getTemplateText = (language: FlowCardLanguage) => {
 			stepGoal: "Replace goal + scope text with final content",
 			stepImplementation: "Add or update implementation files",
 			stepPlain: "Keep step descriptions in plain text",
-			stepClose: "Confirm checks and close card",
+			stepClose: "Confirm checks and run `fizzyx flow done <number>` to close",
 		};
 	}
 
@@ -1181,7 +1192,8 @@ const getTemplateText = (language: FlowCardLanguage) => {
 			stepGoal: "Finalize goal and scope / 确认目标与范围",
 			stepImplementation: "Implement required changes / 完成实现",
 			stepPlain: "Keep step labels plain text / step 文本不写 Markdown",
-			stepClose: "Run checks and close card / 通过检查并关卡",
+			stepClose:
+				"Run checks and run `fizzyx flow done <number>` to close / 通过检查后用 fizzyx flow done 关卡",
 		};
 	}
 
@@ -1196,7 +1208,7 @@ const getTemplateText = (language: FlowCardLanguage) => {
 		stepGoal: "确认目标与范围",
 		stepImplementation: "完成实现文件变更",
 		stepPlain: "保持 step 文本为纯文本",
-		stepClose: "检查通过并关闭卡片",
+		stepClose: "运行 `fizzyx flow done <number>` 关闭卡片",
 	};
 };
 

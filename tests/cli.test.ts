@@ -234,7 +234,7 @@ test("flow workflow prints process checklist", async () => {
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("## Workflow / 工作流");
 		expect(stdout).toContain("fizzyx flow comment-template <kind>");
-		expect(stdout).toContain("关闭卡片");
+		expect(stdout).toContain("关闭");
 		expect(stdout).toContain("简洁");
 	} finally {
 		rmSync(root, { recursive: true, force: true });

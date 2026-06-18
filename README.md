@@ -47,6 +47,7 @@ fizzyx oss sync [--env dev] [--full] [--no-urls] [--verify]
 Sync uses a two-stage check (mtime+size → SHA-256 hash) to skip unchanged files. The manifest is stored at `.fizzyx/oss-manifest.json` and can be committed for team sharing.
 
 During sync, a live progress bar shows current file, progress, and status:
+
 ```
   ◐ dev [████░░░░░░░░░░░░] 25%  ↑ filename.jpg
 ```
