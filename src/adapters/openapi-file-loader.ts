@@ -82,7 +82,7 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 	const title = (info?.title as string) ?? "API";
 	const version = (info?.version as string) ?? "0.0.0";
 
-	const refMap = buildSchemaRefMap(doc);
+	const { refMap, inlineTypes } = buildSchemaRefMap(doc);
 	const propRefs = buildPropertyRefs(doc);
 
 	const dereferenced = (await $RefParser.dereference(JSON.parse(JSON.stringify(doc)), {
@@ -93,6 +93,13 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 		dereferenced.components as Record<string, unknown> | undefined,
 		propRefs,
 	);
+
+	// Parse inline response/body schemas as named types so they appear in types.ts
+	for (const [typeName, schema] of inlineTypes) {
+		if (!derefSchemas[typeName]) {
+			derefSchemas[typeName] = parseSchema(typeName, schema, propRefs);
+		}
+	}
 
 	const paths = dereferenced.paths as Record<string, unknown> | undefined;
 	const endpoints = parseAllEndpoints(paths, derefSchemas, refMap);
@@ -105,12 +112,16 @@ function extractRawSchemas(doc: Record<string, unknown>): Record<string, unknown
 	return (components?.schemas as Record<string, unknown> | undefined) ?? {};
 }
 
-function buildSchemaRefMap(doc: Record<string, unknown>): Map<string, string> {
+function buildSchemaRefMap(doc: Record<string, unknown>): {
+	refMap: Map<string, string>;
+	inlineTypes: Map<string, Record<string, unknown>>;
+} {
 	const refMap = new Map<string, string>();
+	const inlineTypes = new Map<string, Record<string, unknown>>();
 	const schemas = extractRawSchemas(doc);
 
 	const paths = doc.paths as Record<string, unknown> | undefined;
-	if (!paths) return refMap;
+	if (!paths) return { refMap, inlineTypes };
 
 	for (const [path, pathItem] of Object.entries(paths)) {
 		const item = pathItem as Record<string, unknown>;
@@ -118,7 +129,9 @@ function buildSchemaRefMap(doc: Record<string, unknown>): Map<string, string> {
 			if (!["get", "post", "put", "delete", "patch", "head", "options"].includes(method)) continue;
 			const op = operation as Record<string, unknown>;
 			const opKey = `${method.toUpperCase()} ${path}`;
+			const operationId = (op.operationId as string) ?? makeOperationId(method, path);
 
+			// Response
 			const responses = op.responses as Record<string, unknown> | undefined;
 			if (responses) {
 				const success = (responses["200"] ?? responses["201"] ?? responses["default"]) as
@@ -142,14 +155,31 @@ function buildSchemaRefMap(doc: Record<string, unknown>): Map<string, string> {
 								if (name && schemas[name]) {
 									refMap.set(`${opKey}/response`, `${name}[]`);
 								}
+							} else {
+								const inner = maybeUnwrapEnvelope(schema);
+								if (isObjectSchema(inner)) {
+									const typeName = `${toPascalCase(operationId)}Response`;
+									inlineTypes.set(typeName, inner);
+									refMap.set(`${opKey}/response`, typeName);
+								} else {
+									refMap.set(`${opKey}/response/raw`, schemaToTsType(inner));
+								}
 							}
 						} else {
-							refMap.set(`${opKey}/response/raw`, schemaToTsType(maybeUnwrapEnvelope(schema)));
+							const inner = maybeUnwrapEnvelope(schema);
+							if (isObjectSchema(inner)) {
+								const typeName = `${toPascalCase(operationId)}Response`;
+								inlineTypes.set(typeName, inner);
+								refMap.set(`${opKey}/response`, typeName);
+							} else {
+								refMap.set(`${opKey}/response/raw`, schemaToTsType(inner));
+							}
 						}
 					}
 				}
 			}
 
+			// Request body
 			const requestBody = op.requestBody as Record<string, unknown> | undefined;
 			if (requestBody) {
 				const content = requestBody.content as Record<string, unknown> | undefined;
@@ -169,9 +199,17 @@ function buildSchemaRefMap(doc: Record<string, unknown>): Map<string, string> {
 							if (name && schemas[name]) {
 								refMap.set(`${opKey}/body`, `${name}[]`);
 							}
+						} else if (isObjectSchema(schema)) {
+							const typeName = `${toPascalCase(operationId)}Request`;
+							inlineTypes.set(typeName, schema);
+							refMap.set(`${opKey}/body`, typeName);
 						} else {
 							refMap.set(`${opKey}/body/raw`, schemaToTsType(schema));
 						}
+					} else if (isObjectSchema(schema)) {
+						const typeName = `${toPascalCase(operationId)}Request`;
+						inlineTypes.set(typeName, schema);
+						refMap.set(`${opKey}/body`, typeName);
 					} else {
 						refMap.set(`${opKey}/body/raw`, schemaToTsType(schema));
 					}
@@ -180,7 +218,22 @@ function buildSchemaRefMap(doc: Record<string, unknown>): Map<string, string> {
 		}
 	}
 
-	return refMap;
+	return { refMap, inlineTypes };
+}
+
+function isObjectSchema(schema: Record<string, unknown>): boolean {
+	if (schema.type === "object" && schema.properties) return true;
+	if (!schema.type && schema.properties) return true;
+	return false;
+}
+
+function toPascalCase(s: string): string {
+	return s
+		.replace(/[-_.]/g, " ")
+		.split(" ")
+		.filter(Boolean)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+		.join("");
 }
 
 function buildPropertyRefs(doc: Record<string, unknown>): Map<string, string> {

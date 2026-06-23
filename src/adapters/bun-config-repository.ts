@@ -12,6 +12,7 @@ import type {
 	OssSyncConfig,
 	ProjectConfig,
 } from "../domain/models";
+import type { OpenApiGenConfig } from "../domain/openapi-models";
 import type {
 	ConfigRepository,
 	OssSetupInput,
@@ -248,6 +249,7 @@ const parseProjectConfig = (text: string, configPath: string, rootDir: string): 
 	const board = stringValue(raw.board) || undefined;
 	const flow = parseFlowConfig(raw.flow);
 	const oss = parseOssConfig(raw.oss);
+	const openapi = parseOpenapiConfig(raw.openapi);
 	if (!board) {
 		return {
 			apiUrl,
@@ -255,6 +257,7 @@ const parseProjectConfig = (text: string, configPath: string, rootDir: string): 
 			board: undefined,
 			flow,
 			oss,
+			openapi,
 			configPath,
 			rootDir,
 		};
@@ -266,6 +269,7 @@ const parseProjectConfig = (text: string, configPath: string, rootDir: string): 
 		board,
 		flow,
 		oss,
+		openapi,
 		configPath,
 		rootDir,
 	};
@@ -361,6 +365,29 @@ const parseOssEnvConfig = (raw: unknown): OssEnvironmentConfig | undefined => {
 	if (accessKeyId) config.accessKeyId = accessKeyId;
 	if (secretAccessKey) config.secretAccessKey = secretAccessKey;
 	return config;
+};
+
+const parseOpenapiConfig = (raw: unknown): OpenApiGenConfig[] | undefined => {
+	const arr = arrayValue(raw);
+	if (!arr) return undefined;
+	const entries: OpenApiGenConfig[] = [];
+	for (const item of arr) {
+		const obj = objectValue(item);
+		const input = stringValue(obj.input);
+		const output = stringValue(obj.output);
+		const client = stringValue(obj.client);
+		if (!input || !output || !client) continue;
+		entries.push({
+			input,
+			output,
+			client,
+			apiName: stringValue(obj.apiName) || undefined,
+			typesName: stringValue(obj.typesName) || undefined,
+			runtimeName: stringValue(obj.runtimeName) || undefined,
+			run: stringValue(obj.run) || undefined,
+		});
+	}
+	return entries.length > 0 ? entries : undefined;
 };
 
 const parseOssSyncConfig = (raw: unknown): OssSyncConfig | undefined => {
@@ -476,4 +503,6 @@ const numberValue = (value: unknown): number => {
 };
 const objectValue = (value: unknown): YamlObject =>
 	value && typeof value === "object" && !Array.isArray(value) ? (value as YamlObject) : {};
+const arrayValue = (value: unknown): readonly YamlValue[] | undefined =>
+	Array.isArray(value) ? (value as readonly YamlValue[]) : undefined;
 const safeName = (value: string): string => value.replace(/[^a-zA-Z0-9_.-]/g, "_");

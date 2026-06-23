@@ -1,6 +1,8 @@
 import { Console, Effect } from "effect";
+import { existsSync } from "node:fs";
 import type { CodeGenerator } from "../ports/code-generator";
 import type { OpenApiLoader } from "../ports/openapi-loader";
+import { ConfigRepo } from "../ports/config-repository";
 import {
 	CodegenError,
 	ConfigValidationError,
@@ -32,14 +34,15 @@ export interface GenerateInput {
 	input: string;
 	output: string;
 	client: string;
-	apiName?: string;
-	typesName?: string | false;
-	runtimeName?: string;
+	apiName: string;
+	typesName: string | false;
+	runtimeName: string;
 }
 
 export interface GenerateResult {
 	files: GeneratedFile[];
 	spec: ParsedSpec;
+	outputDir: string;
 }
 
 function resolveOutputPath(output: string): { dir: string; opts: Partial<GenFileOptions> } {
@@ -73,15 +76,14 @@ export const generate = (
 			);
 		}
 
-		const { dir, opts } = resolveOutputPath(input.output);
 		const fileOpts: GenFileOptions = {
-			apiName: input.apiName ?? opts.apiName ?? "api.ts",
-			typesName: input.typesName ?? opts.typesName ?? "types.ts",
-			runtimeName: input.runtimeName ?? opts.runtimeName ?? "wx-request.ts",
+			apiName: input.apiName,
+			typesName: input.typesName,
+			runtimeName: input.runtimeName,
 		};
 
-		const files = yield* generator.generate(spec, dir, fileOpts);
-		return { files, spec };
+		const files = yield* generator.generate(spec, input.output, fileOpts);
+		return { files, spec, outputDir: input.output };
 	});
 
 export const writeFiles = (files: GeneratedFile[], baseDir: string): Effect.Effect<void, Error> =>
@@ -114,31 +116,50 @@ export interface GenerateCliInput {
 	apiName?: string;
 	typesName?: string | false;
 	runtimeName?: string;
-	config?: {
-		input: string;
-		output: string;
-		client: string;
-		apiName?: string;
-		typesName?: string | false;
-		runtimeName?: string;
-	};
 }
 
 export const generateFromCli = (
 	cli: GenerateCliInput,
 ): Effect.Effect<
 	GenerateResult,
-	SpecLoadError | SpecParseError | CodegenError | ConfigValidationError
+	SpecLoadError | SpecParseError | CodegenError | ConfigValidationError,
+	ConfigRepo
 > =>
 	Effect.gen(function* () {
 		const resolved: GenerateInput = yield* resolveConfig(cli);
 		return yield* generate(resolved);
 	});
 
-function resolveConfig(cli: GenerateCliInput): Effect.Effect<GenerateInput, ConfigValidationError> {
+function loadProjectOpenapiConfig(): Effect.Effect<
+	| {
+			input: string;
+			output: string;
+			client: string;
+			apiName?: string;
+			typesName?: string | false;
+			runtimeName?: string;
+	  }
+	| undefined,
+	never
+> {
 	return Effect.gen(function* () {
-		const input = cli.input ?? cli.config?.input;
-		const client = cli.client ?? cli.config?.client;
+		if (!existsSync(".fizzy.yaml")) return undefined;
+		const configRepo = yield* ConfigRepo;
+		const projectConfig = yield* configRepo.loadProjectConfigOptional().pipe(
+			Effect.catch(() => Effect.succeed(undefined)),
+		);
+		return projectConfig?.openapi?.[0];
+	});
+}
+
+function resolveConfig(
+	cli: GenerateCliInput,
+): Effect.Effect<GenerateInput, ConfigValidationError, ConfigRepo> {
+	return Effect.gen(function* () {
+		const fizzyConfig = yield* loadProjectOpenapiConfig();
+
+		const input = cli.input ?? fizzyConfig?.input;
+		const client = cli.client ?? fizzyConfig?.client;
 
 		if (!input) {
 			return yield* Effect.fail(
@@ -158,11 +179,11 @@ function resolveConfig(cli: GenerateCliInput): Effect.Effect<GenerateInput, Conf
 			);
 		}
 
-		const output = cli.output ?? cli.config?.output ?? "./src/api";
+		const rawOutput = cli.output ?? fizzyConfig?.output;
+		const needsDefaultOutput = !rawOutput;
+		const output = rawOutput ?? "./src/api";
 
-		// Warn if using default output and directory already has files.
-		// Advisory only — proceed regardless.
-		if (!cli.output && !cli.config?.output) {
+		if (needsDefaultOutput) {
 			const hasFiles = yield* Effect.promise<boolean>(async () => {
 				try {
 					const dir = Bun.file(output);
@@ -183,13 +204,17 @@ function resolveConfig(cli: GenerateCliInput): Effect.Effect<GenerateInput, Conf
 			}
 		}
 
+		const { dir, opts } = resolveOutputPath(output);
+		const configApiName =
+			!cli.output?.endsWith(".ts") ? fizzyConfig?.apiName : undefined;
+
 		return {
 			input,
-			output,
+			output: dir,
 			client,
-			apiName: cli.apiName ?? cli.config?.apiName,
-			typesName: cli.typesName ?? cli.config?.typesName,
-			runtimeName: cli.runtimeName ?? cli.config?.runtimeName,
+			apiName: cli.apiName ?? configApiName ?? opts.apiName ?? "api.ts",
+			typesName: cli.typesName ?? fizzyConfig?.typesName ?? opts.typesName ?? "types.ts",
+			runtimeName: cli.runtimeName ?? fizzyConfig?.runtimeName ?? opts.runtimeName ?? "wx-request.ts",
 		};
 	});
 }

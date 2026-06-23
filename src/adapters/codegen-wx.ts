@@ -354,7 +354,7 @@ function formatDescription(desc: string, indent: string): string {
 		.split("\n")
 		.map((l) => `${indent} * ${l}`)
 		.join("\n");
-	return `\n${indent}/**${wrapped}\n${indent} */`;
+	return `\n${indent}/**\n${wrapped}\n${indent} */`;
 }
 
 function renderTypeDef(name: string, def: ParsedTypeDef): string {
@@ -434,9 +434,11 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 		)
 		.join("");
 	const typePrefix = toPascalCase(fnName);
+	const useParamsPrefix = pathParams.length > 1;
 	const tsPath = convertPathToTemplate(
 		path,
 		pathParams.map((p) => p.name),
+		useParamsPrefix,
 	);
 
 	const hasBody = bodyTypeRef !== undefined;
@@ -521,10 +523,15 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	return [...typeLines, ...fnLines].join("\n");
 }
 
-function convertPathToTemplate(path: string, paramNames: string[]): string {
+function convertPathToTemplate(
+	path: string,
+	paramNames: string[],
+	useParamsPrefix = false,
+): string {
 	let result = path;
 	for (const name of paramNames) {
-		result = result.replace(`{${name}}`, `\${${name}}`);
+		const prefix = useParamsPrefix ? `params.` : "";
+		result = result.replace(`{${name}}`, `\${${prefix}${name}}`);
 	}
 	return result;
 }

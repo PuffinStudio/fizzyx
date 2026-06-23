@@ -584,20 +584,14 @@ const runOpenapi = (args: ReadonlyArray<string>) =>
 				}
 
 				const input = parseOpenapiGenerate(rest);
+
 				const result = yield* withSpinner(
-					`Generating ${input.client} client from ${input.input}...`,
+					`Generating client...`,
 					generateFromCli(input),
 				);
 
-				const rawOutput = input.output ?? input.config?.output ?? "./src/api";
-				const outDir = rawOutput.endsWith(".ts")
-					? (() => {
-							const i = rawOutput.lastIndexOf("/");
-							return i >= 0 ? rawOutput.substring(0, i) : ".";
-						})()
-					: rawOutput;
-				yield* writeFiles(result.files, outDir);
-				yield* Console.log(`generated ${result.files.length} file(s) to ${outDir}`);
+				yield* writeFiles(result.files, result.outputDir);
+				yield* Console.log(`generated ${result.files.length} file(s) to ${result.outputDir}`);
 				yield* Console.log(`endpoints: ${result.spec.endpoints.length}`);
 				yield* Console.log(`types: ${Object.keys(result.spec.types).length}`);
 
@@ -1014,14 +1008,6 @@ interface OpenapiGenerateCli {
 	typesName?: string | false;
 	runtimeName?: string;
 	run?: string;
-	config?: {
-		input: string;
-		output: string;
-		client: string;
-		apiName?: string;
-		typesName?: string | false;
-		runtimeName?: string;
-	};
 }
 
 const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli => {
