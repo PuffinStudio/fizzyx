@@ -1,5 +1,6 @@
 import { Console, Effect } from "effect";
 import { generateFromCli, writeManyFiles, listGenerators } from "../use-cases/openapi-service";
+import { checkForUpdate } from "../_shared/auto-update";
 import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
 import {
 	ossInitBlank,
@@ -48,6 +49,7 @@ import { withSpinner } from "./spinner";
 
 export const runCli = (args: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
+		yield* Effect.forkDetach(checkForUpdate);
 		const [command = "help", ...rest] = args;
 		switch (command) {
 			case "help":
