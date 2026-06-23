@@ -596,7 +596,7 @@ test("flow repair-markdown repairs card description and prints result", async ()
 					});
 				}
 
-				if (url.pathname === "/1/cards/12.json" && req.method === "GET") {
+				if (url.pathname === "/1/cards/12" && req.method === "GET") {
 					return Response.json({
 						number: 12,
 						title: "Repair description",
@@ -604,7 +604,7 @@ test("flow repair-markdown repairs card description and prints result", async ()
 					});
 				}
 
-				if (url.pathname === "/1/cards/12.json" && req.method === "PUT") {
+				if (url.pathname === "/1/cards/12" && req.method === "PATCH") {
 					requestBodies.push((await new Response(req.body).json()) as { [key: string]: unknown });
 					return Response.json({});
 				}
@@ -634,10 +634,7 @@ test("flow repair-markdown repairs card description and prints result", async ()
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("repaired #12");
 		expect(requestBodies).toHaveLength(1);
-		expect(requestBodies[0]).toHaveProperty("card");
-		expect(typeof (requestBodies[0]?.card as { description?: unknown })?.description).toBe(
-			"string",
-		);
+		expect(typeof requestBodies[0]?.description).toBe("string");
 		expect(calls.filter((call) => call === "GET /1/cards.json").length).toBe(3);
 
 		api.stop();
@@ -677,7 +674,7 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 					});
 				}
 
-				if (url.pathname === "/1/cards/77.json" && req.method === "GET") {
+				if (url.pathname === "/1/cards/77" && req.method === "GET") {
 					return Response.json({
 						number: 77,
 						title: "Complete steps",
@@ -688,7 +685,7 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 					});
 				}
 
-				if (url.pathname.startsWith("/1/cards/77/steps/") && req.method === "PUT") {
+				if (url.pathname.startsWith("/1/cards/77/steps/") && req.method === "PATCH") {
 					updated.push(url.pathname);
 					return Response.json({});
 				}
@@ -718,7 +715,7 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("completed 1 step for #77");
 		expect(result.stdout).toContain("- Implement");
-		expect(updated).toEqual(["/1/cards/77/steps/step-2.json"]);
+		expect(updated).toEqual(["/1/cards/77/steps/step-2"]);
 
 		api.stop();
 	} finally {
@@ -787,14 +784,12 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 					req.method === "POST"
 				) {
 					const body =
-						req.body === null
-							? {}
-							: ((await new Response(req.body).json()) as { column?: { name?: string } });
+						req.body === null ? {} : ((await new Response(req.body).json()) as { name?: string });
 
 					return Response.json({
 						data: {
-							id: body.column?.name === "TODO" ? "todo-id" : "inprogress-id",
-							name: body.column?.name,
+							id: body.name === "TODO" ? "todo-id" : "inprogress-id",
+							name: body.name,
 						},
 					});
 				}
@@ -964,9 +959,8 @@ test("flow init retries when token is denied and migrates official credentials",
 					req.method === "POST" &&
 					url.pathname === "/1/boards/board-1/columns.json"
 				) {
-					const body =
-						req.body === null ? {} : ((await req.json()) as { column?: { name?: string } });
-					const name = typeof body.column?.name === "string" ? body.column.name : "";
+					const body = req.body === null ? {} : ((await req.json()) as { name?: string });
+					const name = typeof body.name === "string" ? body.name : "";
 					return Response.json({
 						data: {
 							id: name === "TODO" ? "todo-id" : "inprogress-id",

@@ -143,7 +143,7 @@ test("non-2xx responses fail with ApiError and status", async () => {
 	expect((error as ApiError).status).toBe(500);
 });
 
-test("createCard sends official board-scoped body", async () => {
+test("createCard sends generated Fizzy body", async () => {
 	const config = makeConfig();
 	const response = jsonResponse({
 		data: {
@@ -166,18 +166,17 @@ test("createCard sends official board-scoped body", async () => {
 	expect(calls).toHaveLength(1);
 	const summary = await getFetchCallSummary(calls[0]!);
 	expect(summary.method).toBe("POST");
-	expect(summary.url).toContain("/acme/boards/board-1/cards.json");
+	expect(summary.url).toContain("/acme/cards.json");
 	expect(summary.headers.get("authorization")).toBe("Bearer token");
 	expect(summary.headers.get("accept")).toBe("application/json");
 	expect(JSON.parse(summary.bodyText)).toEqual({
-		card: {
-			title: "Implement",
-			description: "Task details",
-		},
+		title: "Implement",
+		description: "Task details",
+		board_id: "board-1",
 	});
 });
 
-test("updateCardDescription uses official PUT card body", async () => {
+test("updateCardDescription uses generated PATCH card body", async () => {
 	const config = makeConfig();
 	const response = jsonResponse({});
 
@@ -189,14 +188,14 @@ test("updateCardDescription uses official PUT card body", async () => {
 
 	expect(calls).toHaveLength(1);
 	const summary = await getFetchCallSummary(calls[0]!);
-	expect(summary.method).toBe("PUT");
-	expect(summary.url).toContain("/acme/cards/12.json");
+	expect(summary.method).toBe("PATCH");
+	expect(summary.url).toContain("/acme/cards/12");
 	expect(JSON.parse(summary.bodyText)).toEqual({
-		card: { description: "New description" },
+		description: "New description",
 	});
 });
 
-test("updateStep uses official PUT step body", async () => {
+test("updateStep uses generated PATCH step body", async () => {
 	const config = makeConfig();
 	const response = jsonResponse({});
 
@@ -211,13 +210,11 @@ test("updateStep uses official PUT step body", async () => {
 
 	expect(calls).toHaveLength(1);
 	const summary = await getFetchCallSummary(calls[0]!);
-	expect(summary.method).toBe("PUT");
-	expect(summary.url).toContain("/acme/cards/42/steps/step-1.json");
+	expect(summary.method).toBe("PATCH");
+	expect(summary.url).toContain("/acme/cards/42/steps/step-1");
 	expect(JSON.parse(summary.bodyText)).toEqual({
-		step: {
-			completed: false,
-			content: "Plain step",
-		},
+		completed: false,
+		content: "Plain step",
 	});
 });
 
@@ -286,7 +283,7 @@ test("comment sends official comment body", async () => {
 	const summary = await getFetchCallSummary(calls[0]!);
 	expect(summary.method).toBe("POST");
 	expect(summary.url).toContain("/acme/cards/42/comments.json");
-	expect(JSON.parse(summary.bodyText)).toEqual({ comment: { body: "hello" } });
+	expect(JSON.parse(summary.bodyText)).toEqual({ body: "hello" });
 });
 
 test("createStep sends official step body", async () => {
@@ -302,7 +299,8 @@ test("createStep sends official step body", async () => {
 	expect(summary.method).toBe("POST");
 	expect(summary.url).toContain("/acme/cards/42/steps.json");
 	expect(JSON.parse(summary.bodyText)).toEqual({
-		step: { content: "write tests", completed: true },
+		content: "write tests",
+		completed: true,
 	});
 });
 

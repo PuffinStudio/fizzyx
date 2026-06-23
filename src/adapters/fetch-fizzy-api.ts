@@ -1,8 +1,5 @@
 import { Effect, Layer } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import { ApiError } from "../domain/errors";
 import type {
 	Assignee,
@@ -17,6 +14,9 @@ import type {
 } from "../domain/models";
 import { FizzyApi } from "../ports/fizzy-api";
 import { ConfigRepo } from "../ports/config-repository";
+import * as FizzyEffect from "../fizzy-effect/effect-client";
+import type { EffectHttpClientError } from "../fizzy-effect/effect-client";
+import type { UpdateStepRequestContent } from "../fizzy-effect/types";
 
 export const Live = Layer.effect(FizzyApi)(
 	Effect.gen(function* () {
@@ -34,146 +34,44 @@ export const Live = Layer.effect(FizzyApi)(
 );
 
 type JsonObject = Record<string, unknown>;
-type HttpMethod = "GET" | "POST" | "PUT";
 type JsonValue = unknown;
 
 export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyApi => {
-	const requestJson = (
-		method: HttpMethod,
-		path: string,
-		body?: JsonValue,
-	): Effect.Effect<JsonValue, ApiError> =>
-		Effect.gen(function* () {
-			const response = yield* executeRequest(method, path, body);
-			const payload = yield* readPayload(response);
-
-			if (response.status < 200 || response.status >= 300) {
-				return yield* new ApiError({
-					message: responseMessage(payload, response.status),
-					status: response.status,
-				});
-			}
-
-			return envelopeData(payload);
-		}).pipe(
-			Effect.catch((cause) =>
-				cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
-			),
-		);
-
-	const requestVoid = (
-		method: HttpMethod,
-		path: string,
-		body?: JsonValue,
-	): Effect.Effect<void, ApiError> =>
-		Effect.gen(function* () {
-			const response = yield* executeRequest(method, path, body);
-			if (response.status < 200 || response.status >= 300) {
-				const payload = yield* readPayload(response);
-				return yield* new ApiError({
-					message: responseMessage(payload, response.status),
-					status: response.status,
-				});
-			}
-		}).pipe(
-			Effect.catch((cause) =>
-				cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
-			),
-		);
-
-	const executeRequest = (
-		method: HttpMethod,
-		path: string,
-		body?: JsonValue,
-	): Effect.Effect<HttpClientResponse.HttpClientResponse, ApiError> =>
-		body === undefined
-			? doExecute(
-					HttpClientRequest.make(method)(buildUrl(config, path), {
-						headers: {
-							Authorization: `Bearer ${token}`,
-							Accept: "application/json",
-						},
-					}),
-				)
-			: HttpClientRequest.bodyJson(body)(
-					HttpClientRequest.make(method)(buildUrl(config, path), {
-						headers: {
-							Authorization: `Bearer ${token}`,
-							Accept: "application/json",
-						},
-					}),
-				).pipe(
-					Effect.mapError((cause) => new ApiError({ message: String(cause) })),
-					Effect.flatMap(doExecute),
-					Effect.catch((cause) =>
-						cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
-					),
-				);
-
-	const doExecute = (
-		request: HttpClientRequest.HttpClientRequest,
-	): Effect.Effect<HttpClientResponse.HttpClientResponse, ApiError> =>
-		HttpClient.execute(request).pipe(
-			Effect.provide(FetchHttpClient.layer),
-			Effect.mapError((cause) => new ApiError({ message: String(cause) })),
-		);
-
-	const readPayload = (
-		response: HttpClientResponse.HttpClientResponse,
-	): Effect.Effect<JsonValue, ApiError> =>
-		response.text.pipe(
-			Effect.mapError((cause) => new ApiError({ message: String(cause) })),
-			Effect.flatMap((text) => {
-				if (!text) {
-					return Effect.succeed(null);
-				}
-
-				return parseJson(text, response.status);
-			}),
-		);
-
-	const buildUrl = (config: ProjectConfig, path: string): string => {
-		const base = config.apiUrl.replace(/\/+$/, "");
-		const cleanPath = path.startsWith("/") ? path : `/${path}`;
-		const isMyPath = cleanPath.startsWith("/my/");
-		const accountPrefix = `/${config.account}`;
-		return `${base}${
-			isMyPath || cleanPath.startsWith(`${accountPrefix}/`)
-				? cleanPath
-				: `${accountPrefix}${cleanPath}`
-		}`;
-	};
-
-	const parseJson = (text: string, status: number): Effect.Effect<JsonValue, ApiError> =>
-		Effect.try({
-			try: () => JSON.parse(text),
-			catch: () =>
-				new ApiError({
-					status,
-					message: `HTTP ${String(status)}: invalid JSON response (${shortBodySnippet(text)})`,
-				}),
+	const configureGeneratedClient = (): void => {
+		FizzyEffect.configure({
+			baseUrl: config.apiUrl.replace(/\/+$/, ""),
+			responseExtractor: envelopeData,
 		});
-
-	const shortBodySnippet = (text: string, maxLength = 120): string => {
-		const normalized = text.trim();
-		return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+		FizzyEffect.setToken(token);
 	};
+
+	const runGenerated = <A>(
+		effect: Effect.Effect<A, EffectHttpClientError, HttpClient.HttpClient>,
+	): Effect.Effect<A, ApiError> =>
+		Effect.sync(configureGeneratedClient).pipe(
+			Effect.flatMap(() => effect),
+			Effect.provide(FizzyEffect.FetchLayer),
+			Effect.mapError(toApiError),
+		);
+
+	const toApiError = (cause: unknown): ApiError => {
+		if (cause instanceof ApiError) return cause;
+		const error = toRecord(cause);
+		const reason = toRecord(error?.reason);
+		const response = toRecord(reason?.response) || toRecord(error?.response);
+		const status = readFiniteNumber(response?.status);
+		if (Number.isFinite(status)) {
+			return new ApiError({ message: `HTTP ${String(status)}`, status });
+		}
+		return new ApiError({ message: String(cause) });
+	};
+
+	const asVoid = <A>(effect: Effect.Effect<A, ApiError>): Effect.Effect<void, ApiError> =>
+		effect.pipe(Effect.map(() => undefined));
 
 	const envelopeData = (value: JsonValue): JsonValue => {
 		if (isRecord(value) && "data" in value) return value.data;
 		return value;
-	};
-
-	const responseMessage = (value: JsonValue, status: number): string => {
-		if (isRecord(value) && "error" in value) {
-			return String(value.error);
-		}
-		return `HTTP ${String(status)}`;
-	};
-
-	const parseCardNumberFromLocation = (location: string | undefined): number => {
-		const match = location?.match(/\/cards\/(\d+)(?:\.json)?(?:$|[?#])/);
-		return match?.[1] ? Number.parseInt(match[1], 10) : Number.NaN;
 	};
 
 	const decodeIdentity = (value: JsonValue): Effect.Effect<Identity, ApiError> =>
@@ -410,16 +308,19 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 		return Number.NaN;
 	};
 
+	const accountParams = { accountId: config.account };
+	const boardParams = { accountId: config.account, boardId: config.board ?? "" };
+
 	const listColumns = () =>
-		requestJson("GET", `/boards/${config.board}/columns.json`).pipe(
-			Effect.flatMap(decodeBoardColumns),
-		);
-	const createColumn = (name: string): ReturnType<typeof requestJson> =>
-		requestJson("POST", `/boards/${config.board}/columns.json`, { column: { name } });
+		runGenerated(FizzyEffect.listColumns(boardParams)).pipe(Effect.flatMap(decodeBoardColumns));
+
+	const createColumn = (name: string): Effect.Effect<JsonValue, ApiError> =>
+		runGenerated(FizzyEffect.createColumn(boardParams, { name }));
 
 	return {
-		identity: () => requestJson("GET", "/my/identity.json").pipe(Effect.flatMap(decodeIdentity)),
-		listBoards: () => requestJson("GET", "/boards.json").pipe(Effect.flatMap(decodeBoards)),
+		identity: () => runGenerated(FizzyEffect.getMyIdentity()).pipe(Effect.flatMap(decodeIdentity)),
+		listBoards: () =>
+			runGenerated(FizzyEffect.listBoards(accountParams)).pipe(Effect.flatMap(decodeBoards)),
 		listColumns: () => listColumns(),
 		createColumn: (name) =>
 			Effect.gen(function* () {
@@ -441,72 +342,85 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 				return found;
 			}),
 		listCards: (options) => {
-			const params = new URLSearchParams();
+			const query: FizzyEffect.ListCardsQueryParams = {};
 			if (config.board) {
-				params.append("board_ids[]", config.board);
+				query["board_ids[]"] = [config.board];
 			}
-			if (options?.indexedBy) params.set("indexed_by", options.indexedBy);
-			if (options?.all) params.set("all", "true");
-			const suffix = params.size > 0 ? `?${params}` : "";
-			return requestJson("GET", `/cards.json${suffix}`).pipe(Effect.flatMap(decodeCards));
+			if (options?.indexedBy) query.indexed_by = options.indexedBy;
+			if (options?.all) query.all = true;
+			return runGenerated(FizzyEffect.listCards(accountParams, query)).pipe(
+				Effect.flatMap(decodeCards),
+			);
 		},
 		showCard: (number) =>
-			requestJson("GET", `/cards/${number}.json`).pipe(Effect.flatMap(decodeCard)),
+			runGenerated(FizzyEffect.getCard({ ...accountParams, cardNumber: number })).pipe(
+				Effect.flatMap(decodeCard),
+			),
 		listComments: (number) =>
-			requestJson("GET", `/cards/${number}/comments.json?all=true`).pipe(
+			runGenerated(FizzyEffect.listComments({ ...accountParams, cardNumber: number })).pipe(
 				Effect.flatMap(decodeComments),
 			),
 		createCard: (input) =>
-			Effect.gen(function* () {
-				const response = yield* executeRequest("POST", `/boards/${input.board}/cards.json`, {
-					card: {
-						title: input.title,
-						description: input.description,
-					},
-				});
-
-				const payload = yield* readPayload(response);
-				if (response.status < 200 || response.status >= 300) {
-					return yield* new ApiError({
-						message: responseMessage(payload, response.status),
-						status: response.status,
-					});
-				}
-
-				const fromBody = yield* decodeCard(envelopeData(payload)).pipe(
-					Effect.catch(() => Effect.succeed(undefined)),
-				);
-				if (fromBody) return fromBody;
-
-				const number = parseCardNumberFromLocation(response.headers.location);
-				if (!Number.isFinite(number)) {
-					return yield* new ApiError({ message: "Failed to create card: missing card response" });
-				}
-
-				return yield* requestJson("GET", `/cards/${number}.json`).pipe(Effect.flatMap(decodeCard));
-			}),
+			runGenerated(
+				FizzyEffect.createCard(accountParams, {
+					title: input.title,
+					description: input.description,
+					board_id: input.board,
+				}),
+			).pipe(Effect.flatMap(decodeCard)),
 		updateCardDescription: (number, description) =>
-			requestVoid("PUT", `/cards/${number}.json`, { card: { description } }),
+			asVoid(
+				runGenerated(
+					FizzyEffect.updateCard({ ...accountParams, cardNumber: number }, { description }),
+				),
+			),
 		assignCard: (number, userId) =>
-			requestVoid("POST", `/cards/${number}/assignments.json`, { assignee_id: userId }),
+			asVoid(
+				runGenerated(
+					FizzyEffect.assignCard({ ...accountParams, cardNumber: number }, { assignee_id: userId }),
+				),
+			),
 		moveCard: (number, columnId) =>
-			requestVoid("POST", `/cards/${number}/triage.json`, { column_id: columnId }),
+			asVoid(
+				runGenerated(
+					FizzyEffect.moveCard(
+						{ ...accountParams, cardNumber: number },
+						{ board_id: config.board ?? "", column_id: columnId },
+					),
+				),
+			),
 		comment: (number, body) =>
-			requestVoid("POST", `/cards/${number}/comments.json`, { comment: { body } }),
-		closeCard: (number) => requestVoid("POST", `/cards/${number}/closure.json`),
-		postponeCard: (number) => requestVoid("POST", `/cards/${number}/not_now.json`),
+			asVoid(
+				runGenerated(FizzyEffect.createComment({ ...accountParams, cardNumber: number }, { body })),
+			),
+		closeCard: (number) =>
+			asVoid(runGenerated(FizzyEffect.closeCard({ ...accountParams, cardNumber: number }))),
+		postponeCard: (number) =>
+			asVoid(runGenerated(FizzyEffect.postponeCard({ ...accountParams, cardNumber: number }))),
 		createStep: (number, content, completed) =>
-			requestVoid("POST", `/cards/${number}/steps.json`, {
-				step: {
-					content,
-					completed: Boolean(completed),
-				},
-			}),
+			asVoid(
+				runGenerated(
+					FizzyEffect.createStep(
+						{ ...accountParams, cardNumber: number },
+						{
+							content,
+							completed: Boolean(completed),
+						},
+					),
+				),
+			),
 		updateStep: (number, stepId, input) => {
 			const body: JsonObject = {};
 			if (input.completed !== undefined) body.completed = input.completed;
 			if (input.content !== undefined) body.content = input.content;
-			return requestVoid("PUT", `/cards/${number}/steps/${stepId}.json`, { step: body });
+			return asVoid(
+				runGenerated(
+					FizzyEffect.updateStep(
+						{ ...accountParams, cardNumber: number, stepId },
+						body as UpdateStepRequestContent,
+					),
+				),
+			);
 		},
 	};
 };

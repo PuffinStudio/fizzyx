@@ -84,7 +84,14 @@ function buildUrl(url: string, query?: Record<string, unknown>): string {
   if (query) {
     const params = new URLSearchParams()
     for (const [key, val] of Object.entries(query)) {
-      if (val !== undefined) params.set(key, String(val))
+      if (val === undefined) continue
+      if (Array.isArray(val)) {
+        for (const item of val) {
+          if (item !== undefined) params.append(key, String(item))
+        }
+      } else {
+        params.set(key, String(val))
+      }
     }
     const qs = params.toString()
     if (qs) finalUrl += (finalUrl.includes("?") ? "&" : "?") + qs
@@ -108,23 +115,26 @@ export function execute<T, B = unknown>(
   url: string,
   options?: { query?: Record<string, unknown>; body?: B; headers?: Record<string, string> }
 ): Effect.Effect<T, EffectHttpClientError, HttpClient.HttpClient> {
-  const finalUrl = buildUrl(url, options?.query)
-  const headers: Record<string, string> = {
-    ..._config.headers,
-    ..._defaultHeaders,
-    ...options?.headers,
-  }
-  if (_token) headers["Authorization"] = \`Bearer \${_token}\`
+  const httpRequest = Effect.sync(() => {
+    const finalUrl = buildUrl(url, options?.query)
+    const headers: Record<string, string> = {
+      ..._config.headers,
+      ..._defaultHeaders,
+      ...options?.headers,
+    }
+    if (_token) headers["Authorization"] = \`Bearer \${_token}\`
 
-  const baseRequest = HttpClientRequest.make(method)(finalUrl, {
-    headers,
-    acceptJson: true,
-  })
-
-  const httpRequest =
-    options?.body === undefined
-      ? Effect.succeed(baseRequest)
-      : HttpClientRequest.bodyJson(options.body)(baseRequest)
+    return HttpClientRequest.make(method)(finalUrl, {
+      headers,
+      acceptJson: true,
+    })
+  }).pipe(
+    Effect.flatMap((baseRequest) =>
+      options?.body === undefined
+        ? Effect.succeed(baseRequest)
+        : HttpClientRequest.bodyJson(options.body)(baseRequest)
+    )
+  )
 
   return httpRequest.pipe(
     Effect.flatMap((request) => HttpClient.execute(request)),

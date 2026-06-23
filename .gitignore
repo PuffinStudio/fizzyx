@@ -39,4 +39,3 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 /tests/api-ky
 /tests/api-fetch
 /.fizzyx.yaml
-/tests/api-effect
