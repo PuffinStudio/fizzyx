@@ -292,6 +292,7 @@ export const wxGenerator: CodeGenerator = {
 				const opts = { ...DEFAULT_WX_OPTIONS, ...options };
 				const files: GeneratedFile[] = [];
 
+				injectParamTypes(spec);
 				const typesCode = generateTypes(spec);
 				const hasTypes = spec.types && Object.keys(spec.types).length > 0;
 
@@ -335,6 +336,53 @@ export const wxGenerator: CodeGenerator = {
 			}
 		}),
 };
+
+function injectParamTypes(spec: ParsedSpec): void {
+	for (const endpoint of spec.endpoints) {
+		const typePrefix = toPascalCase(
+			endpoint.operationId
+				.split(".")
+				.map((part, i) =>
+					i === 0
+						? part.replace(/-/g, "_")
+						: part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, "_"),
+				)
+				.join(""),
+		);
+
+		if (endpoint.pathParams.length > 0) {
+			const typeName = `${typePrefix}PathParams`;
+			if (!spec.types[typeName]) {
+				spec.types[typeName] = {
+					name: typeName,
+					kind: "interface",
+					properties: endpoint.pathParams.map((p) => ({
+						name: p.name,
+						tsType: p.typeRef,
+						required: true,
+						description: p.description,
+					})),
+				};
+			}
+		}
+
+		if (endpoint.queryParams.length > 0) {
+			const typeName = `${typePrefix}QueryParams`;
+			if (!spec.types[typeName]) {
+				spec.types[typeName] = {
+					name: typeName,
+					kind: "interface",
+					properties: endpoint.queryParams.map((q) => ({
+						name: q.name,
+						tsType: q.typeRef,
+						required: q.required,
+						description: q.description,
+					})),
+				};
+			}
+		}
+	}
+}
 
 function generateTypes(spec: ParsedSpec): string {
 	const lines: string[] = [];
@@ -434,7 +482,7 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 		)
 		.join("");
 	const typePrefix = toPascalCase(fnName);
-	const useParamsPrefix = pathParams.length > 1;
+	const useParamsPrefix = pathParams.length > 0;
 	const tsPath = convertPathToTemplate(
 		path,
 		pathParams.map((p) => p.name),
@@ -447,7 +495,6 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 
 	const responseType = responseTypeRef ?? "void";
 
-	const typeLines: string[] = [];
 	const allParams: string[] = [];
 	const jsdocLines: string[] = [];
 
@@ -457,22 +504,20 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	}
 
 	if (hasPathParams) {
-		if (pathParams.length === 1) {
+		const typeName = `${typePrefix}PathParams`;
+		const singleParam = pathParams.length === 1;
+		if (singleParam) {
 			const p = pathParams[0]!;
-			allParams.push(`${p.name}: ${p.typeRef}`);
+			allParams.push(`params: ${typeName}`);
 			if (p.description) {
-				jsdocLines.push(`@param ${p.name} - ${p.description}`);
+				jsdocLines.push(`@param params.${p.name} - ${p.description}`);
 			}
 		} else {
-			const typeName = `${typePrefix}PathParams`;
-			const fields: string[] = [];
 			for (const p of pathParams) {
-				fields.push(`${p.name}: ${p.typeRef}`);
 				if (p.description) {
 					jsdocLines.push(`@param params.${p.name} - ${p.description}`);
 				}
 			}
-			typeLines.push(`export type ${typeName} = { ${fields.join("; ")} }`);
 			allParams.push(`params: ${typeName}`);
 		}
 	}
@@ -484,14 +529,11 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 
 	if (hasQueryParams) {
 		const typeName = `${typePrefix}QueryParams`;
-		const qFields: string[] = [];
 		for (const q of queryParams) {
-			qFields.push(`${q.name}${q.required ? "" : "?"}: ${q.typeRef}`);
 			if (q.description) {
 				jsdocLines.push(`@param query.${q.name} - ${q.description}`);
 			}
 		}
-		typeLines.push(`export type ${typeName} = { ${qFields.join("; ")} }`);
 		allParams.push(`query?: ${typeName}`);
 	}
 
@@ -520,7 +562,7 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	fnLines.push(`  return ${callStr}`);
 	fnLines.push("}");
 
-	return [...typeLines, ...fnLines].join("\n");
+	return fnLines.join("\n");
 }
 
 function convertPathToTemplate(

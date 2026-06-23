@@ -195,7 +195,7 @@ test("openapi generate produces correct files from spec file", async () => {
 		expect(stderr).toBe("");
 		expect(stdout).toContain("generated 4 file(s)");
 		expect(stdout).toContain("endpoints: 4");
-		expect(stdout).toContain("types: 2");
+		expect(stdout).toContain("types: 5");
 
 		expect(existsSync(join(outputDir, "types.ts"))).toBe(true);
 		expect(existsSync(join(outputDir, "wx-request.ts"))).toBe(true);
@@ -207,6 +207,12 @@ test("openapi generate produces correct files from spec file", async () => {
 		expect(types).toContain("  id: number");
 		expect(types).toContain("  name: string");
 		expect(types).toContain("export interface CreatePetInput {");
+		expect(types).toContain("export interface ListPetsQueryParams {");
+		expect(types).toContain("  limit?: number");
+		expect(types).toContain("export interface GetPetByIdPathParams {");
+		expect(types).toContain("  petId: number");
+		expect(types).toContain("export interface DeletePetPathParams {");
+		expect(types).toContain("  petId: string");
 
 		const runtime = readFileSync(join(outputDir, "wx-request.ts"), "utf-8");
 		expect(runtime).toContain("export function configure");
@@ -226,8 +232,9 @@ test("openapi generate produces correct files from spec file", async () => {
 		expect(api).toContain("export function deletePet");
 		expect(api).toContain("Pet[]");
 		expect(api).toContain("CreatePetInput");
-		expect(api).toContain("export type ListPetsQueryParams");
-		expect(api).toContain("limit?: number");
+		expect(api).toContain("ListPetsQueryParams");
+		expect(api).toContain("GetPetByIdPathParams");
+		expect(api).toContain("DeletePetPathParams");
 
 		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
 		expect(idx).toContain('export * from "./api"');
