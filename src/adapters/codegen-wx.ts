@@ -184,7 +184,7 @@ export function onError(handler: ((ctx: HookContext) => void) | null) {
   }
 }
 
-function buildUrl(method: string, url: string, query?: Record<string, string | number | undefined>): string {
+function buildUrl(method: string, url: string, query?: Record<string, unknown>): string {
   let finalUrl = url.startsWith("http") ? url : (_config.baseUrl ?? "") + url
   if (query) {
     const parts: string[] = []
@@ -207,7 +207,7 @@ function buildUrl(method: string, url: string, query?: Record<string, string | n
 export async function requestRaw<T>(
   method: string,
   url: string,
-  options?: { query?: Record<string, string | number | undefined>; body?: unknown }
+  options?: { query?: Record<string, unknown>; body?: unknown }
 ): Promise<T> {
   const log = getLogger()
   const start = Date.now()
@@ -268,7 +268,7 @@ export async function requestRaw<T>(
 export async function request<T>(
   method: string,
   url: string,
-  options?: { query?: Record<string, string | number | undefined>; body?: unknown }
+  options?: { query?: Record<string, unknown>; body?: unknown }
 ): Promise<T> {
   const raw = await requestRaw<unknown>(method, url, options)
   const extractor = _extractor ?? defaultExtractor
@@ -292,7 +292,6 @@ export const wxGenerator: CodeGenerator = {
 				const opts = { ...DEFAULT_WX_OPTIONS, ...options };
 				const files: GeneratedFile[] = [];
 
-				injectParamTypes(spec);
 				const typesCode = generateTypes(spec);
 				const hasTypes = spec.types && Object.keys(spec.types).length > 0;
 
@@ -336,53 +335,6 @@ export const wxGenerator: CodeGenerator = {
 			}
 		}),
 };
-
-function injectParamTypes(spec: ParsedSpec): void {
-	for (const endpoint of spec.endpoints) {
-		const typePrefix = toPascalCase(
-			endpoint.operationId
-				.split(".")
-				.map((part, i) =>
-					i === 0
-						? part.replace(/-/g, "_")
-						: part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, "_"),
-				)
-				.join(""),
-		);
-
-		if (endpoint.pathParams.length > 0) {
-			const typeName = `${typePrefix}PathParams`;
-			if (!spec.types[typeName]) {
-				spec.types[typeName] = {
-					name: typeName,
-					kind: "interface",
-					properties: endpoint.pathParams.map((p) => ({
-						name: p.name,
-						tsType: p.typeRef,
-						required: true,
-						description: p.description,
-					})),
-				};
-			}
-		}
-
-		if (endpoint.queryParams.length > 0) {
-			const typeName = `${typePrefix}QueryParams`;
-			if (!spec.types[typeName]) {
-				spec.types[typeName] = {
-					name: typeName,
-					kind: "interface",
-					properties: endpoint.queryParams.map((q) => ({
-						name: q.name,
-						tsType: q.typeRef,
-						required: q.required,
-						description: q.description,
-					})),
-				};
-			}
-		}
-	}
-}
 
 function generateTypes(spec: ParsedSpec): string {
 	const lines: string[] = [];
@@ -495,6 +447,7 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 
 	const responseType = responseTypeRef ?? "void";
 
+	const typeLines: string[] = [];
 	const allParams: string[] = [];
 	const jsdocLines: string[] = [];
 
@@ -505,20 +458,19 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 
 	if (hasPathParams) {
 		const typeName = `${typePrefix}PathParams`;
-		const singleParam = pathParams.length === 1;
-		if (singleParam) {
-			const p = pathParams[0]!;
-			allParams.push(`params: ${typeName}`);
+		typeLines.push(`export interface ${typeName} {`);
+		for (const p of pathParams) {
+			if (p.description) {
+				typeLines.push(`  /** ${p.description} */`);
+			}
+			typeLines.push(`  ${p.name}: ${p.typeRef}`);
+		}
+		typeLines.push("}");
+		allParams.push(`params: ${typeName}`);
+		for (const p of pathParams) {
 			if (p.description) {
 				jsdocLines.push(`@param params.${p.name} - ${p.description}`);
 			}
-		} else {
-			for (const p of pathParams) {
-				if (p.description) {
-					jsdocLines.push(`@param params.${p.name} - ${p.description}`);
-				}
-			}
-			allParams.push(`params: ${typeName}`);
 		}
 	}
 
@@ -529,12 +481,20 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 
 	if (hasQueryParams) {
 		const typeName = `${typePrefix}QueryParams`;
+		typeLines.push(`export interface ${typeName} {`);
+		for (const q of queryParams) {
+			if (q.description) {
+				typeLines.push(`  /** ${q.description} */`);
+			}
+			typeLines.push(`  ${q.name}${q.required ? "" : "?"}: ${q.typeRef}`);
+		}
+		typeLines.push("}");
+		allParams.push(`query?: ${typeName}`);
 		for (const q of queryParams) {
 			if (q.description) {
 				jsdocLines.push(`@param query.${q.name} - ${q.description}`);
 			}
 		}
-		allParams.push(`query?: ${typeName}`);
 	}
 
 	const callArgs: string[] = [];
@@ -562,7 +522,8 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	fnLines.push(`  return ${callStr}`);
 	fnLines.push("}");
 
-	return fnLines.join("\n");
+	const resultLines = typeLines.length > 0 ? [...typeLines, ...fnLines] : fnLines;
+	return resultLines.join("\n");
 }
 
 function convertPathToTemplate(
