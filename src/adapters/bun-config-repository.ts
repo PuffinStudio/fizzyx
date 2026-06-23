@@ -372,10 +372,16 @@ const parseOssEnvConfig = (raw: unknown): OssEnvironmentConfig | undefined => {
 };
 
 const parseOpenapiConfig = (raw: unknown): OpenApiProjectConfig | undefined => {
-	const obj = objectValue(raw);
-	if (!obj) return undefined;
+	// Legacy format: flat array of entries
+	const arr = arrayValue(raw);
+	if (arr) {
+		const entries = parseOpenapiEntries(arr);
+		return entries ? { entries } : undefined;
+	}
 
 	// New format: { posthook: "...", entries: [...] }
+	const obj = objectValue(raw);
+	if (!obj) return undefined;
 	const entriesRaw = obj.entries;
 	if (entriesRaw) {
 		const entries = parseOpenapiEntries(entriesRaw);
@@ -384,13 +390,6 @@ const parseOpenapiConfig = (raw: unknown): OpenApiProjectConfig | undefined => {
 			posthook: stringValue(obj.posthook) || undefined,
 			entries,
 		};
-	}
-
-	// Legacy format: flat array of entries
-	const arr = arrayValue(raw);
-	if (arr) {
-		const entries = parseOpenapiEntries(arr);
-		return entries ? { entries } : undefined;
 	}
 
 	return undefined;

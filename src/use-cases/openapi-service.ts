@@ -253,8 +253,8 @@ function loadAllProjectOpenapiConfigs() {
 function resolveConfigs(cli: GenerateCliInput) {
 	return Effect.gen(function* () {
 		const projectCfg: OpenApiProjectConfig | undefined = yield* loadAllProjectOpenapiConfigs();
-		const globalPosthook = cli.posthook ?? projectCfg?.posthook;
 		const entries = projectCfg?.entries;
+		const globalPosthook = projectCfg?.posthook;
 
 		if (cli.inputs && cli.inputs.length > 0) {
 			const first = entries?.[0];
@@ -277,7 +277,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 					apiName: cli.apiName ?? opts.apiName ?? first?.apiName,
 					typesName: cli.typesName ?? first?.typesName ?? opts.typesName,
 					runtimeName: cli.runtimeName ?? first?.runtimeName ?? opts.runtimeName,
-					posthook: globalPosthook,
+					posthook: cli.posthook,
 					headers: cli.headers ?? first?.headers,
 					stateManagement: cli.stateManagement ?? first?.stateManagement,
 				} satisfies GenerateInput;
