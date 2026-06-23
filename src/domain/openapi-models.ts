@@ -5,10 +5,15 @@ export interface OpenApiGenConfig {
 	apiName?: string;
 	typesName?: string | false;
 	runtimeName?: string;
-	run?: string;
+	posthook?: string;
 	shareRuntime?: boolean;
 	headers?: Record<string, string>;
 	stateManagement?: string;
+}
+
+export interface OpenApiProjectConfig {
+	posthook?: string;
+	entries: OpenApiGenConfig[];
 }
 
 export interface GenFileOptions {

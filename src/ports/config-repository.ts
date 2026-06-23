@@ -10,6 +10,12 @@ import type {
 	ProjectConfig,
 } from "../domain/models";
 
+/** The well-known project config filename convention */
+export const CONFIG_FILE = ".fizzyx.yaml";
+
+/** Legacy fallback config filename for backwards compatibility */
+export const LEGACY_CONFIG_FILE = ".fizzy.yaml";
+
 export interface ConfigRepository {
 	loadProjectConfig: () => Effect.Effect<ProjectConfig, ConfigError | FileError>;
 	loadProjectConfigOptional: () => Effect.Effect<

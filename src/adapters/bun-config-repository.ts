@@ -2,6 +2,8 @@ import { Effect, Layer } from "effect";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { ConfigError, FileError } from "../domain/errors";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../ports/config-repository";
+import { OFFICIAL_CONFIG_FILE } from "./app-paths";
 
 import type {
 	Credentials,
@@ -12,7 +14,7 @@ import type {
 	OssSyncConfig,
 	ProjectConfig,
 } from "../domain/models";
-import type { OpenApiGenConfig } from "../domain/openapi-models";
+import type { OpenApiGenConfig, OpenApiProjectConfig } from "../domain/openapi-models";
 import type {
 	ConfigRepository,
 	OssSetupInput,
@@ -21,8 +23,6 @@ import type {
 import { ConfigRepo } from "../ports/config-repository";
 import { isTaggedError } from "../_shared/helpers";
 
-const CONFIG_FILE = ".fizzy.yaml";
-const OFFICIAL_CONFIG_FILE = ".config/fizzy/config.yaml";
 export const DEFAULT_ACCOUNT = "1";
 const DEFAULT_API_URL = "https://fizzy.puffin.studio";
 const DEFAULT_WIP_LIMIT = 5;
@@ -133,13 +133,17 @@ const findConfigPath = (): Effect.Effect<string, ConfigError> =>
 	Effect.sync(() => {
 		let dir = process.cwd();
 		while (true) {
-			const path = `${dir}/${CONFIG_FILE}`;
-			if (existsSync(path)) return path;
+			const primary = `${dir}/${CONFIG_FILE}`;
+			if (existsSync(primary)) return primary;
+			const fallback = `${dir}/${LEGACY_CONFIG_FILE}`;
+			if (existsSync(fallback)) return fallback;
 			const parent = dirname(dir);
 			if (parent === dir) break;
 			dir = parent;
 		}
-		throw new ConfigError({ message: `No ${CONFIG_FILE} found from ${process.cwd()}` });
+		throw new ConfigError({
+			message: `No ${CONFIG_FILE} or ${LEGACY_CONFIG_FILE} found from ${process.cwd()}`,
+		});
 	}).pipe(
 		Effect.catch((error) =>
 			isTaggedError(error, "ConfigError")
@@ -367,7 +371,32 @@ const parseOssEnvConfig = (raw: unknown): OssEnvironmentConfig | undefined => {
 	return config;
 };
 
-const parseOpenapiConfig = (raw: unknown): OpenApiGenConfig[] | undefined => {
+const parseOpenapiConfig = (raw: unknown): OpenApiProjectConfig | undefined => {
+	const obj = objectValue(raw);
+	if (!obj) return undefined;
+
+	// New format: { posthook: "...", entries: [...] }
+	const entriesRaw = obj.entries;
+	if (entriesRaw) {
+		const entries = parseOpenapiEntries(entriesRaw);
+		if (!entries) return undefined;
+		return {
+			posthook: stringValue(obj.posthook) || undefined,
+			entries,
+		};
+	}
+
+	// Legacy format: flat array of entries
+	const arr = arrayValue(raw);
+	if (arr) {
+		const entries = parseOpenapiEntries(arr);
+		return entries ? { entries } : undefined;
+	}
+
+	return undefined;
+};
+
+const parseOpenapiEntries = (raw: unknown): OpenApiGenConfig[] | undefined => {
 	const arr = arrayValue(raw);
 	if (!arr) return undefined;
 	const entries: OpenApiGenConfig[] = [];
@@ -385,7 +414,7 @@ const parseOpenapiConfig = (raw: unknown): OpenApiGenConfig[] | undefined => {
 			apiName: stringValue(obj.apiName) || undefined,
 			typesName: stringValue(obj.typesName) || undefined,
 			runtimeName: stringValue(obj.runtimeName) || undefined,
-			run: stringValue(obj.run) || undefined,
+			posthook: stringValue(obj.posthook) || undefined,
 			shareRuntime: obj.shareRuntime === true || undefined,
 			headers: parseObjectHeaders(obj.headers),
 			stateManagement,

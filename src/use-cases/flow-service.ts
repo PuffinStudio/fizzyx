@@ -11,8 +11,9 @@ import type {
 } from "../domain/models";
 import type { CacheRepository } from "../ports/cache-repository";
 import type { ConfigRepository, SetupProjectConfigInput } from "../ports/config-repository";
+
 import type { FizzyApi } from "../ports/fizzy-api";
-import { ConfigRepo } from "../ports/config-repository";
+import { ConfigRepo, CONFIG_FILE } from "../ports/config-repository";
 import { isTaggedErrorWithMessage } from "../_shared/helpers";
 import { makeBunCacheRepository } from "../adapters/bun-cache-repository";
 import { makeFetchFizzyApi } from "../adapters/fetch-fizzy-api";
@@ -37,7 +38,6 @@ export interface InitializedEnv extends Env {
 
 const DEFAULT_ACCOUNT = "1";
 const DEFAULT_API_URL = "https://fizzy.puffin.studio";
-const CONFIG_FILE = ".fizzy.yaml";
 
 type StandardizedCommentKind = "done" | "blocked" | "unblocked" | "handoff" | "note";
 
@@ -150,7 +150,7 @@ const loadConfigOrDefaults = (
 	});
 
 const isMissingConfigError = (message: string): boolean =>
-	message.startsWith(`No ${CONFIG_FILE} found from`);
+	message.startsWith(`No .fizzyx.yaml`) || message.startsWith(`No .fizzy.yaml`);
 
 const requireBoard = (config: ProjectConfig): Effect.Effect<string, ValidationError> =>
 	config.board

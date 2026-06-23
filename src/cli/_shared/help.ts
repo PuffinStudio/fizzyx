@@ -20,30 +20,10 @@ export const legacyFlowCommands = {
 	skill: "skill",
 } as const;
 
-export const isHelpCommand = (value: string | undefined): value is "help" | "--help" | "-h" =>
-	value === "help" || value === "--help" || value === "-h";
-
-export const hasHelp = (args: ReadonlyArray<string>): boolean => args.some(isHelpCommand);
-
 export const legacyCommandErrorMessage = (command: string): string => {
 	const legacy = legacyFlowCommands[command as keyof typeof legacyFlowCommands];
 	if (legacy) {
 		return `unknown command: ${command}. Did you mean: fizzyx flow ${legacy}?`;
 	}
-
-	return `unknown command: ${command}\n\n${topUsage()}`;
+	return `unknown command: ${command}`;
 };
-
-export const topUsage = (): string => `fizzyx <command>
-
-commands:
-  setup
-  auth
-  flow
-  oss
-  openapi
-
-Use:
-  fizzyx <command> -h
-  fizzyx --version / -v
-for command help.`;

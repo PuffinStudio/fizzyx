@@ -1,66 +1,52 @@
-import { Console, Effect } from "effect";
-import { withSpinner } from "./spinner";
+import { Effect } from "effect";
+import { Command, Argument } from "effect/unstable/cli";
 import { authLogin, authLogout, authStatus } from "../use-cases/flow-service";
-import { isHelpCommand, hasHelp } from "./_shared/help";
+import { withSpinner, logSuccess, logKv, logError } from "./ui";
 
-export const runAuth = (args: ReadonlyArray<string>) =>
+const handleLogin = (config: { token: string }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const [command = "help", ...rest] = args;
+		const account = yield* withSpinner("Saving credentials...", authLogin(config.token));
+		yield* logSuccess(`token saved for ${account}`);
+	});
 
-		if (isHelpCommand(command)) {
-			yield* Console.log(authUsage());
-			return;
-		}
-
-		switch (command) {
-			case "login": {
-				if (hasHelp(rest) || !rest[0]) {
-					throw new Error(authLoginUsage());
-				}
-				const account = yield* withSpinner("Saving credentials...", authLogin(rest[0]));
-				yield* Console.log(`token saved for ${account}`);
-				return;
-			}
-			case "status": {
-				if (hasHelp(rest)) {
-					yield* Console.log(authStatusUsage());
-					return;
-				}
-				const result = yield* withSpinner("Checking auth status...", authStatus);
-				yield* Console.log(`account: ${result.account}`);
-				yield* Console.log(`board: ${result.board}`);
-				yield* Console.log(`authenticated: ${result.authenticated}`);
-				if (result.identity) {
-					yield* Console.log(`user: ${result.identity.name || ""}`);
-					yield* Console.log(`user_id: ${result.identity.userId}`);
-					yield* Console.log(`email: ${result.identity.email || ""}`);
-				} else if (result.identityError) {
-					yield* Console.log(`identity_error: ${result.identityError}`);
-				}
-				return;
-			}
-			case "logout": {
-				if (hasHelp(rest)) {
-					yield* Console.log(authLogoutUsage());
-					return;
-				}
-				const account = yield* withSpinner("Clearing credentials...", authLogout);
-				yield* Console.log(`token removed for ${account}`);
-				return;
-			}
-			default:
-				throw new Error(authUsage());
+const handleAuthStatus = (): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const result = yield* withSpinner("Checking auth status...", authStatus);
+		yield* logKv("account", result.account);
+		yield* logKv("board", String(result.board));
+		yield* logKv("authenticated", String(result.authenticated));
+		if (result.identity) {
+			yield* logKv("user", String(result.identity.name ?? ""));
+			yield* logKv("user_id", String(result.identity.userId));
+			yield* logKv("email", String(result.identity.email ?? ""));
+		} else if (result.identityError) {
+			yield* logError(`identity_error: ${result.identityError}`);
 		}
 	});
 
-const authUsage = (): string => `fizzyx auth <command>
+const handleLogout = (): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const account = yield* withSpinner("Clearing credentials...", authLogout);
+		yield* logSuccess(`token removed for ${account}`);
+	});
 
-commands:
-  auth login <token>
-  auth status
-  auth logout
-  auth help`;
+const authLoginCmd = Command.make(
+	"login",
+	{
+		token: Argument.string("token").pipe(Argument.withDescription("Fizzy API token")),
+	},
+	handleLogin,
+).pipe(Command.withDescription("Save API token for authentication"));
 
-const authLoginUsage = (): string => "fizzyx auth login <token>";
-const authStatusUsage = (): string => "fizzyx auth status";
-const authLogoutUsage = (): string => "fizzyx auth logout";
+const authStatusCmd = Command.make("status", {}, handleAuthStatus).pipe(
+	Command.withDescription("Check authentication status"),
+);
+
+const authLogoutCmd = Command.make("logout", {}, handleLogout).pipe(
+	Command.withDescription("Remove stored credentials"),
+);
+
+export const authCmd = Command.make("auth").pipe(
+	Command.withDescription("Manage Fizzy authentication"),
+	Command.withSubcommands([authLoginCmd, authStatusCmd, authLogoutCmd]),
+);

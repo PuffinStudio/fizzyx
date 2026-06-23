@@ -1,10 +1,35 @@
-// Auto-update — fire-and-forget silent install in a child process.
-// Never blocks the parent, never prints to the user.
 import { VERSION } from "./version";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { dirname } from "node:path";
+import { resolveLastUpdateCheckPath } from "../adapters/app-paths";
 
 const CURRENT_VERSION = VERSION;
+const COOLDOWN_MS = 4 * 60 * 60 * 1000;
 
 let checked = false;
+
+function readLastCheck(): number | null {
+	try {
+		const path = resolveLastUpdateCheckPath();
+		if (!existsSync(path)) return null;
+		return Number(readFileSync(path, "utf8").trim()) || null;
+	} catch {
+		return null;
+	}
+}
+
+function writeLastCheck(): void {
+	try {
+		const path = resolveLastUpdateCheckPath();
+		const dir = dirname(path);
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true, mode: 0o700 });
+		}
+		writeFileSync(path, String(Date.now()), { mode: 0o600 });
+	} catch {
+		// best effort
+	}
+}
 
 export function checkForUpdate(): void {
 	if (checked) return;
@@ -12,6 +37,11 @@ export function checkForUpdate(): void {
 
 	if (process.env.CI || !process.stderr.isTTY) return;
 	if (CURRENT_VERSION === "0.0.0") return;
+
+	const lastCheck = readLastCheck();
+	if (lastCheck && Date.now() - lastCheck < COOLDOWN_MS) return;
+
+	writeLastCheck();
 
 	const script = `
 const CURRENT = ${JSON.stringify(CURRENT_VERSION)};
@@ -37,5 +67,7 @@ async function check() {
 }
 check();
 `;
-	Bun.spawn(["bun", "-e", script], { stdio: ["ignore", "ignore", "inherit"] }).unref();
+	Bun.spawn(["bun", "-e", script], {
+		stdio: ["ignore", "ignore", "inherit"],
+	}).unref();
 }

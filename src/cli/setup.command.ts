@@ -1,19 +1,15 @@
-import { Console, Effect } from "effect";
-import { withSpinner } from "./spinner";
-import { renderTable } from "./render";
+import { Console, Effect, Option } from "effect";
+import { Command, Flag, Argument } from "effect/unstable/cli";
 import { listBoards, setup } from "../use-cases/flow-service";
-import type { SetupProjectConfigInput } from "../ports/config-repository";
-import { hasHelp } from "./_shared/help";
+import { renderTable } from "./render";
+import { withSpinner, logSuccess } from "./ui";
 
-export const runSetup = (args: ReadonlyArray<string>) =>
+const handleSetup = (config: {
+	list: boolean;
+	boardId: Option.Option<string>;
+}): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		if (hasHelp(args)) {
-			yield* Console.log(setupUsage());
-			return;
-		}
-
-		const input = parseSetup(args);
-		if (input.list) {
+		if (config.list) {
 			const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
 			if (boards.length === 0) {
 				yield* Console.log("(no boards)");
@@ -29,31 +25,27 @@ export const runSetup = (args: ReadonlyArray<string>) =>
 			return;
 		}
 
-		const config = yield* withSpinner("Initializing Fizzy workflow...", setup(input));
-		yield* Console.log(`created ${config.configPath}`);
+		if (Option.isNone(config.boardId)) {
+			yield* Console.log("usage: fizzyx setup <board-id>\n       fizzyx setup --list");
+			return;
+		}
+
+		const configResult = yield* withSpinner(
+			"Initializing Fizzy workflow...",
+			setup({ board: config.boardId.value }),
+		);
+		yield* logSuccess(`created ${configResult.configPath}`);
 	});
 
-const setupUsage = (): string => `fizzyx setup <command>
-
-commands:
-  setup <board-id>
-  setup --list`;
-
-const parseSetup = (args: ReadonlyArray<string>): SetupProjectConfigInput => {
-	const list = args.includes("--list");
-	const flags = args.filter((arg) => arg.startsWith("--"));
-	const positional = args.filter((arg) => !arg.startsWith("--"));
-
-	if (list) {
-		if (flags.length > 1 || positional.length > 0) {
-			throw new Error("usage: fizzyx setup <board-id>");
-		}
-		return { list: true };
-	}
-
-	if (flags.length > 0 || positional.length !== 1) {
-		throw new Error("usage: fizzyx setup <board-id>");
-	}
-
-	return { board: positional[0] };
-};
+export const setupCmd = Command.make(
+	"setup",
+	{
+		list: Flag.boolean("list").pipe(Flag.withDescription("List available Fizzy boards")),
+		boardId: Argument.string("board-id").pipe(
+			Argument.withDescription("Board ID to initialize"),
+			Argument.withMetavar("BOARD_ID"),
+			Argument.optional,
+		),
+	},
+	handleSetup,
+).pipe(Command.withDescription("Initialize or list Fizzy workspace"));

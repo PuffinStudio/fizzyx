@@ -194,7 +194,7 @@ test("openapi generate produces correct files from spec file", async () => {
 		]);
 
 		expect(exitCode).toBe(0);
-		expect(stderr).toBe("");
+		expect(stderr).toContain("Generating client");
 		expect(stdout).toContain("generated 4 file(s)");
 		expect(stdout).toContain("endpoints: 4");
 		expect(stdout).toContain("types: 2");
@@ -436,7 +436,7 @@ test("openapi generate with explicit input does not inherit config run script", 
 	}
 });
 
-test("openapi generate --run with npm script name", async () => {
+test("openapi generate --posthook with npm script name", async () => {
 	const root = makeTempDir();
 	try {
 		const specPath = join(root, "spec.json");
@@ -445,7 +445,7 @@ test("openapi generate --run with npm script name", async () => {
 		const outDir = join(root, "api");
 
 		const { stderr, exitCode } = await runCli(
-			["openapi", "generate", "-i", specPath, "-o", outDir, "-c", "wx", "--run", "check"],
+			["openapi", "generate", "-i", specPath, "-o", outDir, "-c", "wx", "--posthook", "check"],
 			{ cwd: root },
 		);
 
@@ -473,9 +473,9 @@ test("openapi generate --header flag is accepted with file input", async () => {
 			"-c",
 			"wx",
 			"--header",
-			"Authorization: Bearer test-token",
+			"Authorization=Bearer test-token",
 			"--header",
-			"X-Custom: value",
+			"X-Custom=value",
 		]);
 
 		expect(exitCode).toBe(0);
@@ -624,7 +624,7 @@ test("openapi generate reads stateManagement from .fizzy.yaml", async () => {
 	}
 });
 
-test("openapi generate --run with raw command", async () => {
+test("openapi generate --posthook with raw command", async () => {
 	const root = makeTempDir();
 	try {
 		const specPath = join(root, "spec.json");
@@ -632,7 +632,19 @@ test("openapi generate --run with raw command", async () => {
 		const outDir = join(root, "api");
 
 		const { stderr, exitCode } = await runCli(
-			["openapi", "generate", "-i", specPath, "-o", outDir, "-c", "wx", "--run", "echo", "hello"],
+			[
+				"openapi",
+				"generate",
+				"-i",
+				specPath,
+				"-o",
+				outDir,
+				"-c",
+				"wx",
+				"--posthook",
+				"echo",
+				"hello",
+			],
 			{ cwd: root },
 		);
 

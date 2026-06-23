@@ -43,7 +43,7 @@ const readOptionalText = (path: string): Effect.Effect<string | undefined, Error
 		});
 	});
 
-const ensureDirectory = (path: string): Effect.Effect<void, Error> =>
+const ensureDirectory = (path: string): Effect.Effect<void, any, any> =>
 	Effect.tryPromise({
 		try: () =>
 			import("node:fs/promises").then((fs) =>
@@ -55,7 +55,7 @@ const ensureDirectory = (path: string): Effect.Effect<void, Error> =>
 		catch: (cause) => new Error(`failed to create ${dirname(path)}: ${String(cause)}`),
 	});
 
-const writeText = (path: string, text: string): Effect.Effect<void, Error> =>
+const writeText = (path: string, text: string): Effect.Effect<void, any, any> =>
 	Effect.tryPromise({
 		try: () => Bun.write(path, text),
 		catch: (cause) => new Error(`failed to write ${path}: ${String(cause)}`),

@@ -12,7 +12,7 @@ import type {
 	SyncEntry,
 	SyncManifest,
 } from "../domain/models";
-import { ConfigRepo } from "../ports/config-repository";
+import { ConfigRepo, CONFIG_FILE } from "../ports/config-repository";
 import type { ConfigRepository } from "../ports/config-repository";
 import { makeBunManifestRepository, makeEmptyManifest } from "../adapters/bun-manifest-repository";
 import { makeBunOssRepository } from "../adapters/bun-oss-repository";
@@ -69,7 +69,7 @@ export const ossInitBlank = (): Effect.Effect<boolean, FileError, ConfigReposito
 
 		if (config?.oss) return false;
 
-		const configPath = config?.configPath ?? `${process.cwd()}/.fizzy.yaml`;
+		const configPath = config?.configPath ?? `${process.cwd()}/${CONFIG_FILE}`;
 
 		yield* configRepo.setupOssConfig({
 			env: "dev",
@@ -108,7 +108,7 @@ export const ossStoreCredentials = (
 		const projectConfig: ProjectConfig = config || {
 			apiUrl: "https://fizzy.puffin.studio",
 			account: "1",
-			configPath: `${process.cwd()}/.fizzy.yaml`,
+			configPath: `${process.cwd()}/${CONFIG_FILE}`,
 			rootDir: process.cwd(),
 		};
 		yield* storeOssCredentials(projectConfig, env, { accessKeyId, secretAccessKey });
@@ -124,7 +124,7 @@ export const ossSetup = (input: OssSetupInput) =>
 		const projectConfig: ProjectConfig = config || {
 			apiUrl: "https://fizzy.puffin.studio",
 			account: "1",
-			configPath: `${process.cwd()}/.fizzy.yaml`,
+			configPath: `${process.cwd()}/${CONFIG_FILE}`,
 			rootDir: process.cwd(),
 		};
 

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { existsSync } from "node:fs";
 import type { CodeGenerator } from "../ports/code-generator";
 import type { OpenApiLoader } from "../ports/openapi-loader";
-import { ConfigRepo } from "../ports/config-repository";
+import { ConfigRepo, CONFIG_FILE, LEGACY_CONFIG_FILE } from "../ports/config-repository";
 import {
 	CodegenError,
 	ConfigValidationError,
@@ -14,6 +14,7 @@ import type {
 	GeneratedFile,
 	KnownGenerator,
 	ParsedSpec,
+	OpenApiProjectConfig,
 } from "../domain/openapi-models";
 import { openapiFileLoader } from "../adapters/openapi-file-loader";
 import { openapiUrlLoader } from "../adapters/openapi-url-loader";
@@ -30,6 +31,8 @@ const STATE_MANAGEMENT_PLUGINS: Record<string, CodeGenerator> = {
 	"tanstack-query": tanstackQueryGenerator,
 };
 
+const configFileExists = (): boolean => existsSync(CONFIG_FILE) || existsSync(LEGACY_CONFIG_FILE);
+
 const isUrl = (input: string): boolean =>
 	input.startsWith("http://") || input.startsWith("https://");
 
@@ -44,7 +47,7 @@ export interface GenerateInput {
 	apiName?: string;
 	typesName?: string | false;
 	runtimeName?: string;
-	run?: string;
+	posthook?: string;
 	headers?: Record<string, string>;
 	stateManagement?: string;
 }
@@ -53,7 +56,7 @@ export interface GenerateResult {
 	files: GeneratedFile[];
 	spec: ParsedSpec;
 	outputDir: string;
-	run?: string;
+	posthook?: string;
 }
 
 export interface GenerateManyResult {
@@ -136,7 +139,7 @@ export const generate = (
 			].join("\n"),
 		});
 
-		return { files, spec, outputDir: input.output, run: input.run };
+		return { files, spec, outputDir: input.output, posthook: input.posthook };
 	});
 
 function dedupeRuntimeFiles(
@@ -211,7 +214,7 @@ export interface GenerateCliInput {
 	apiName?: string;
 	typesName?: string | false;
 	runtimeName?: string;
-	run?: string;
+	posthook?: string;
 	headers?: Record<string, string>;
 	stateManagement?: string;
 }
@@ -225,20 +228,20 @@ export const generateFromCli = (cli: GenerateCliInput) =>
 
 function resolveShareRuntime(_cli: GenerateCliInput) {
 	return Effect.gen(function* () {
-		if (!existsSync(".fizzy.yaml")) return false;
+		if (!configFileExists()) return false;
 		const configRepo = yield* ConfigRepo;
 		const projectConfig = yield* configRepo
 			.loadProjectConfigOptional()
 			.pipe(Effect.catch(() => Effect.succeed(undefined)));
-		const entries = projectConfig?.openapi;
-		if (!entries) return false;
-		return entries.some((e) => e.shareRuntime === true);
+		const pc = projectConfig?.openapi;
+		if (!pc?.entries) return false;
+		return pc.entries.some((e) => e.shareRuntime === true);
 	});
 }
 
 function loadAllProjectOpenapiConfigs() {
 	return Effect.gen(function* () {
-		if (!existsSync(".fizzy.yaml")) return undefined;
+		if (!configFileExists()) return undefined;
 		const configRepo = yield* ConfigRepo;
 		const projectConfig = yield* configRepo
 			.loadProjectConfigOptional()
@@ -249,11 +252,13 @@ function loadAllProjectOpenapiConfigs() {
 
 function resolveConfigs(cli: GenerateCliInput) {
 	return Effect.gen(function* () {
-		const configEntries = yield* loadAllProjectOpenapiConfigs();
+		const projectCfg: OpenApiProjectConfig | undefined = yield* loadAllProjectOpenapiConfigs();
+		const globalPosthook = cli.posthook ?? projectCfg?.posthook;
+		const entries = projectCfg?.entries;
 
 		if (cli.inputs && cli.inputs.length > 0) {
-			const cfg = configEntries?.[0];
-			const client = cli.client ?? cfg?.client;
+			const first = entries?.[0];
+			const client = cli.client ?? first?.client;
 			if (!client) {
 				return yield* Effect.fail(
 					new ConfigValidationError({
@@ -263,23 +268,23 @@ function resolveConfigs(cli: GenerateCliInput) {
 				);
 			}
 			return cli.inputs.map((input, i) => {
-				const rawOutput = cli.outputs?.[i] ?? cfg?.output;
+				const rawOutput = cli.outputs?.[i] ?? first?.output;
 				const { dir, opts } = resolveOutputPath(rawOutput ?? "./src/api");
 				return {
 					input,
 					output: dir,
 					client,
-					apiName: cli.apiName ?? opts.apiName ?? cfg?.apiName,
-					typesName: cli.typesName ?? cfg?.typesName ?? opts.typesName,
-					runtimeName: cli.runtimeName ?? cfg?.runtimeName ?? opts.runtimeName,
-					run: cli.run,
-					headers: cli.headers ?? cfg?.headers,
-					stateManagement: cli.stateManagement ?? cfg?.stateManagement,
+					apiName: cli.apiName ?? opts.apiName ?? first?.apiName,
+					typesName: cli.typesName ?? first?.typesName ?? opts.typesName,
+					runtimeName: cli.runtimeName ?? first?.runtimeName ?? opts.runtimeName,
+					posthook: globalPosthook,
+					headers: cli.headers ?? first?.headers,
+					stateManagement: cli.stateManagement ?? first?.stateManagement,
 				} satisfies GenerateInput;
 			});
 		}
 
-		if (!configEntries || configEntries.length === 0) {
+		if (!entries || entries.length === 0) {
 			return yield* Effect.fail(
 				new ConfigValidationError({
 					message: "--input required (spec file path or URL)",
@@ -288,7 +293,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 			);
 		}
 
-		return configEntries.map((cfg) => {
+		return entries.map((cfg) => {
 			const { dir, opts } = resolveOutputPath(cfg.output);
 			return {
 				input: cfg.input,
@@ -297,7 +302,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 				apiName: cfg.apiName ?? opts.apiName,
 				typesName: cfg.typesName ?? opts.typesName,
 				runtimeName: cfg.runtimeName ?? opts.runtimeName,
-				run: cfg.run,
+				posthook: cfg.posthook ?? globalPosthook,
 				headers: cfg.headers,
 				stateManagement: cfg.stateManagement,
 			} satisfies GenerateInput;
