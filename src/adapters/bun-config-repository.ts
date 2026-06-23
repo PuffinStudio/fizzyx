@@ -386,6 +386,7 @@ const parseOpenapiConfig = (raw: unknown): OpenApiGenConfig[] | undefined => {
 			runtimeName: stringValue(obj.runtimeName) || undefined,
 			run: stringValue(obj.run) || undefined,
 			shareRuntime: obj.shareRuntime === true || undefined,
+			headers: parseObjectHeaders(obj.headers),
 		});
 	}
 	return entries.length > 0 ? entries : undefined;
@@ -507,3 +508,14 @@ const objectValue = (value: unknown): YamlObject =>
 const arrayValue = (value: unknown): readonly YamlValue[] | undefined =>
 	Array.isArray(value) ? (value as readonly YamlValue[]) : undefined;
 const safeName = (value: string): string => value.replace(/[^a-zA-Z0-9_.-]/g, "_");
+
+const parseObjectHeaders = (raw: unknown): Record<string, string> | undefined => {
+	const obj = objectValue(raw);
+	if (Object.keys(obj).length === 0) return undefined;
+	const result: Record<string, string> = {};
+	for (const [key, value] of Object.entries(obj)) {
+		const val = stringValue(value);
+		if (val) result[key] = val;
+	}
+	return Object.keys(result).length > 0 ? result : undefined;
+};

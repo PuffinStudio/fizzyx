@@ -1000,6 +1000,7 @@ Options:
   --runtime-name <name>    Runtime filename (default: wx-request.ts)
   --run <script|cmd>       Run npm script or shell command after generation
                            (matches package.json scripts first, else raw command)
+  --header <key:value>     Custom header for fetching spec (repeatable, e.g. --header "Authorization: Bearer xxx")
 
 If --input/--output/--client are omitted, all entries from .fizzy.yaml openapi are used.
 If --output is also omitted, defaults to ./src/api.
@@ -1011,7 +1012,8 @@ Examples:
   fizzyx openapi generate -i ./openapi.json -o ./src/api/client.ts -c wx
   fizzyx openapi generate -i spec.yaml -o ./src/api -c wx --api-name sdk.ts --types-name false
   fizzyx openapi generate -i spec.json -o ./src/api -c wx --run check
-  fizzyx openapi generate -i spec.json -o ./src/api -c wx --run "oxlint ."`;
+  fizzyx openapi generate -i spec.json -o ./src/api -c wx --run "oxlint ."
+  fizzyx openapi generate -i https://api.example.com/openapi.json -c fetch --header "Authorization: Bearer xxx" --header "X-Trace-Id: abc"`;
 
 interface OpenapiGenerateCli {
 	inputs?: string[];
@@ -1021,6 +1023,7 @@ interface OpenapiGenerateCli {
 	typesName?: string | false;
 	runtimeName?: string;
 	run?: string;
+	headers?: Record<string, string>;
 }
 
 const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli => {
@@ -1036,6 +1039,8 @@ const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli =
 	const typesName = typesNameRaw === "false" ? false : typesNameRaw;
 	const runtimeName = parseFlag(args, "--runtime-name");
 	const run = parseFlag(args, "--run");
+	const rawHeaders = parseFlags(args, "--header");
+	const headers = parseRawHeaders(rawHeaders);
 
 	return {
 		inputs: allInputs.length > 0 ? allInputs : undefined,
@@ -1045,7 +1050,21 @@ const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli =
 		typesName,
 		runtimeName,
 		run,
+		headers,
 	};
+};
+
+const parseRawHeaders = (raw: string[]): Record<string, string> | undefined => {
+	const headers: Record<string, string> = {};
+	for (const item of raw) {
+		const colon = item.indexOf(":");
+		if (colon > 0) {
+			const key = item.slice(0, colon).trim();
+			const value = item.slice(colon + 1).trim();
+			if (key && value) headers[key] = value;
+		}
+	}
+	return Object.keys(headers).length > 0 ? headers : undefined;
 };
 
 const runPostGenScript = (script: string): Effect.Effect<void, Error> =>

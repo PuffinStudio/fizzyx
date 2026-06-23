@@ -151,6 +151,7 @@ test("openapi generate --help prints usage", async () => {
 	expect(stdout).toContain("--api-name");
 	expect(stdout).toContain("--types-name");
 	expect(stdout).toContain("--runtime-name");
+	expect(stdout).toContain("--header");
 });
 
 test("openapi list shows wx generator", async () => {
@@ -449,6 +450,57 @@ test("openapi generate --run with npm script name", async () => {
 
 		expect(exitCode).toBe(0);
 		expect(stderr).toContain("running: bun run check");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate --header flag is accepted with file input", async () => {
+	const root = makeTempDir();
+	try {
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api");
+		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+
+		const { stdout, exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			specPath,
+			"-o",
+			outputDir,
+			"-c",
+			"wx",
+			"--header",
+			"Authorization: Bearer test-token",
+			"--header",
+			"X-Custom: value",
+		]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 4 file(s)");
+		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate reads headers from .fizzy.yaml", async () => {
+	const root = makeTempDir();
+	try {
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api");
+		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+		writeFileSync(
+			join(root, ".fizzy.yaml"),
+			`openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: wx\n    headers:\n      Authorization: Bearer test-token\n      X-Api-Key: secret\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 4 file(s)");
+		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

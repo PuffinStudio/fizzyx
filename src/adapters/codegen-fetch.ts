@@ -27,6 +27,7 @@ export interface ClientConfig {
 
 let _config: ClientConfig = {}
 let _token: string | null = null
+let _defaultHeaders: Record<string, string> = {}
 
 /** Configure the client. Call once at app startup. */
 export function configure(config: ClientConfig): void {
@@ -36,6 +37,11 @@ export function configure(config: ClientConfig): void {
 /** Set auth token. Pass \`null\` to clear. */
 export function setToken(token: string | null): void {
   _token = token
+}
+
+/** Set default headers sent with every request. Merge with existing defaults. */
+export function setHeaders(headers: Record<string, string>): void {
+  _defaultHeaders = { ..._defaultHeaders, ...headers }
 }
 
 function defaultExtractor(raw: unknown): unknown {
@@ -75,6 +81,7 @@ export async function request<T, B = unknown>(
   // Headers
   const headers: Record<string, string> = {
     ..._config.headers,
+    ..._defaultHeaders,
     ...options?.headers,
   }
   if (_token) headers["Authorization"] = \`Bearer \${_token}\`
@@ -142,7 +149,7 @@ export const fetchGenerator: CodeGenerator = {
 					{
 						runtimeModule: runtimeImportPath,
 						typeExports: ["ClientConfig"],
-						valueExports: ["configure", "setToken"],
+						valueExports: ["configure", "setToken", "setHeaders"],
 					},
 					typesImportPath,
 					hasTypes,

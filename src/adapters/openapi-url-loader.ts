@@ -4,12 +4,16 @@ import { SpecLoadError, SpecParseError } from "../domain/errors";
 import { parseSpec } from "./openapi-file-loader";
 
 export const openapiUrlLoader: OpenApiLoader = {
-	load: (input: string) =>
+	load: (input: string, headers?: Record<string, string>) =>
 		Effect.gen(function* () {
 			let text: string;
 			try {
+				const init: RequestInit = {};
+				if (headers && Object.keys(headers).length > 0) {
+					init.headers = headers;
+				}
 				const response = yield* Effect.tryPromise({
-					try: () => fetch(input),
+					try: () => fetch(input, init),
 					catch: (cause) =>
 						new SpecLoadError({
 							message: `cannot fetch spec from ${input}: ${cause instanceof Error ? cause.message : String(cause)}`,

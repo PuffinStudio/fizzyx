@@ -12,7 +12,7 @@ import type {
 import { SpecLoadError, SpecParseError } from "../domain/errors";
 
 export const openapiFileLoader: OpenApiLoader = {
-	load: (input: string) =>
+	load: (input: string, _headers?: Record<string, string>) =>
 		Effect.gen(function* () {
 			const ext = input.toLowerCase().split(".").pop();
 

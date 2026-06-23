@@ -53,6 +53,8 @@ export type RequestHook = {
 export type WxRequestConfig = {
   /** API base URL (prepended to relative paths). */
   baseUrl?: string
+  /** Default headers sent with every request. */
+  headers?: Record<string, string>
   /** Request timeout in ms (default 60000). */
   timeout?: number
   /** wx.getStorageSync key for token (default "fizzyx_token"). */
@@ -77,6 +79,7 @@ let _tokenStorage: TokenStorage | null = null
 let _logger: Logger | null = null
 let _hooks: RequestHook[] = []
 let _extractor: ((raw: unknown) => unknown) | null = null
+let _defaultHeaders: Record<string, string> = {}
 
 const defaultLogger: Logger = {
   error: (...args) => console.error("[fizzyx]", ...args),
@@ -147,6 +150,7 @@ export function configure(config: WxRequestConfig) {
   if (config.logger !== undefined) _logger = config.logger
   if (config.hooks !== undefined) _hooks = config.hooks
   if (config.responseExtractor !== undefined) _extractor = config.responseExtractor
+  if (config.headers !== undefined) _defaultHeaders = config.headers
   loadInitialToken()
 }
 
@@ -179,6 +183,11 @@ export function onError(handler: ((ctx: HookContext) => void) | null) {
   }
 }
 
+/** Set default headers sent with every request. Merge with existing defaults. */
+export function setHeaders(headers: Record<string, string>): void {
+  _defaultHeaders = { ..._defaultHeaders, ...headers }
+}
+
 function buildUrl(method: string, url: string, query?: Record<string, unknown>): string {
   let finalUrl = url.startsWith("http") ? url : (_config.baseUrl ?? "") + url
   if (query) {
@@ -209,7 +218,7 @@ export async function requestRaw<T>(
   const log = getLogger()
   const start = Date.now()
   const finalUrl = buildUrl(method, url, options?.query)
-  const header: Record<string, string> = {}
+  const header: Record<string, string> = { ..._defaultHeaders }
   if (_token) header["Authorization"] = \`Bearer \${_token}\`
 
   const hasHooks = _hooks.length > 0
@@ -313,7 +322,7 @@ export const wxGenerator: CodeGenerator = {
 							"RequestHook",
 							"HookContext",
 						],
-						valueExports: ["configure", "setToken", "initToken", "onError", "requestRaw"],
+						valueExports: ["configure", "setToken", "setHeaders", "initToken", "onError", "requestRaw"],
 					},
 					typesImportPath,
 					hasTypes,

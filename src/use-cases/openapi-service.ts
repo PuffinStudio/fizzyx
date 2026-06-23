@@ -40,6 +40,7 @@ export interface GenerateInput {
 	typesName?: string | false;
 	runtimeName?: string;
 	run?: string;
+	headers?: Record<string, string>;
 }
 
 export interface GenerateResult {
@@ -72,7 +73,7 @@ export const generate = (
 ): Effect.Effect<GenerateResult, SpecLoadError | SpecParseError | CodegenError> =>
 	Effect.gen(function* () {
 		const loader = selectLoader(input.input);
-		const spec = yield* loader.load(input.input);
+		const spec = yield* loader.load(input.input, input.headers);
 
 		const generator = BUILTIN_GENERATORS[input.client];
 		if (!generator) {
@@ -169,6 +170,7 @@ export interface GenerateCliInput {
 	typesName?: string | false;
 	runtimeName?: string;
 	run?: string;
+	headers?: Record<string, string>;
 }
 
 export const generateFromCli = (cli: GenerateCliInput) =>
@@ -228,6 +230,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 					typesName: cli.typesName ?? cfg?.typesName ?? opts.typesName,
 					runtimeName: cli.runtimeName ?? cfg?.runtimeName ?? opts.runtimeName,
 					run: cli.run,
+					headers: cli.headers ?? cfg?.headers,
 				} satisfies GenerateInput;
 			});
 		}
@@ -251,6 +254,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 				typesName: cfg.typesName ?? opts.typesName,
 				runtimeName: cfg.runtimeName ?? opts.runtimeName,
 				run: cfg.run,
+				headers: cfg.headers,
 			} satisfies GenerateInput;
 		});
 	});

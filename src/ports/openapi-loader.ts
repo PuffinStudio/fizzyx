@@ -3,5 +3,8 @@ import type { SpecLoadError, SpecParseError } from "../domain/errors";
 import type { ParsedSpec } from "../domain/openapi-models";
 
 export interface OpenApiLoader {
-	load: (input: string) => Effect.Effect<ParsedSpec, SpecLoadError | SpecParseError>;
+	load: (
+		input: string,
+		headers?: Record<string, string>,
+	) => Effect.Effect<ParsedSpec, SpecLoadError | SpecParseError>;
 }
