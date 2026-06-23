@@ -155,11 +155,13 @@ test("openapi generate --help prints usage", async () => {
 	expect(stdout).toContain("--state-management");
 });
 
-test("openapi list shows wx generator", async () => {
+test("openapi list shows built-in generators", async () => {
 	const { stdout, exitCode } = await runCli(["openapi", "list"]);
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("wx");
 	expect(stdout).toContain("WeChat Mini Program");
+	expect(stdout).toContain("effect");
+	expect(stdout).toContain("Effect 4 HTTP client");
 });
 
 test("openapi generate requires --input", async () => {
@@ -401,6 +403,61 @@ test("openapi generate with custom runtime name", async () => {
 		// api.ts should import from ./request, not ./wx-request
 		const api = readFileSync(join(outDir, "api.ts"), "utf-8");
 		expect(api).toContain('from "./request"');
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate with effect client emits Effect 4 HttpClient files", async () => {
+	const root = makeTempDir();
+	try {
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api-effect");
+		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+
+		const { stdout, exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			specPath,
+			"-o",
+			outputDir,
+			"-c",
+			"effect",
+		]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 4 file(s)");
+		expect(existsSync(join(outputDir, "effect-http.ts"))).toBe(true);
+		expect(existsSync(join(outputDir, "effect-client.ts"))).toBe(true);
+
+		const runtime = readFileSync(join(outputDir, "effect-http.ts"), "utf-8");
+		expect(runtime).toContain('import { Effect } from "effect"');
+		expect(runtime).toContain(
+			'import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"',
+		);
+		expect(runtime).toContain('import * as HttpClient from "effect/unstable/http/HttpClient"');
+		expect(runtime).toContain(
+			'import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"',
+		);
+		expect(runtime).toContain("export const FetchLayer = FetchHttpClient.layer");
+		expect(runtime).toContain("HttpClientRequest.bodyJson");
+		expect(runtime).toContain("HttpClient.execute");
+		expect(runtime).toContain("HttpClientResponse.filterStatusOk");
+		expect(runtime).toContain("export function execute");
+		expect(runtime).toContain("Effect.Effect<T, EffectHttpClientError, HttpClient.HttpClient>");
+
+		const client = readFileSync(join(outputDir, "effect-client.ts"), "utf-8");
+		expect(client).toContain('import { Effect } from "effect"');
+		expect(client).toContain('import * as HttpClient from "effect/unstable/http/HttpClient"');
+		expect(client).toContain('import type { EffectHttpClientError } from "./effect-http"');
+		expect(client).toContain("Effect.Effect<Pet[], EffectHttpClientError, HttpClient.HttpClient>");
+		expect(client).toContain("export function createPet");
+		expect(client).toContain('execute<Pet[]>("GET", `/pets`, { query })');
+
+		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
+		expect(idx).toContain('export * from "./effect-client"');
+		expect(idx).toContain('export * from "./types"');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

@@ -20,12 +20,14 @@ import { openapiFileLoader } from "../adapters/openapi-file-loader";
 import { openapiUrlLoader } from "../adapters/openapi-url-loader";
 import { wxGenerator } from "../adapters/codegen-wx";
 import { fetchGenerator } from "../adapters/codegen-fetch";
+import { effectGenerator, EFFECT_GENERATOR_DEFAULTS } from "../adapters/codegen-effect";
 import { tanstackQueryGenerator } from "../adapters/codegen-tanstack-query";
 import { generateIndexFile, planOpenApiArtifacts } from "./openapi-artifact-plan";
 
 const BUILTIN_GENERATORS: Record<string, CodeGenerator> = {
 	wx: wxGenerator,
 	fetch: fetchGenerator,
+	effect: effectGenerator,
 };
 
 const STATE_MANAGEMENT_PLUGINS: Record<string, CodeExtensionGenerator> = {
@@ -95,13 +97,23 @@ export const generate = (
 			);
 		}
 
-		const fileOpts = Object.fromEntries(
-			Object.entries({
-				apiName: input.apiName,
-				typesName: input.typesName,
-				runtimeName: input.runtimeName,
-			}).filter(([_, v]) => v !== undefined),
-		);
+		const generatorDefaults =
+			input.client === "effect"
+				? {
+						apiName: EFFECT_GENERATOR_DEFAULTS.apiName,
+						runtimeName: EFFECT_GENERATOR_DEFAULTS.runtimeName,
+					}
+				: {};
+		const fileOpts = {
+			...generatorDefaults,
+			...Object.fromEntries(
+				Object.entries({
+					apiName: input.apiName,
+					typesName: input.typesName,
+					runtimeName: input.runtimeName,
+				}).filter(([_, v]) => v !== undefined),
+			),
+		};
 
 		const files = yield* generator.generate(spec, input.output, fileOpts);
 		const artifactPlan = planOpenApiArtifacts(spec, fileOpts);
