@@ -13,6 +13,11 @@
 	"bin": {
 		"fizzyx": "dist/main.js"
 	},
+	"files": [
+		"dist/main.js",
+		"LICENSE",
+		"README.md"
+	],
 	"type": "module",
 	"main": "./dist/main.js",
 	"scripts": {

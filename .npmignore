@@ -1,28 +1,24 @@
-# Source code
-src/
+# Config and local files
+.fizzyx.yaml
+.fizzy.yaml
+.fizzyx/
 
-# Tests
+# Build artifacts (not needed in npm if we use files field)
+!dist/
+
+# Test files
 tests/
+*.test.ts
 
-# Tooling and lock/config files
+# Dev config
+*.config.ts
+*.config.js
 tsconfig.json
-tsconfig.*.json
-bun.lock
-bun.lockb
-.gitignore
-.env
-.env.*
-CLAUDE.md
+vite.config.ts
 
-# Runtime/build artifacts not needed in package
-node_modules/
-coverage/
-.cache/
+# IDE
+.idea/
+.vscode/
 
-# Logs and local state
-logs
-*.log
-*.tgz
-
-# TypeScript/build metadata
-*.tsbuildinfo
+# OS
+.DS_Store
