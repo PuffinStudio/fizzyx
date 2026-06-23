@@ -334,7 +334,30 @@ fizzyx flow std-all
    2. fizzyx flow done <card>             — close into Done and comment (ref auto-detected from git)
    3. fizzyx flow done <card> "message"   — with explicit ref (optional)
 - flow done requires all steps to be complete; it will fail with an error if any step is unfinished.
- - Keep comments concise; use fizzyx flow comment-template <kind> for format.`;
+ - Keep comments concise; use fizzyx flow comment-template <kind> for format.
+
+## OpenAPI Client
+
+Generate a typed wx.request client from OpenAPI spec:
+
+\`\`\`
+fizzyx openapi g -i <url|path> -c wx
+\`\`\`
+
+When no --output is given, defaults to ./src/api (creates 4 files:
+wx-request.ts, types.ts, api.ts, index.ts). Configure --api-name,
+--types-name, --runtime-name for custom filenames, or set in .fizzy.yaml:
+
+\`\`\`yaml
+openapi:
+  - input: ./openapi.json
+    output: ./src/api
+    client: wx
+    run: check
+\`\`\`
+
+
+For full details: fizzyx openapi generate -h`;
 
 const getBuiltinTemplate = (): string => {
 	const labels = getTemplateLabels();

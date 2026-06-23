@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Console, Effect } from "effect";
 import type { CodeGenerator } from "../ports/code-generator";
 import type { OpenApiLoader } from "../ports/openapi-loader";
 import {
@@ -136,28 +136,51 @@ export const generateFromCli = (
 	});
 
 function resolveConfig(cli: GenerateCliInput): Effect.Effect<GenerateInput, ConfigValidationError> {
-	return Effect.sync(() => {
+	return Effect.gen(function* () {
 		const input = cli.input ?? cli.config?.input;
-		const output = cli.output ?? cli.config?.output;
 		const client = cli.client ?? cli.config?.client;
 
 		if (!input) {
-			throw new ConfigValidationError({
-				message: "--input required (spec file path or URL)",
-				field: "input",
-			});
+			return yield* Effect.fail(
+				new ConfigValidationError({
+					message: "--input required (spec file path or URL)",
+					field: "input",
+				}),
+			);
 		}
-		if (!output) {
-			throw new ConfigValidationError({
-				message: "--output required (output directory)",
-				field: "output",
-			});
-		}
+
 		if (!client) {
-			throw new ConfigValidationError({
-				message: "--client required (target: wx)",
-				field: "client",
+			return yield* Effect.fail(
+				new ConfigValidationError({
+					message: "--client required (target: wx)",
+					field: "client",
+				}),
+			);
+		}
+
+		const output = cli.output ?? cli.config?.output ?? "./src/api";
+
+		// Warn if using default output and directory already has files.
+		// Advisory only — proceed regardless.
+		if (!cli.output && !cli.config?.output) {
+			const hasFiles = yield* Effect.promise<boolean>(async () => {
+				try {
+					const dir = Bun.file(output);
+					if (!(await dir.exists())) return false;
+					const out = await Bun.$`ls -A ${output} 2>/dev/null | head -5`.text();
+					return out.trim().length > 0;
+				} catch {
+					return false;
+				}
 			});
+			if (hasFiles) {
+				yield* Console.warn(`\x1b[33m⚠  output directory "${output}" already has files.\x1b[0m`);
+				yield* Console.warn(
+					`  \x1b[33mSet a custom --output to avoid overwriting existing code.\x1b[0m`,
+				);
+				yield* Console.warn(`  \x1b[33mOr configure it in .fizzy.yaml: openapi[0].output\x1b[0m`);
+				yield* Console.warn("");
+			}
 		}
 
 		return {

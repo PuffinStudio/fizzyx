@@ -159,15 +159,15 @@ fizzyx openapi generate -i <url|path> -o <dir> -c wx
 
 Options:
 
-| Flag | Description |
-|---|---|
-| `-i, --input <url\|path>` | OpenAPI spec URL or file path (JSON/YAML) |
-| `-o, --output <dir\|file>` | Output directory (or `.ts` path for custom api name) |
-| `-c, --client <name>` | Client target (`wx`) |
-| `--api-name <name>` | API filename (default: `api.ts`) |
-| `--types-name <name>` | Types filename (default: `types.ts`, `false` to inline) |
-| `--runtime-name <name>` | Runtime filename (default: `wx-request.ts`) |
-| `--run <script\|cmd>` | npm script or shell command after generation |
+| Flag                       | Description                                             |
+| -------------------------- | ------------------------------------------------------- |
+| `-i, --input <url\|path>`  | OpenAPI spec URL or file path (JSON/YAML)               |
+| `-o, --output <dir\|file>` | Output directory (or `.ts` path for custom api name)    |
+| `-c, --client <name>`      | Client target (`wx`)                                    |
+| `--api-name <name>`        | API filename (default: `api.ts`)                        |
+| `--types-name <name>`      | Types filename (default: `types.ts`, `false` to inline) |
+| `--runtime-name <name>`    | Runtime filename (default: `wx-request.ts`)             |
+| `--run <script\|cmd>`      | npm script or shell command after generation            |
 
 If `--input`/`--output`/`--client` are omitted, values from `.fizzy.yaml` `openapi[0]` are used.
 
@@ -183,31 +183,32 @@ src/api/
 ### Generated Runtime API
 
 ```ts
-import { configure, setToken, onError, initToken } from "./api"
+import { configure, setToken, onError, initToken } from "./api";
 
 // Setup at app startup
-configure({ baseUrl: "https://api.example.com", storageKey: "myapp_token" })
+configure({ baseUrl: "https://api.example.com", storageKey: "myapp_token" });
 
 // Or with custom logger + hooks
 configure({
-  baseUrl: "https://api.example.com",
-  storageKey: "tb_token",
-  logger: { error: myReporter, warn: () => {}, info: () => {}, debug: () => {} },
-  hooks: [
-    { onError: ctx => wx.showToast({ title: ctx.message }) },
-    { onSuccess: ctx => reportAnalytics(ctx) },
-  ],
-})
+	baseUrl: "https://api.example.com",
+	storageKey: "tb_token",
+	logger: { error: myReporter, warn: () => {}, info: () => {}, debug: () => {} },
+	hooks: [
+		{ onError: (ctx) => wx.showToast({ title: ctx.message }) },
+		{ onSuccess: (ctx) => reportAnalytics(ctx) },
+	],
+});
 
 // Token auto-loads from storage. Explicit load if needed:
-await initToken()
+await initToken();
 
 // Token persists to storage on set
-setToken("jwt...")
-setToken(null)  // logout, clears storage
+setToken("jwt...");
+setToken(null); // logout, clears storage
 ```
 
 **Logger vs Hooks:**
+
 - `Logger` controls **output** (console, file, sentry). Default: `console.error/warn/info/debug` with `[fizzyx]` prefix.
 - `RequestHook` fires **business callbacks** at lifecycle points (`onRequest`, `onSuccess`, `onError`). Use for toast, analytics, loading state.
 
@@ -216,16 +217,16 @@ setToken(null)  // logout, clears storage
 Each endpoint is a standalone export function with typed params:
 
 ```ts
-import { listPets, createPet, ListPetsQueryParams } from "./api"
+import { listPets, createPet, ListPetsQueryParams } from "./api";
 
 // GET with query params
-const pets = await listPets({ query: { limit: 10, status: "available" } })
+const pets = await listPets({ query: { limit: 10, status: "available" } });
 
 // POST with body
-const pet = await createPet({ name: "Fluffy" })
+const pet = await createPet({ name: "Fluffy" });
 
 // POST without requestBody (no data param generated)
-const result = await someAction()
+const result = await someAction();
 ```
 
 - No `createApi()` wrapper — tree-shakeable by default

@@ -193,13 +193,14 @@ test("openapi generate produces correct files from spec file", async () => {
 
 		expect(exitCode).toBe(0);
 		expect(stderr).toBe("");
-		expect(stdout).toContain("generated 3 file(s)");
+		expect(stdout).toContain("generated 4 file(s)");
 		expect(stdout).toContain("endpoints: 4");
 		expect(stdout).toContain("types: 2");
 
 		expect(existsSync(join(outputDir, "types.ts"))).toBe(true);
 		expect(existsSync(join(outputDir, "wx-request.ts"))).toBe(true);
 		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+		expect(existsSync(join(outputDir, "index.ts"))).toBe(true);
 
 		const types = readFileSync(join(outputDir, "types.ts"), "utf-8");
 		expect(types).toContain("export interface Pet {");
@@ -227,6 +228,10 @@ test("openapi generate produces correct files from spec file", async () => {
 		expect(api).toContain("CreatePetInput");
 		expect(api).toContain("export type ListPetsQueryParams");
 		expect(api).toContain("limit?: number");
+
+		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
+		expect(idx).toContain('export * from "./api"');
+		expect(idx).toContain('export * from "./types"');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -254,9 +259,10 @@ test("openapi generate creates .fizzy.yaml when no config exists", async () => {
 		]);
 
 		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 3 file(s)");
+		expect(stdout).toContain("generated 4 file(s)");
 
 		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+		expect(existsSync(join(outputDir, "index.ts"))).toBe(true);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

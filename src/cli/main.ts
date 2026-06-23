@@ -576,7 +576,8 @@ const runOpenapi = (args: ReadonlyArray<string>) =>
 		}
 
 		switch (command) {
-			case "generate": {
+			case "generate":
+			case "g": {
 				if (hasHelp(rest)) {
 					yield* Console.log(openapiGenerateUsage());
 					return;
@@ -588,7 +589,7 @@ const runOpenapi = (args: ReadonlyArray<string>) =>
 					generateFromCli(input),
 				);
 
-				const rawOutput = input.output ?? input.config?.output ?? ".";
+				const rawOutput = input.output ?? input.config?.output ?? "./src/api";
 				const outDir = rawOutput.endsWith(".ts")
 					? (() => {
 							const i = rawOutput.lastIndexOf("/");
@@ -975,14 +976,14 @@ const hasHelp = (args: ReadonlyArray<string>): boolean => args.some(isHelpComman
 const openapiUsage = (): string => `fizzyx openapi <command>
 
 commands:
-  generate  Generate API client code from OpenAPI spec
-  list      List available client generators
+  generate (g)  Generate API client code from OpenAPI spec
+  list          List available client generators
 
 Use:
   fizzyx openapi generate -h
 for generate help.`;
 
-const openapiGenerateUsage = (): string => `fizzyx openapi generate [options]
+const openapiGenerateUsage = (): string => `fizzyx openapi generate (or g) [options]
 
 Options:
   -i, --input <url|path>   OpenAPI spec URL or file path
@@ -995,8 +996,10 @@ Options:
                            (matches package.json scripts first, else raw command)
 
 If --input/--output/--client are omitted, values from .fizzy.yaml openapi[0] are used.
+If --output is also omitted, defaults to ./src/api.
 
 Examples:
+  fizzyx openapi g -i ./openapi.json -c wx
   fizzyx openapi generate -i ./openapi.json -o ./src/api -c wx
   fizzyx openapi generate -i ./openapi.json -o ./src/api/client.ts -c wx
   fizzyx openapi generate -i spec.yaml -o ./src/api -c wx --api-name sdk.ts --types-name false
