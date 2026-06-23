@@ -29,7 +29,7 @@ test("shows animated spinner and clears line on success", async () => {
 		withSpinner(
 			"syncing",
 			Effect.promise(() => sleep(25).then(() => "ok")),
-			{ stderr: err, intervalMs: 5 },
+			{ stderr: err, env: {}, intervalMs: 5 },
 		),
 	);
 
@@ -99,7 +99,7 @@ test("clears spinner line even when effect fails", async () => {
 	const errored = withSpinner(
 		"fails",
 		Effect.promise(() => Promise.reject(new Error("spinner failure"))),
-		{ stderr: err, intervalMs: 5 },
+		{ stderr: err, env: {}, intervalMs: 5 },
 	);
 
 	await expect(Effect.runPromise(errored)).rejects.toThrow("spinner failure");

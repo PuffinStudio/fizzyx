@@ -1,5 +1,4 @@
-import { Effect } from "effect";
-
+// Auto-update check — fire-and-forget in a child process so it never blocks.
 const CURRENT_VERSION: string = (() => {
 	try {
 		return require("../../package.json").version;
@@ -10,47 +9,36 @@ const CURRENT_VERSION: string = (() => {
 
 let checked = false;
 
-function isNewer(latest: string): boolean {
-	const cur = CURRENT_VERSION.split(".").map(Number);
-	const lat = latest.split(".").map(Number);
-	for (let i = 0; i < Math.max(cur.length, lat.length); i++) {
-		const a = lat[i] ?? 0;
-		const b = cur[i] ?? 0;
-		if (a > b) return true;
-		if (a < b) return false;
-	}
-	return false;
-}
-
-export const checkForUpdate = Effect.gen(function* () {
+/**
+ * Fire-and-forget update check. Spawns a detached child process so the
+ * network I/O never prevents the parent from exiting.
+ */
+export function checkForUpdate(): void {
 	if (checked) return;
 	checked = true;
 
 	if (process.env.CI || !process.stderr.isTTY) return;
+	if (CURRENT_VERSION === "0.0.0") return;
 
-	const latest = yield* Effect.tryPromise({
-		try: async () => {
-			const res = await fetch("https://registry.npmjs.org/@puffinstudio/fizzyx/latest", {
-				signal: AbortSignal.timeout(1000),
-			});
-			if (!res.ok) return null;
-			const data = (await res.json()) as { version: string };
-			return data.version;
-		},
-		catch: () => null as string | null,
-	});
-
-	if (!latest || latest === CURRENT_VERSION) return;
-	if (!isNewer(latest)) return;
-
-	yield* Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn(["bun", "add", "-g", "@puffinstudio/fizzyx"], {
-				stdout: "ignore",
-				stderr: "ignore",
-			});
-			await proc.exited;
-		},
-		catch: () => {},
-	});
-});
+	const script = `
+const CURRENT = ${JSON.stringify(CURRENT_VERSION)};
+async function check() {
+  try {
+    const res = await fetch("https://registry.npmjs.org/@puffinstudio/fizzyx/latest", { signal: AbortSignal.timeout(1000) });
+    if (!res.ok) return;
+    const { version } = await res.json();
+    if (!version || version === CURRENT) return;
+    const cur = CURRENT.split(".").map(Number);
+    const lat = version.split(".").map(Number);
+    for (let i = 0; i < Math.max(cur.length, lat.length); i++) {
+      const a = lat[i] ?? 0;
+      const b = cur[i] ?? 0;
+      if (a > b) { console.error("\\n  update available: " + CURRENT + " \\u2192 " + version); console.error("  run: bun add -g @puffinstudio/fizzyx\\n"); return; }
+      if (a < b) return;
+    }
+  } catch {}
+}
+check();
+`;
+	Bun.spawn(["bun", "-e", script], { stdio: ["ignore", "ignore", "inherit"] }).unref();
+}

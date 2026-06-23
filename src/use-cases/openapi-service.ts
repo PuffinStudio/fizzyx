@@ -18,9 +18,11 @@ import type {
 import { openapiFileLoader } from "../adapters/openapi-file-loader";
 import { openapiUrlLoader } from "../adapters/openapi-url-loader";
 import { wxGenerator } from "../adapters/codegen-wx";
+import { fetchGenerator } from "../adapters/codegen-fetch";
 
 const BUILTIN_GENERATORS: Record<string, CodeGenerator> = {
 	wx: wxGenerator,
+	fetch: fetchGenerator,
 };
 
 const isUrl = (input: string): boolean =>
@@ -34,15 +36,17 @@ export interface GenerateInput {
 	input: string;
 	output: string;
 	client: string;
-	apiName: string;
-	typesName: string | false;
-	runtimeName: string;
+	apiName?: string;
+	typesName?: string | false;
+	runtimeName?: string;
+	run?: string;
 }
 
 export interface GenerateResult {
 	files: GeneratedFile[];
 	spec: ParsedSpec;
 	outputDir: string;
+	run?: string;
 }
 
 export interface GenerateManyResult {
@@ -80,14 +84,16 @@ export const generate = (
 			);
 		}
 
-		const fileOpts: GenFileOptions = {
-			apiName: input.apiName,
-			typesName: input.typesName,
-			runtimeName: input.runtimeName,
-		};
+		const fileOpts: GenFileOptions = Object.fromEntries(
+			Object.entries({
+				apiName: input.apiName,
+				typesName: input.typesName,
+				runtimeName: input.runtimeName,
+			}).filter(([_, v]) => v !== undefined),
+		);
 
 		const files = yield* generator.generate(spec, input.output, fileOpts);
-		return { files, spec, outputDir: input.output };
+		return { files, spec, outputDir: input.output, run: input.run };
 	});
 
 function dedupeRuntimeFiles(
@@ -206,7 +212,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 			if (!client) {
 				return yield* Effect.fail(
 					new ConfigValidationError({
-						message: "--client required (target: wx)",
+						message: "--client required (targets: wx, fetch)",
 						field: "client",
 					}),
 				);
@@ -218,9 +224,10 @@ function resolveConfigs(cli: GenerateCliInput) {
 					input,
 					output: dir,
 					client,
-					apiName: cli.apiName ?? opts.apiName ?? "api.ts",
-					typesName: cli.typesName ?? cfg?.typesName ?? opts.typesName ?? "types.ts",
-					runtimeName: cli.runtimeName ?? cfg?.runtimeName ?? opts.runtimeName ?? "wx-request.ts",
+					apiName: cli.apiName ?? opts.apiName ?? cfg?.apiName,
+					typesName: cli.typesName ?? cfg?.typesName ?? opts.typesName,
+					runtimeName: cli.runtimeName ?? cfg?.runtimeName ?? opts.runtimeName,
+					run: cli.run,
 				} satisfies GenerateInput;
 			});
 		}
@@ -240,9 +247,10 @@ function resolveConfigs(cli: GenerateCliInput) {
 				input: cfg.input,
 				output: dir,
 				client: cfg.client,
-				apiName: cfg.apiName ?? opts.apiName ?? "api.ts",
-				typesName: cfg.typesName ?? opts.typesName ?? "types.ts",
-				runtimeName: cfg.runtimeName ?? opts.runtimeName ?? "wx-request.ts",
+				apiName: cfg.apiName ?? opts.apiName,
+				typesName: cfg.typesName ?? opts.typesName,
+				runtimeName: cfg.runtimeName ?? opts.runtimeName,
+				run: cfg.run,
 			} satisfies GenerateInput;
 		});
 	});

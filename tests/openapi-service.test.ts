@@ -404,6 +404,36 @@ test("openapi generate with custom runtime name", async () => {
 	}
 });
 
+test("openapi generate with explicit input does not inherit config run script", async () => {
+	const root = makeTempDir();
+	try {
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api");
+		const markerPath = join(root, "ran-check");
+		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+		writeFileSync(
+			join(root, "package.json"),
+			JSON.stringify({ scripts: { check: "touch ran-check" } }),
+		);
+		writeFileSync(
+			join(root, ".fizzy.yaml"),
+			`openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: wx\n    run: check\n`,
+		);
+
+		const { stderr, exitCode } = await runCli(
+			["openapi", "generate", "-i", specPath, "-o", outputDir, "-c", "wx"],
+			{ cwd: root },
+		);
+
+		expect(exitCode).toBe(0);
+		expect(stderr).not.toContain("running: bun run check");
+		expect(existsSync(markerPath)).toBe(false);
+		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("openapi generate --run with npm script name", async () => {
 	const root = makeTempDir();
 	try {

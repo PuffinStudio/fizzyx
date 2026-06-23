@@ -49,7 +49,7 @@ import { withSpinner } from "./spinner";
 
 export const runCli = (args: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
-		yield* Effect.forkDetach(checkForUpdate);
+		checkForUpdate();
 		const [command = "help", ...rest] = args;
 		switch (command) {
 			case "help":
@@ -595,10 +595,9 @@ const runOpenapi = (args: ReadonlyArray<string>) =>
 					yield* Console.log(
 						`  endpoints: ${result.spec.endpoints.length}  types: ${Object.keys(result.spec.types).length}`,
 					);
-				}
-
-				if (input.run) {
-					yield* runPostGenScript(input.run);
+					if (result.run) {
+						yield* runPostGenScript(result.run);
+					}
 				}
 				return;
 			}
