@@ -5,6 +5,7 @@
 	"bugs": {
 		"url": "https://github.com/PuffinStudio/fizzyx/issues"
 	},
+	"license": "MIT",
 	"repository": {
 		"type": "git",
 		"url": "git+ssh://git@github.com/PuffinStudio/fizzyx.git"
