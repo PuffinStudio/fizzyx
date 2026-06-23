@@ -51,7 +51,7 @@ test("prints top-level grouped help", async () => {
 	expect(stdout).toContain("  setup");
 	expect(stdout).toContain("  auth");
 	expect(stdout).toContain("  flow");
-	expect(stdout).toContain("fizzyx <command> -h");
+	expect(stdout).toContain("--version");
 	expect(stdout).not.toContain("  sync");
 	expect(stdout).not.toContain("  help");
 
@@ -60,6 +60,18 @@ test("prints top-level grouped help", async () => {
 	expect(stdout).not.toContain("--in-progress");
 	expect(stdout).not.toContain("--users");
 	expect(stdout).not.toContain("--api-url");
+});
+
+test("prints version with --version flag", async () => {
+	const { stdout, exitCode } = await runCli(["--version"]);
+	expect(exitCode).toBe(0);
+	expect(stdout).toMatch(/^fizzyx \d+\.\d+\.\d+/);
+});
+
+test("prints version with -v flag", async () => {
+	const { stdout, exitCode } = await runCli(["-v"]);
+	expect(exitCode).toBe(0);
+	expect(stdout).toMatch(/^fizzyx \d+\.\d+\.\d+/);
 });
 
 test.each(["help", "-h", "--help"])("setup %s prints setup help", async (helpArg) => {

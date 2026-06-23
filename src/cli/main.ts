@@ -1,5 +1,6 @@
 import { Console, Effect } from "effect";
 import { generateFromCli, writeManyFiles, listGenerators } from "../use-cases/openapi-service";
+import { VERSION } from "../_shared/version";
 import { checkForUpdate } from "../_shared/auto-update";
 import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
 import {
@@ -56,6 +57,10 @@ export const runCli = (args: ReadonlyArray<string>) =>
 			case "--help":
 			case "-h":
 				yield* Console.log(topUsage());
+				return;
+			case "--version":
+			case "-v":
+				yield* Console.log(`fizzyx ${VERSION}`);
 				return;
 			case "setup": {
 				if (hasHelp(rest)) {
@@ -1111,6 +1116,7 @@ commands:
 
 Use:
   fizzyx <command> -h
+  fizzyx --version / -v
 for command help.`;
 
 const setupUsage = (): string => `fizzyx setup <command>

@@ -1,11 +1,7 @@
 // Auto-update check — fire-and-forget in a child process so it never blocks.
-const CURRENT_VERSION: string = (() => {
-	try {
-		return require("../../package.json").version;
-	} catch {
-		return "0.0.0";
-	}
-})();
+import { VERSION } from "./version";
+
+const CURRENT_VERSION = VERSION;
 
 let checked = false;
 
