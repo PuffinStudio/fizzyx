@@ -152,6 +152,7 @@ test("openapi generate --help prints usage", async () => {
 	expect(stdout).toContain("--types-name");
 	expect(stdout).toContain("--runtime-name");
 	expect(stdout).toContain("--header");
+	expect(stdout).toContain("--state-management");
 });
 
 test("openapi list shows wx generator", async () => {
@@ -501,6 +502,123 @@ test("openapi generate reads headers from .fizzy.yaml", async () => {
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("generated 4 file(s)");
 		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate with --state-management tanstack-query generates queries file", async () => {
+	const root = makeTempDir();
+	try {
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api");
+		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+
+		const { stdout, exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			specPath,
+			"-o",
+			outputDir,
+			"-c",
+			"fetch",
+			"--state-management",
+			"tanstack-query",
+		]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 5 file(s)");
+
+		// Should have the queries file
+		const queriesPath = join(outputDir, "queries.ts");
+		expect(existsSync(queriesPath)).toBe(true);
+
+		// Verify generated content
+		const queries = readFileSync(queriesPath, "utf-8");
+		expect(queries).toContain("listPetsQueryKey");
+		expect(queries).toContain("listPetsOptions");
+		expect(queries).toContain("getPetByIdQueryKey");
+		expect(queries).toContain("getPetByIdOptions");
+		expect(queries).toContain("createPetMutation");
+		expect(queries).toContain("deletePetMutation");
+
+		// Should import from api module
+		expect(queries).toContain('from "./api"');
+
+		// index.ts should export from queries.ts
+		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
+		expect(idx).toContain('export * from "./api"');
+		expect(idx).toContain('export * from "./queries"');
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate with --state-management tanstack-query without types", async () => {
+	const root = makeTempDir();
+	try {
+		const specNoTypes = {
+			openapi: "3.0.0",
+			info: { title: "Minimal", version: "1.0.0" },
+			paths: {
+				"/health": {
+					get: {
+						operationId: "healthCheck",
+						responses: { "200": { description: "OK" } },
+					},
+				},
+			},
+		};
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api");
+		writeFileSync(specPath, JSON.stringify(specNoTypes, null, 2));
+
+		const { stdout, exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			specPath,
+			"-o",
+			outputDir,
+			"-c",
+			"fetch",
+			"--state-management",
+			"tanstack-query",
+		]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 4 file(s)");
+
+		const queriesPath = join(outputDir, "queries.ts");
+		expect(existsSync(queriesPath)).toBe(true);
+
+		const queries = readFileSync(queriesPath, "utf-8");
+		expect(queries).toContain("healthCheckQueryKey");
+		expect(queries).toContain("healthCheckOptions");
+		// Should not have mutation for GET endpoint
+		expect(queries).not.toContain("healthCheckMutation");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate reads stateManagement from .fizzy.yaml", async () => {
+	const root = makeTempDir();
+	try {
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api");
+		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+		writeFileSync(
+			join(root, ".fizzy.yaml"),
+			`openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: fetch\n    stateManagement: tanstack-query\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 5 file(s)");
+		expect(existsSync(join(outputDir, "queries.ts"))).toBe(true);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

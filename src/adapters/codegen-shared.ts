@@ -48,7 +48,7 @@ function renderTypeDef(name: string, def: ParsedTypeDef): string {
 	}
 }
 
-function toPascalCase(s: string): string {
+export function toPascalCase(s: string): string {
 	return s
 		.replace(/[-_]/g, " ")
 		.split(" ")

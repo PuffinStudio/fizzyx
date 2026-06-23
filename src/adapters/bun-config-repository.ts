@@ -377,6 +377,7 @@ const parseOpenapiConfig = (raw: unknown): OpenApiGenConfig[] | undefined => {
 		const output = stringValue(obj.output);
 		const client = stringValue(obj.client);
 		if (!input || !output || !client) continue;
+		const stateManagement = stringValue(obj.stateManagement) || undefined;
 		entries.push({
 			input,
 			output,
@@ -387,6 +388,7 @@ const parseOpenapiConfig = (raw: unknown): OpenApiGenConfig[] | undefined => {
 			run: stringValue(obj.run) || undefined,
 			shareRuntime: obj.shareRuntime === true || undefined,
 			headers: parseObjectHeaders(obj.headers),
+			stateManagement,
 		});
 	}
 	return entries.length > 0 ? entries : undefined;

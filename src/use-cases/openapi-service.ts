@@ -41,6 +41,7 @@ export interface GenerateInput {
 	runtimeName?: string;
 	run?: string;
 	headers?: Record<string, string>;
+	stateManagement?: string;
 }
 
 export interface GenerateResult {
@@ -90,6 +91,7 @@ export const generate = (
 				apiName: input.apiName,
 				typesName: input.typesName,
 				runtimeName: input.runtimeName,
+				stateManagement: input.stateManagement,
 			}).filter(([_, v]) => v !== undefined),
 		);
 
@@ -171,6 +173,7 @@ export interface GenerateCliInput {
 	runtimeName?: string;
 	run?: string;
 	headers?: Record<string, string>;
+	stateManagement?: string;
 }
 
 export const generateFromCli = (cli: GenerateCliInput) =>
@@ -231,6 +234,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 					runtimeName: cli.runtimeName ?? cfg?.runtimeName ?? opts.runtimeName,
 					run: cli.run,
 					headers: cli.headers ?? cfg?.headers,
+					stateManagement: cli.stateManagement ?? cfg?.stateManagement,
 				} satisfies GenerateInput;
 			});
 		}
@@ -255,6 +259,7 @@ function resolveConfigs(cli: GenerateCliInput) {
 				runtimeName: cfg.runtimeName ?? opts.runtimeName,
 				run: cfg.run,
 				headers: cfg.headers,
+				stateManagement: cfg.stateManagement,
 			} satisfies GenerateInput;
 		});
 	});

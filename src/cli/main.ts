@@ -1001,6 +1001,7 @@ Options:
   --run <script|cmd>       Run npm script or shell command after generation
                            (matches package.json scripts first, else raw command)
   --header <key:value>     Custom header for fetching spec (repeatable, e.g. --header "Authorization: Bearer xxx")
+  --state-management <val> State management integration (e.g. tanstack-query)
 
 If --input/--output/--client are omitted, all entries from .fizzy.yaml openapi are used.
 If --output is also omitted, defaults to ./src/api.
@@ -1024,6 +1025,7 @@ interface OpenapiGenerateCli {
 	runtimeName?: string;
 	run?: string;
 	headers?: Record<string, string>;
+	stateManagement?: string;
 }
 
 const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli => {
@@ -1041,6 +1043,7 @@ const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli =
 	const run = parseFlag(args, "--run");
 	const rawHeaders = parseFlags(args, "--header");
 	const headers = parseRawHeaders(rawHeaders);
+	const stateManagement = parseFlag(args, "--state-management");
 
 	return {
 		inputs: allInputs.length > 0 ? allInputs : undefined,
@@ -1051,6 +1054,7 @@ const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli =
 		runtimeName,
 		run,
 		headers,
+		stateManagement,
 	};
 };
 
