@@ -1,4 +1,5 @@
 import { Console, Effect } from "effect";
+import { generateFromCli, writeFiles, listGenerators } from "../use-cases/openapi-service";
 import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
 import {
 	ossInitBlank,
@@ -89,6 +90,9 @@ export const runCli = (args: ReadonlyArray<string>) =>
 				return;
 			case "oss":
 				yield* runOss(rest);
+				return;
+			case "openapi":
+				yield* runOpenapi(rest);
 				return;
 			default:
 				throw new Error(legacyCommandErrorMessage(command));
@@ -562,6 +566,67 @@ const runFlow = (args: ReadonlyArray<string>) =>
 		}
 	});
 
+const runOpenapi = (args: ReadonlyArray<string>) =>
+	Effect.gen(function* () {
+		const [command = "help", ...rest] = args;
+
+		if (isHelpCommand(command)) {
+			yield* Console.log(openapiUsage());
+			return;
+		}
+
+		switch (command) {
+			case "generate": {
+				if (hasHelp(rest)) {
+					yield* Console.log(openapiGenerateUsage());
+					return;
+				}
+
+				const input = parseOpenapiGenerate(rest);
+				const result = yield* withSpinner(
+					`Generating ${input.client} client from ${input.input}...`,
+					generateFromCli(input),
+				);
+
+				const rawOutput = input.output ?? input.config?.output ?? ".";
+				const outDir = rawOutput.endsWith(".ts")
+					? (() => {
+							const i = rawOutput.lastIndexOf("/");
+							return i >= 0 ? rawOutput.substring(0, i) : ".";
+						})()
+					: rawOutput;
+				yield* writeFiles(result.files, outDir);
+				yield* Console.log(`generated ${result.files.length} file(s) to ${outDir}`);
+				yield* Console.log(`endpoints: ${result.spec.endpoints.length}`);
+				yield* Console.log(`types: ${Object.keys(result.spec.types).length}`);
+
+				if (input.run) {
+					yield* runPostGenScript(input.run);
+				}
+				return;
+			}
+			case "list": {
+				const generators = listGenerators();
+				if (generators.length === 0) {
+					yield* Console.log("(no generators available)");
+					return;
+				}
+				yield* Console.log("available generators:");
+				for (const g of generators) {
+					yield* Console.log(`  ${g.name}  ${g.description}`);
+				}
+				return;
+			}
+			case "help":
+			case "--help":
+			case "-h":
+				yield* Console.log(openapiUsage());
+				return;
+			default:
+				throw new Error(`unknown openapi command: ${command}\n\n${openapiUsage()}`);
+		}
+	});
+
 const runAuth = (args: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
 		const [command = "help", ...rest] = args;
@@ -907,6 +972,97 @@ const isHelpCommand = (value: string | undefined): value is "help" | "--help" | 
 
 const hasHelp = (args: ReadonlyArray<string>): boolean => args.some(isHelpCommand);
 
+const openapiUsage = (): string => `fizzyx openapi <command>
+
+commands:
+  generate  Generate API client code from OpenAPI spec
+  list      List available client generators
+
+Use:
+  fizzyx openapi generate -h
+for generate help.`;
+
+const openapiGenerateUsage = (): string => `fizzyx openapi generate [options]
+
+Options:
+  -i, --input <url|path>   OpenAPI spec URL or file path
+  -o, --output <dir|file>  Output directory (or .ts file path for custom api name)
+  -c, --client <name>      Client target (wx)
+  --api-name <name>        Generated API filename (default: api.ts)
+  --types-name <name>      Types filename (default: types.ts, use 'false' to inline)
+  --runtime-name <name>    Runtime filename (default: wx-request.ts)
+  --run <script|cmd>       Run npm script or shell command after generation
+                           (matches package.json scripts first, else raw command)
+
+If --input/--output/--client are omitted, values from .fizzy.yaml openapi[0] are used.
+
+Examples:
+  fizzyx openapi generate -i ./openapi.json -o ./src/api -c wx
+  fizzyx openapi generate -i ./openapi.json -o ./src/api/client.ts -c wx
+  fizzyx openapi generate -i spec.yaml -o ./src/api -c wx --api-name sdk.ts --types-name false
+  fizzyx openapi generate -i spec.json -o ./src/api -c wx --run check
+  fizzyx openapi generate -i spec.json -o ./src/api -c wx --run "oxlint ."`;
+
+interface OpenapiGenerateCli {
+	input?: string;
+	output?: string;
+	client?: string;
+	apiName?: string;
+	typesName?: string | false;
+	runtimeName?: string;
+	run?: string;
+	config?: {
+		input: string;
+		output: string;
+		client: string;
+		apiName?: string;
+		typesName?: string | false;
+		runtimeName?: string;
+	};
+}
+
+const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli => {
+	const input = parseFlag(args, "--input") ?? parseFlag(args, "-i");
+	const output = parseFlag(args, "--output") ?? parseFlag(args, "-o");
+	const client = parseFlag(args, "--client") ?? parseFlag(args, "-c");
+	const apiName = parseFlag(args, "--api-name");
+	const typesNameRaw = parseFlag(args, "--types-name");
+	const typesName = typesNameRaw === "false" ? false : typesNameRaw;
+	const runtimeName = parseFlag(args, "--runtime-name");
+	const run = parseFlag(args, "--run");
+
+	return { input, output, client, apiName, typesName, runtimeName, run };
+};
+
+const runPostGenScript = (script: string): Effect.Effect<void, Error> =>
+	Effect.tryPromise({
+		try: async () => {
+			const pkgPath = `${process.cwd()}/package.json`;
+			const pkgFile = Bun.file(pkgPath);
+			const exists = await pkgFile.exists();
+			let cmd: string;
+			if (exists) {
+				const pkg = await pkgFile.json();
+				if (pkg.scripts?.[script]) {
+					cmd = `bun run ${script}`;
+				} else {
+					cmd = script;
+				}
+			} else {
+				cmd = script;
+			}
+			process.stderr.write(`running: ${cmd}\n`);
+			const proc = Bun.spawnSync(cmd.split(" "), { stdio: ["inherit", "inherit", "inherit"] });
+			if (proc.exitCode !== 0) {
+				throw new Error(`"${cmd}" exited with code ${proc.exitCode}`);
+			}
+		},
+		catch: (cause) =>
+			new Error(
+				`post-gen script failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+			),
+	});
+
 const topUsage = (): string => `fizzyx <command>
 
 commands:
@@ -914,6 +1070,7 @@ commands:
   auth
   flow
   oss
+  openapi
 
 Use:
   fizzyx <command> -h

@@ -28,10 +28,36 @@ export class OssError extends Data.TaggedError("OssError")<{
 	status?: number;
 }> {}
 
+export class SpecLoadError extends Data.TaggedError("SpecLoadError")<{
+	message: string;
+	source: string;
+	cause?: unknown;
+}> {}
+
+export class SpecParseError extends Data.TaggedError("SpecParseError")<{
+	message: string;
+	cause?: unknown;
+}> {}
+
+export class CodegenError extends Data.TaggedError("CodegenError")<{
+	message: string;
+	target?: string;
+	cause?: unknown;
+}> {}
+
+export class ConfigValidationError extends Data.TaggedError("ConfigValidationError")<{
+	message: string;
+	field?: string;
+}> {}
+
 export type FizzyxError =
 	| ConfigError
 	| AuthError
 	| ApiError
 	| ValidationError
 	| FileError
-	| OssError;
+	| OssError
+	| SpecLoadError
+	| SpecParseError
+	| CodegenError
+	| ConfigValidationError;

@@ -1,3 +1,5 @@
+import type { OpenApiGenConfig } from "./openapi-models";
+
 export type CardNumber = number;
 
 export interface FlowConfig {
@@ -21,6 +23,7 @@ export interface ProjectConfig {
 	board?: string;
 	flow?: FlowConfig;
 	oss?: OssConfig;
+	openapi?: OpenApiGenConfig[];
 	configPath: string;
 	rootDir: string;
 }

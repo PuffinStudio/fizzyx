@@ -24,11 +24,15 @@
 		"test": "bun test",
 		"check": "bun --bun run typecheck && bun --bun run fmt && bun --bun run lint && bun test"
 	},
+	"dependencies": {
+		"@apidevtools/json-schema-ref-parser": "^15.4.0",
+		"openapi-types": "^12.1.3"
+	},
 	"devDependencies": {
 		"@types/bun": "latest",
-		"@typescript/native-preview": "^7.0.0-dev.20260617.2",
-		"effect": "^4.0.0-beta.84",
-		"oxfmt": "^0.55.0",
-		"oxlint": "^1.70.0"
+		"@typescript/native-preview": "^7.0.0-dev.20260622.1",
+		"effect": "^4.0.0-beta.86",
+		"oxfmt": "^0.56.0",
+		"oxlint": "^1.71.0"
 	}
 }
