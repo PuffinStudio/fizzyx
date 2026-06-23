@@ -144,7 +144,7 @@ function buildSchemaRefMap(doc: Record<string, unknown>): Map<string, string> {
 								}
 							}
 						} else {
-							refMap.set(`${opKey}/response/raw`, schemaToTsType(schema));
+							refMap.set(`${opKey}/response/raw`, schemaToTsType(maybeUnwrapEnvelope(schema)));
 						}
 					}
 				}
@@ -266,6 +266,16 @@ function parseSchema(
 	}
 
 	return { name, kind: "alias", description, aliasType: schemaToTsType(schema) };
+}
+
+function maybeUnwrapEnvelope(schema: Record<string, unknown>): Record<string, unknown> {
+	if (schema.type !== "object") return schema;
+	const props = schema.properties as Record<string, unknown> | undefined;
+	if (!props) return schema;
+	if ("code" in props && "data" in props) {
+		return props.data as Record<string, unknown>;
+	}
+	return schema;
 }
 
 function schemaToTsType(schema: Record<string, unknown>): string {

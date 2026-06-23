@@ -68,6 +68,12 @@ export type WxRequestConfig = {
   logger?: Logger
   /** Lifecycle hooks for toast, analytics, etc. */
   hooks?: RequestHook[]
+  /**
+   * Transform the raw response body before returning.
+   * Default unwraps \`{ code, data }\` envelope → \`data\`.
+   * Set to \`(raw) => raw\` to disable unwrapping.
+   */
+  responseExtractor?: (raw: unknown) => unknown
 }
 
 let _config: WxRequestConfig = {}
@@ -75,6 +81,7 @@ let _token: string | null = null
 let _tokenStorage: TokenStorage | null = null
 let _logger: Logger | null = null
 let _hooks: RequestHook[] = []
+let _extractor: ((raw: unknown) => unknown) | null = null
 
 const defaultLogger: Logger = {
   error: (...args) => console.error("[fizzyx]", ...args),
@@ -85,6 +92,13 @@ const defaultLogger: Logger = {
 
 function getLogger(): Logger {
   return _logger ?? defaultLogger
+}
+
+function defaultExtractor(raw: unknown): unknown {
+  if (raw !== null && typeof raw === "object" && "code" in (raw as Record<string, unknown>) && "data" in (raw as Record<string, unknown>)) {
+    return (raw as Record<string, unknown>).data
+  }
+  return raw
 }
 
 function defaultTokenStorageKey(): string {
@@ -137,6 +151,7 @@ export function configure(config: WxRequestConfig) {
   if (config.tokenStorage !== undefined) _tokenStorage = config.tokenStorage
   if (config.logger !== undefined) _logger = config.logger
   if (config.hooks !== undefined) _hooks = config.hooks
+  if (config.responseExtractor !== undefined) _extractor = config.responseExtractor
   loadInitialToken()
 }
 
@@ -184,12 +199,12 @@ function buildUrl(method: string, url: string, query?: Record<string, string | n
 }
 
 /**
- * Send a typed HTTP request.
+ * Low-level request — returns the raw response body without transformation.
  *
  * Promise rejects on HTTP 4xx/5xx and network errors.
  * Errors also fire \`onError\` hooks — use those for toast / logging.
  */
-export async function request<T>(
+export async function requestRaw<T>(
   method: string,
   url: string,
   options?: { query?: Record<string, string | number | undefined>; body?: unknown }
@@ -243,6 +258,21 @@ export async function request<T>(
       },
     })
   })
+}
+
+/**
+ * Typed request — applies \`responseExtractor\` to the raw response.
+ * Default unwraps \`{ code, data }\` envelope → \`data\`.
+ * Set \`responseExtractor: (raw) => raw\` in \`configure()\` to disable.
+ */
+export async function request<T>(
+  method: string,
+  url: string,
+  options?: { query?: Record<string, string | number | undefined>; body?: unknown }
+): Promise<T> {
+  const raw = await requestRaw<unknown>(method, url, options)
+  const extractor = _extractor ?? defaultExtractor
+  return extractor(raw) as T
 }
 `;
 
@@ -367,7 +397,9 @@ function generateApi(
 	lines.push(
 		`export type { WxRequestConfig, Logger, TokenStorage, RequestHook, HookContext } from "${runtimeImportPath}"`,
 	);
-	lines.push(`export { configure, setToken, initToken, onError } from "${runtimeImportPath}"`);
+	lines.push(
+		`export { configure, setToken, initToken, onError, requestRaw } from "${runtimeImportPath}"`,
+	);
 	if (hasTypes && typesImportPath) {
 		lines.push(`import type { ${Object.keys(spec.types).join(", ")} } from "${typesImportPath}"`);
 	}
@@ -393,7 +425,14 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	const { method, path, operationId, pathParams, queryParams, bodyTypeRef, responseTypeRef } =
 		endpoint;
 
-	const fnName = operationId.replace(/-/g, "_");
+	const fnName = operationId
+		.split(".")
+		.map((part, i) =>
+			i === 0
+				? part.replace(/-/g, "_")
+				: part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, "_"),
+		)
+		.join("");
 	const typePrefix = toPascalCase(fnName);
 	const tsPath = convertPathToTemplate(
 		path,
@@ -453,8 +492,6 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 		typeLines.push(`export type ${typeName} = { ${qFields.join("; ")} }`);
 		allParams.push(`query?: ${typeName}`);
 	}
-
-	jsdocLines.push(`@returns Promise<${responseType}>`);
 
 	const callArgs: string[] = [];
 	callArgs.push(JSON.stringify(method.toUpperCase()));
