@@ -15,8 +15,6 @@ export interface GenFileOptions {
 	apiName?: string;
 	typesName?: string | false;
 	runtimeName?: string;
-	stateManagement?: string;
-	stateManagementName?: string;
 }
 
 export type HttpMethod = "get" | "post" | "put" | "delete" | "patch" | "head" | "options";

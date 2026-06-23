@@ -1,26 +1,42 @@
+import { Effect } from "effect";
+import type { CodeGenerator } from "../ports/code-generator";
 import type { ParsedEndpoint, ParsedSpec } from "../domain/openapi-models";
+import { toFnName, toPascalCase } from "../domain/codegen-utils";
+import { CodegenError } from "../domain/errors";
 
-function toFnName(ep: ParsedEndpoint): string {
-	return ep.operationId
-		.split(".")
-		.map((part, i) =>
-			i === 0
-				? part.replace(/-/g, "_")
-				: part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, "_"),
-		)
-		.join("");
-}
+export const tanstackQueryGenerator: CodeGenerator = {
+	name: "tanstack-query",
+	info: { name: "tanstack-query", description: "TanStack Query React hooks" },
 
-function toPascalCase(s: string): string {
-	return s
-		.replace(/[-_]/g, " ")
-		.split(" ")
-		.filter(Boolean)
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join("");
-}
+	generate: (spec: ParsedSpec, _output: string, options) =>
+		Effect.gen(function* () {
+			try {
+				const defaultName =
+					options?.typesName !== false ? (options?.typesName ?? "types.ts") : undefined;
+				const apiImportPath = `./${options?.apiName?.replace(/\.ts$/, "") ?? "api"}`;
+				const typesImportPath = defaultName ? `./${defaultName.replace(/\.ts$/, "")}` : undefined;
+				const hasTypes =
+					defaultName !== undefined && spec.types && Object.keys(spec.types).length > 0;
 
-export function generateTanstackQuery(
+				return [
+					{
+						path: "queries.ts",
+						content: generateTanstackQueryCode(spec, apiImportPath, typesImportPath, hasTypes),
+					},
+				];
+			} catch (e) {
+				return yield* Effect.fail(
+					new CodegenError({
+						message: `tanstack-query codegen failed: ${e instanceof Error ? e.message : String(e)}`,
+						target: "tanstack-query",
+						cause: e,
+					}),
+				);
+			}
+		}),
+};
+
+function generateTanstackQueryCode(
 	spec: ParsedSpec,
 	apiImportPath: string,
 	typesImportPath?: string,
@@ -153,7 +169,6 @@ function generateQueryHook(ep: ParsedEndpoint, fnName: string): string {
 	return `export function use${toPascalCase(fnName)}${fnSig} {\n  return useQuery(${fnName}Options(${fwd}))\n}`;
 }
 
-/** Describes the mutationFn signature and the inner call. */
 function mutationParamInfo(ep: ParsedEndpoint): { args: string; call: string } {
 	const fnName = toFnName(ep);
 	const prefix = toPascalCase(fnName);

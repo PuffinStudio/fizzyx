@@ -1,4 +1,5 @@
 import type { ParsedEndpoint, ParsedSpec, ParsedTypeDef } from "../domain/openapi-models";
+import { toFnName, toPascalCase } from "../domain/codegen-utils";
 
 export function generateTypes(spec: ParsedSpec): string {
 	const lines: string[] = [];
@@ -46,15 +47,6 @@ function renderTypeDef(name: string, def: ParsedTypeDef): string {
 			return `${header}export type ${name} = ${def.aliasType ?? "unknown"}`;
 		}
 	}
-}
-
-export function toPascalCase(s: string): string {
-	return s
-		.replace(/[-_]/g, " ")
-		.split(" ")
-		.filter(Boolean)
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join("");
 }
 
 function convertPathToTemplate(
@@ -115,17 +107,9 @@ export function generateApi(
 }
 
 export function renderEndpoint(endpoint: ParsedEndpoint): string {
-	const { method, path, operationId, pathParams, queryParams, bodyTypeRef, responseTypeRef } =
-		endpoint;
+	const { method, path, pathParams, queryParams, bodyTypeRef, responseTypeRef } = endpoint;
 
-	const fnName = operationId
-		.split(".")
-		.map((part, i) =>
-			i === 0
-				? part.replace(/-/g, "_")
-				: part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, "_"),
-		)
-		.join("");
+	const fnName = toFnName(endpoint);
 	const typePrefix = toPascalCase(fnName);
 	const useParamsPrefix = pathParams.length > 0;
 	const tsPath = convertPathToTemplate(
