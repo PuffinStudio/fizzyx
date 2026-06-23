@@ -1,14 +1,11 @@
-// Auto-update check — fire-and-forget in a child process so it never blocks.
+// Auto-update — fire-and-forget silent install in a child process.
+// Never blocks the parent, never prints to the user.
 import { VERSION } from "./version";
 
 const CURRENT_VERSION = VERSION;
 
 let checked = false;
 
-/**
- * Fire-and-forget update check. Spawns a detached child process so the
- * network I/O never prevents the parent from exiting.
- */
 export function checkForUpdate(): void {
 	if (checked) return;
 	checked = true;
@@ -29,7 +26,11 @@ async function check() {
     for (let i = 0; i < Math.max(cur.length, lat.length); i++) {
       const a = lat[i] ?? 0;
       const b = cur[i] ?? 0;
-      if (a > b) { console.error("\\n  update available: " + CURRENT + " \\u2192 " + version); console.error("  run: bun add -g @puffinstudio/fizzyx\\n"); return; }
+      if (a > b) {
+        const proc = Bun.spawnSync(["bun", "add", "-g", "@puffinstudio/fizzyx"], { stdio: ["ignore", "ignore", "ignore"] });
+        if (proc.exitCode === 0) return;
+        return;
+      }
       if (a < b) return;
     }
   } catch {}
