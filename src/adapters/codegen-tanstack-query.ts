@@ -1,12 +1,13 @@
 import { Effect } from "effect";
-import type { CodeGenerator } from "../ports/code-generator";
+import type { CodeExtensionGenerator } from "../ports/code-generator";
 import type { ParsedEndpoint, ParsedSpec } from "../domain/openapi-models";
 import { toFnName, toPascalCase } from "../domain/codegen-utils";
 import { CodegenError } from "../domain/errors";
 
-export const tanstackQueryGenerator: CodeGenerator = {
+export const tanstackQueryGenerator: CodeExtensionGenerator = {
 	name: "tanstack-query",
 	info: { name: "tanstack-query", description: "TanStack Query React hooks" },
+	exportPath: "./queries",
 
 	generate: (spec: ParsedSpec, _output: string, options) =>
 		Effect.gen(function* () {

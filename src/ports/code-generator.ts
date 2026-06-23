@@ -16,3 +16,14 @@ export interface CodeGenerator {
 		options?: GenFileOptions,
 	) => Effect.Effect<GeneratedFile[], CodegenError>;
 }
+
+export interface CodeExtensionGenerator {
+	readonly name: string;
+	readonly info: KnownGenerator;
+	readonly exportPath: string;
+	generate: (
+		spec: ParsedSpec,
+		output: string,
+		options?: GenFileOptions,
+	) => Effect.Effect<GeneratedFile[], CodegenError>;
+}

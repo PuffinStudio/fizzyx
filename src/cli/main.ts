@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { VERSION } from "../_shared/version";
 import { checkForUpdate } from "../_shared/auto-update";

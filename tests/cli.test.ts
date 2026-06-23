@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:net";
 
 type CliResult = {
 	stdout: string;
@@ -17,8 +18,10 @@ type CliResult = {
 	exitCode: number;
 };
 
-const stripAnsi = (s: string): string =>
-	s.replace(/\u001B\[[0-9;]*[a-zA-Z]/g, "").replace(/\u001B\]/g, "");
+const ansiEscape = String.fromCharCode(27);
+const ansiCsiPattern = new RegExp(`${ansiEscape}\\[[0-9;]*[a-zA-Z]`, "g");
+const ansiOscPattern = new RegExp(`${ansiEscape}\\]`, "g");
+const stripAnsi = (s: string): string => s.replace(ansiCsiPattern, "").replace(ansiOscPattern, "");
 
 const runCli = async (
 	args: string[],
@@ -45,6 +48,21 @@ const runCli = async (
 };
 
 const makeTempDir = () => mkdtempSync(join(tmpdir(), "fizzyx-cli-"));
+
+const getFreePort = (): Promise<number> =>
+	new Promise((resolve, reject) => {
+		const server = createServer();
+		server.unref();
+		server.on("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address();
+			const port = typeof address === "object" && address ? address.port : 0;
+			server.close((error) => {
+				if (error) reject(error);
+				else resolve(port);
+			});
+		});
+	});
 
 test("prints top-level grouped help", async () => {
 	const { stdout, exitCode } = await runCli(["--help"]);
@@ -125,7 +143,8 @@ test("setup --list shows board id and name", async () => {
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
 				if (url.pathname === "/1/boards.json" && req.method === "GET") {
@@ -537,7 +556,7 @@ test("top-level workflow exits non-zero", async () => {
 });
 
 test("top-level skill shows top-level help", async () => {
-	const { stdout, stderr, exitCode } = await runCli(["skill"]);
+	const { stderr, exitCode } = await runCli(["skill"]);
 
 	expect(exitCode).toBe(1);
 	expect(stderr).toContain("Unknown subcommand");
@@ -561,7 +580,8 @@ test("flow repair-markdown repairs card description and prints result", async ()
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
 				calls.push(`${req.method} ${url.pathname}`);
@@ -642,7 +662,8 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
 
@@ -746,7 +767,8 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 		);
 
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
 				if (
@@ -827,7 +849,8 @@ test("flow init preserves existing flow users while adding identity and assignee
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
 
@@ -909,7 +932,8 @@ test("flow init retries when token is denied and migrates official credentials",
 		);
 
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
 				requests.push({
@@ -1024,7 +1048,8 @@ test("auth status prints identity details when API identity succeeds", async () 
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				if (new URL(req.url).pathname === "/my/identity.json" && req.method === "GET") {
 					return Response.json({
@@ -1072,7 +1097,8 @@ test("auth status preserves existing fizzyx credentials when official one exists
 
 	try {
 		const api = Bun.serve({
-			port: 0,
+			port: await getFreePort(),
+			hostname: "127.0.0.1",
 			async fetch(req) {
 				if (new URL(req.url).pathname === "/my/identity.json" && req.method === "GET") {
 					return Response.json({

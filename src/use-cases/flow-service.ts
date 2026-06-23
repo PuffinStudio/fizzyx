@@ -3,7 +3,6 @@ import { ApiError, AuthError, ConfigError, FileError, ValidationError } from "..
 import type {
 	BoardCache,
 	BoardColumn,
-	Card,
 	Step,
 	Identity,
 	InitializedProjectConfig,
@@ -23,7 +22,15 @@ import {
 	planStandardizeCardContent,
 	planStepsFromDescription,
 } from "./flow-card-content";
+import {
+	buildBoardUsers,
+	mergeFlowUsers,
+	resolveAssignableUser,
+	resolveMineUser,
+	resolveUser,
+} from "./flow-user-resolution";
 export { convertDescription } from "./flow-card-content";
+export { resolveUser } from "./flow-user-resolution";
 
 export interface Env {
 	config: ProjectConfig;
@@ -362,7 +369,7 @@ export const syncBoard = (env: Env) =>
 			env.api.listCards({ indexedBy: "not_now", all: true }),
 			env.api.listColumns(),
 		]);
-		const users = buildUsers(env.config, cards);
+		const users = buildBoardUsers(env.config, cards);
 		const cache: BoardCache = {
 			identity,
 			cards,
@@ -389,8 +396,7 @@ export const ensureCache = (env: InitializedEnv, fresh: boolean) =>
 export const mine = (env: InitializedEnv, options: { fresh: boolean; user?: string }) =>
 	Effect.gen(function* () {
 		const cache = yield* ensureCache(env, options.fresh);
-		const userId = options.user ? resolveUser(env.config, options.user) : cache.identity.userId;
-		const name = findUserName(cache, userId) || options.user || cache.identity.name || "me";
+		const { name, userId } = resolveMineUser(env.config, cache, options.user);
 		const cards = cache.cards.filter((card) =>
 			card.assignees?.some((assignee) => assignee.id === userId),
 		);
@@ -622,13 +628,6 @@ const ensureFlowConfig = (args: {
 	initialUsers?: Record<string, string>;
 }): Effect.Effect<InitializedProjectConfig, unknown> =>
 	Effect.gen(function* () {
-		const existingUsers: Record<string, string> = {
-			...args.initialUsers,
-		};
-		if (args.config.flow?.users) {
-			Object.assign(existingUsers, args.config.flow.users);
-		}
-
 		const identityResult = yield* args.api.identity().pipe(
 			Effect.map((identity): { _tag: "success"; identity: Identity } => ({
 				_tag: "success",
@@ -640,12 +639,12 @@ const ensureFlowConfig = (args: {
 		const cards = yield* args.api
 			.listCards({ all: true })
 			.pipe(Effect.catch(() => Effect.succeed([] as const)));
-		const usersFromCards = buildUsers(args.config, cards);
-		Object.assign(existingUsers, usersFromCards);
-
-		if (identityResult._tag === "success" && identityResult.identity.name) {
-			existingUsers[identityResult.identity.name] = identityResult.identity.userId;
-		}
+		const existingUsers = mergeFlowUsers({
+			config: args.config,
+			initialUsers: args.initialUsers,
+			cards,
+			identity: identityResult._tag === "success" ? identityResult.identity : undefined,
+		});
 
 		if (args.config.flow) {
 			if (!isUserMapChanged(args.config.flow.users, existingUsers)) {
@@ -709,56 +708,12 @@ const ensureColumn = (
 		return created.id;
 	});
 
-const buildUsers = (config: ProjectConfig, cards: ReadonlyArray<Card>): Record<string, string> => {
-	const users = { ...config.flow?.users };
-	for (const card of cards) {
-		for (const assignee of card.assignees || []) {
-			if (assignee.name) users[assignee.name] = assignee.id;
-		}
-	}
-	return users;
-};
-
-export const resolveUser = (config: InitializedProjectConfig, user: string): string => {
-	const exact = config.flow.users[user];
-	if (exact) return exact;
-	const lower = config.flow.users[user.toLowerCase()];
-	if (lower) return lower;
-	if (/^03[a-z0-9]{23}$/.test(user)) return user;
-	throw new ValidationError({ message: `Unknown user ${user}` });
-};
-
-const resolveBoardUser = (boardUsers: Record<string, string>, user: string): string => {
-	const exact = boardUsers[user];
-	if (exact) return exact;
-	const lower = boardUsers[user.toLowerCase()];
-	if (lower) return lower;
-	if (/^03[a-z0-9]{23}$/.test(user)) {
-		const knownIds = Object.values(boardUsers);
-		if (!knownIds.includes(user)) {
-			const members = Object.keys(boardUsers).join(", ");
-			throw new ValidationError({
-				message: `User ID ${user} is not a board member. Known members: ${members}`,
-			});
-		}
-		return user;
-	}
-	const members = Object.keys(boardUsers).join(", ");
-	throw new ValidationError({ message: `Unknown user "${user}". Board members: ${members}` });
-};
-
-const isCurrentUserAlias = (user: string): boolean =>
-	["me", "self", "myself"].includes(user.toLowerCase());
-
 export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
 		if (users.length === 0)
 			return yield* new ValidationError({ message: "At least one user is required" });
 		const cache = yield* ensureCache(env, false);
-		const boardUsers = { ...cache.users };
-		const userIds = users.map((u) =>
-			isCurrentUserAlias(u) ? cache.identity.userId : resolveBoardUser(boardUsers, u),
-		);
+		const userIds = users.map((user) => resolveAssignableUser(cache, user));
 		const card =
 			cache.cards.find((item) => item.number === number) ?? (yield* env.api.showCard(number));
 		const existing = new Set(card.assignees?.map((assignee) => assignee.id) ?? []);
@@ -843,9 +798,6 @@ export const doctor = (env: InitializedEnv): Effect.Effect<DoctorResult, unknown
 			fixes,
 		};
 	});
-
-const findUserName = (cache: BoardCache, userId: string): string | undefined =>
-	Object.entries(cache.users).find(([, id]) => id === userId)?.[0];
 
 const gitCommandOutput = (cwd: string, args: ReadonlyArray<string>) =>
 	Effect.tryPromise({

@@ -17,6 +17,7 @@ import type { ConfigRepository } from "../ports/config-repository";
 import { makeBunManifestRepository, makeEmptyManifest } from "../adapters/bun-manifest-repository";
 import { makeBunOssRepository } from "../adapters/bun-oss-repository";
 import type { OssRepository } from "../ports/oss-repository";
+import type { ManifestRepository } from "../ports/manifest-repository";
 import type { OssSetupInput } from "../ports/config-repository";
 import path from "node:path";
 
@@ -25,7 +26,33 @@ import path from "node:path";
 export const OSS_SECRET_SERVICE = "fizzyx-oss";
 export const DEFAULT_OSS_ENV = "default";
 
-const tryGetSecret = (
+export interface OssCredentialStore {
+	get: (
+		config: ProjectConfig,
+		env: OssEnvironmentName,
+	) => Effect.Effect<OssCredentials | undefined, never>;
+	set: (
+		config: ProjectConfig,
+		env: OssEnvironmentName,
+		credentials: OssCredentials,
+	) => Effect.Effect<void, OssError>;
+}
+
+export interface OssRuntimeAdapters {
+	credentials: OssCredentialStore;
+	makeOssRepository: (config: OssEnvironmentConfig & OssCredentials) => OssRepository;
+	makeManifestRepository: (rootDir: string) => ManifestRepository;
+	collectLocalFiles: typeof collectLocalFiles;
+	statFile: typeof statAbsoluteFile;
+	hashFile: typeof hashFile;
+	fileBody: (absolutePath: string) => Blob | string;
+	now: () => Date;
+	performanceNow: () => number;
+}
+
+export type OssRuntimeAdapterOverrides = Partial<OssRuntimeAdapters>;
+
+const getStoredOssCredentials = (
 	config: ProjectConfig,
 	env: OssEnvironmentName,
 ): Effect.Effect<OssCredentials | undefined, never> =>
@@ -50,6 +77,44 @@ const tryGetSecret = (
 		}
 		return undefined;
 	});
+
+const setStoredOssCredentials = (
+	config: ProjectConfig,
+	env: OssEnvironmentName,
+	credentials: OssCredentials,
+): Effect.Effect<void, OssError> =>
+	Effect.tryPromise({
+		try: () =>
+			Bun.secrets.set({
+				service: OSS_SECRET_SERVICE,
+				name: getOssSecretName(config, env),
+				value: JSON.stringify(credentials),
+			}),
+		catch: (cause) =>
+			new OssError({ message: `Failed to store OSS credentials: ${String(cause)}` }),
+	});
+
+export const bunOssCredentialStore: OssCredentialStore = {
+	get: getStoredOssCredentials,
+	set: setStoredOssCredentials,
+};
+
+const defaultOssRuntimeAdapters = (): OssRuntimeAdapters => ({
+	credentials: bunOssCredentialStore,
+	makeOssRepository: makeBunOssRepository,
+	makeManifestRepository: makeBunManifestRepository,
+	collectLocalFiles,
+	statFile: statAbsoluteFile,
+	hashFile,
+	fileBody: (absolutePath) => Bun.file(absolutePath),
+	now: () => new Date(),
+	performanceNow: () => performance.now(),
+});
+
+const makeOssRuntimeAdapters = (overrides?: OssRuntimeAdapterOverrides): OssRuntimeAdapters => ({
+	...defaultOssRuntimeAdapters(),
+	...overrides,
+});
 
 export const getOssSecretName = (config: ProjectConfig, env: OssEnvironmentName): string => {
 	const projectKey = config.board
@@ -99,8 +164,10 @@ export const ossStoreCredentials = (
 	env: OssEnvironmentName,
 	accessKeyId: string,
 	secretAccessKey: string,
+	adapters?: Pick<OssRuntimeAdapters, "credentials">,
 ): Effect.Effect<void, OssError, ConfigRepository> =>
 	Effect.gen(function* () {
+		const runtime = makeOssRuntimeAdapters(adapters);
 		const configRepo = yield* ConfigRepo;
 		const config = yield* configRepo
 			.loadProjectConfigOptional()
@@ -111,11 +178,15 @@ export const ossStoreCredentials = (
 			configPath: `${process.cwd()}/${CONFIG_FILE}`,
 			rootDir: process.cwd(),
 		};
-		yield* storeOssCredentials(projectConfig, env, { accessKeyId, secretAccessKey });
+		yield* runtime.credentials.set(projectConfig, env, { accessKeyId, secretAccessKey });
 	});
 
-export const ossSetup = (input: OssSetupInput) =>
+export const ossSetup = (
+	input: OssSetupInput,
+	adapters?: Pick<OssRuntimeAdapters, "credentials">,
+) =>
 	Effect.gen(function* () {
+		const runtime = makeOssRuntimeAdapters(adapters);
 		const configRepo = yield* ConfigRepo;
 		const config = yield* configRepo
 			.loadProjectConfigOptional()
@@ -135,7 +206,7 @@ export const ossSetup = (input: OssSetupInput) =>
 				accessKeyId: envConfig.accessKeyId,
 				secretAccessKey: envConfig.secretAccessKey,
 			};
-			yield* storeOssCredentials(projectConfig, input.env, creds);
+			yield* runtime.credentials.set(projectConfig, input.env, creds);
 		}
 
 		const ossConfig = yield* configRepo.setupOssConfig(input);
@@ -146,6 +217,7 @@ export const ossSync = (options: {
 	env: OssEnvironmentName;
 	full: boolean;
 	verify?: boolean;
+	adapters?: OssRuntimeAdapterOverrides;
 	onProgress?: (info: {
 		current: number;
 		total: number;
@@ -158,7 +230,8 @@ export const ossSync = (options: {
 	ConfigRepository
 > =>
 	Effect.gen(function* () {
-		const start = performance.now();
+		const runtime = makeOssRuntimeAdapters(options.adapters);
+		const start = runtime.performanceNow();
 		const configRepo = yield* ConfigRepo;
 		const config = yield* configRepo.loadProjectConfig();
 		const oss = yield* requireOssConfig(config);
@@ -167,20 +240,25 @@ export const ossSync = (options: {
 		const remotePrefix = oss.sync.remotePrefix ?? "";
 		const concurrency = Math.max(1, oss.sync.concurrency || 1);
 
-		const credentials = yield* resolveOssCredentials(config, options.env, envConfig);
+		const credentials = yield* resolveOssCredentials(
+			config,
+			options.env,
+			envConfig,
+			runtime.credentials,
+		);
 
-		const ossRepo = makeBunOssRepository({
+		const ossRepo = runtime.makeOssRepository({
 			...envConfig,
 			accessKeyId: credentials.accessKeyId,
 			secretAccessKey: credentials.secretAccessKey,
 		});
-		const manifestRepo = makeBunManifestRepository(config.rootDir);
+		const manifestRepo = runtime.makeManifestRepository(config.rootDir);
 
 		const rawManifest = yield* options.full ? Effect.succeed(null) : manifestRepo.read();
 
 		const manifest = rawManifest ?? makeEmptyManifest(resolvedLocalDir, remotePrefix);
 
-		const localFiles = yield* collectLocalFiles(resolvedLocalDir);
+		const localFiles = yield* runtime.collectLocalFiles(resolvedLocalDir);
 		const allKeys = localFiles.map(({ relativePath }) =>
 			[remotePrefix, relativePath].filter(Boolean).join("/"),
 		);
@@ -209,6 +287,7 @@ export const ossSync = (options: {
 						absolutePath,
 						relativePath,
 						options.verify ?? false,
+						runtime,
 					);
 
 					completed += 1;
@@ -240,10 +319,10 @@ export const ossSync = (options: {
 		const uploaded = uploadedKeys.length;
 		const skipped = results.filter((result) => result._tag === "skipped").length;
 
-		manifest.lastSyncedAt = new Date().toISOString();
+		manifest.lastSyncedAt = runtime.now().toISOString();
 		yield* manifestRepo.write(manifest);
 
-		const durationMs = Math.round(performance.now() - start);
+		const durationMs = Math.round(runtime.performanceNow() - start);
 
 		return {
 			env: options.env,
@@ -261,16 +340,18 @@ export const ossSync = (options: {
 
 export const ossStatus = (options: {
 	env: OssEnvironmentName;
+	adapters?: Pick<OssRuntimeAdapters, "makeManifestRepository" | "collectLocalFiles" | "statFile">;
 }): Effect.Effect<OssStatusResult, ConfigError | FileError | ValidationError, ConfigRepository> =>
 	Effect.gen(function* () {
+		const runtime = makeOssRuntimeAdapters(options.adapters);
 		const configRepo = yield* ConfigRepo;
 		const config = yield* configRepo.loadProjectConfig();
 		const oss = yield* requireOssConfig(config);
 		const resolvedLocalDir = resolvePath(config.rootDir, oss.sync.localDir);
-		const manifestRepo = makeBunManifestRepository(config.rootDir);
+		const manifestRepo = runtime.makeManifestRepository(config.rootDir);
 		const manifest = yield* manifestRepo.read();
 
-		const localFiles = yield* collectLocalFiles(resolvedLocalDir);
+		const localFiles = yield* runtime.collectLocalFiles(resolvedLocalDir);
 		const localRelPaths = new Set(localFiles.map((f) => f.relativePath));
 
 		const pendingUploadFiles: string[] = [];
@@ -282,7 +363,7 @@ export const ossStatus = (options: {
 					continue;
 				}
 				const file = localFiles.find((f) => f.relativePath === relativePath);
-				const stat = yield* statFile(Bun.file(file!.absolutePath));
+				const stat = yield* runtime.statFile(file!.absolutePath);
 				if (stat.mtimeMs !== entry.mtimeMs || stat.size !== entry.size) {
 					pendingUploadFiles.push(relativePath);
 				}
@@ -315,18 +396,25 @@ export const ossStatus = (options: {
 export const ossList = (options: {
 	env: OssEnvironmentName;
 	prefix?: string;
+	adapters?: Pick<OssRuntimeAdapters, "credentials" | "makeOssRepository">;
 }): Effect.Effect<
 	OssListResult,
 	ConfigError | FileError | OssError | ValidationError,
 	ConfigRepository
 > =>
 	Effect.gen(function* () {
+		const runtime = makeOssRuntimeAdapters(options.adapters);
 		const configRepo = yield* ConfigRepo;
 		const config = yield* configRepo.loadProjectConfig();
 		const oss = yield* requireOssConfig(config);
 		const envConfig = getOssEnvConfig(oss, options.env);
-		const credentials = yield* resolveOssCredentials(config, options.env, envConfig);
-		const ossRepo = makeBunOssRepository({
+		const credentials = yield* resolveOssCredentials(
+			config,
+			options.env,
+			envConfig,
+			runtime.credentials,
+		);
+		const ossRepo = runtime.makeOssRepository({
 			...envConfig,
 			accessKeyId: credentials.accessKeyId,
 			secretAccessKey: credentials.secretAccessKey,
@@ -336,33 +424,18 @@ export const ossList = (options: {
 
 // ─── Secrets helpers ─────────────────────────────────────────
 
-const storeOssCredentials = (
-	config: ProjectConfig,
-	env: OssEnvironmentName,
-	credentials: OssCredentials,
-): Effect.Effect<void, OssError> =>
-	Effect.tryPromise({
-		try: () =>
-			Bun.secrets.set({
-				service: OSS_SECRET_SERVICE,
-				name: getOssSecretName(config, env),
-				value: JSON.stringify(credentials),
-			}),
-		catch: (cause) =>
-			new OssError({ message: `Failed to store OSS credentials: ${String(cause)}` }),
-	});
-
 const resolveOssCredentials = (
 	config: ProjectConfig,
 	env: OssEnvironmentName,
 	envConfig: OssEnvironmentConfig,
+	credentialStore: OssCredentialStore = bunOssCredentialStore,
 ): Effect.Effect<OssCredentials, OssError> =>
 	Effect.gen(function* () {
-		const fromSecrets = yield* tryGetSecret(config, env);
+		const fromSecrets = yield* credentialStore.get(config, env);
 		if (fromSecrets) return fromSecrets;
 
 		if (env !== DEFAULT_OSS_ENV) {
-			const fallback = yield* tryGetSecret(config, DEFAULT_OSS_ENV);
+			const fallback = yield* credentialStore.get(config, DEFAULT_OSS_ENV);
 			if (fallback) return fallback;
 		}
 
@@ -411,6 +484,10 @@ const statFile = (
 				path: file.name,
 			}),
 	});
+
+const statAbsoluteFile = (
+	absolutePath: string,
+): Effect.Effect<{ mtimeMs: number; size: number }, FileError> => statFile(Bun.file(absolutePath));
 
 const hashFile = (absolutePath: string): Effect.Effect<string, FileError> =>
 	Effect.tryPromise({
@@ -481,12 +558,13 @@ const syncFile = (
 	absolutePath: string,
 	relativePath: string,
 	verify: boolean,
+	runtime: Pick<OssRuntimeAdapters, "statFile" | "hashFile" | "fileBody">,
 ): Effect.Effect<SyncFileResult, never> =>
 	Effect.gen(function* () {
 		const existing = manifest.files[relativePath];
 		const key = [remotePrefix, relativePath].filter(Boolean).join("/");
 
-		const currentStat = yield* statFile(Bun.file(absolutePath));
+		const currentStat = yield* runtime.statFile(absolutePath);
 
 		if (
 			existing &&
@@ -501,7 +579,7 @@ const syncFile = (
 		}
 
 		if (existing && existing.hash) {
-			const currentHash = yield* hashFile(absolutePath);
+			const currentHash = yield* runtime.hashFile(absolutePath);
 			if (currentHash === existing.hash) {
 				if (!verify) {
 					manifest.files[relativePath] = {
@@ -525,8 +603,8 @@ const syncFile = (
 			}
 		}
 
-		const currentHash = yield* hashFile(absolutePath);
-		const body = Bun.file(absolutePath);
+		const currentHash = yield* runtime.hashFile(absolutePath);
+		const body = runtime.fileBody(absolutePath);
 		yield* ossRepo
 			.write(key, body)
 			.pipe(

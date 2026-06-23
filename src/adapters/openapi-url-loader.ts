@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import type { OpenApiLoader } from "../ports/openapi-loader";
 import { SpecLoadError, SpecParseError } from "../domain/errors";
-import { parseSpec } from "./openapi-file-loader";
+import { parseSpec } from "../use-cases/openapi-parser";
 
 export const openapiUrlLoader: OpenApiLoader = {
 	load: (input: string, headers?: Record<string, string>) =>
