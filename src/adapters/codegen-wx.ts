@@ -198,6 +198,8 @@ function buildUrl(method: string, url: string, query?: Record<string, unknown>):
   return finalUrl
 }
 
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS";
+
 /**
  * Low-level request — returns the raw response body without transformation.
  *
@@ -205,7 +207,7 @@ function buildUrl(method: string, url: string, query?: Record<string, unknown>):
  * Errors also fire \`onError\` hooks — use those for toast / logging.
  */
 export async function requestRaw<T>(
-  method: string,
+  method: HttpMethod,
   url: string,
   options?: { query?: Record<string, unknown>; body?: unknown }
 ): Promise<T> {
@@ -224,8 +226,8 @@ export async function requestRaw<T>(
   return new Promise<T>((resolve, reject) => {
     wx.request({
       url: finalUrl,
-      method: method as any,
-      data: options?.body,
+      method: method as Parameters<typeof wx.request>[0]["method"],
+      data: options?.body as Record<string, unknown>,
       timeout: _config.timeout ?? 60000,
       header,
       success: (res) => {
@@ -265,10 +267,10 @@ export async function requestRaw<T>(
  * Default unwraps \`{ code, data }\` envelope → \`data\`.
  * Set \`responseExtractor: (raw) => raw\` in \`configure()\` to disable.
  */
-export async function request<T>(
-  method: string,
+export async function request<T, B = unknown>(
+  method: HttpMethod,
   url: string,
-  options?: { query?: Record<string, unknown>; body?: unknown }
+  options?: { query?: Record<string, unknown>; body?: B }
 ): Promise<T> {
   const raw = await requestRaw<unknown>(method, url, options)
   const extractor = _extractor ?? defaultExtractor
@@ -405,6 +407,16 @@ function generateApi(
 	}
 	lines.push("");
 
+	const needsBaseParams = spec.endpoints.some(
+		(e) => e.pathParams.length > 0 || e.queryParams.length > 0,
+	);
+	if (needsBaseParams) {
+		lines.push("export interface BaseParams {");
+		lines.push("  [key: string]: unknown");
+		lines.push("}");
+		lines.push("");
+	}
+
 	for (const endpoint of spec.endpoints) {
 		lines.push(renderEndpoint(endpoint));
 	}
@@ -458,8 +470,7 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 
 	if (hasPathParams) {
 		const typeName = `${typePrefix}PathParams`;
-		typeLines.push(`export interface ${typeName} {`);
-		typeLines.push("  [key: string]: unknown");
+		typeLines.push(`export interface ${typeName} extends BaseParams {`);
 		for (const p of pathParams) {
 			if (p.description) {
 				typeLines.push(`  /** ${p.description} */`);
@@ -482,8 +493,7 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 
 	if (hasQueryParams) {
 		const typeName = `${typePrefix}QueryParams`;
-		typeLines.push(`export interface ${typeName} {`);
-		typeLines.push("  [key: string]: unknown");
+		typeLines.push(`export interface ${typeName} extends BaseParams {`);
 		for (const q of queryParams) {
 			if (q.description) {
 				typeLines.push(`  /** ${q.description} */`);
@@ -507,10 +517,13 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	if (hasQueryParams) optsParts.push("query");
 	if (hasBody) optsParts.push(`body: data`);
 
+	const typeParams =
+		hasBody && bodyTypeRef ? `<${responseType}, ${bodyTypeRef}>` : `<${responseType}>`;
+
 	const callStr =
 		optsParts.length > 0
-			? `request<${responseType}>(${callArgs.join(", ")}, { ${optsParts.join(", ")} })`
-			: `request<${responseType}>(${callArgs.join(", ")})`;
+			? `request${typeParams}(${callArgs.join(", ")}, { ${optsParts.join(", ")} })`
+			: `request${typeParams}(${callArgs.join(", ")})`;
 
 	const fnLines: string[] = [];
 

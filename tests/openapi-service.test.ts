@@ -226,12 +226,13 @@ test("openapi generate produces correct files from spec file", async () => {
 		expect(api).toContain("export function deletePet");
 		expect(api).toContain("Pet[]");
 		expect(api).toContain("CreatePetInput");
-		expect(api).toContain("export interface ListPetsQueryParams {");
+		expect(api).toContain("export interface ListPetsQueryParams extends BaseParams {");
 		expect(api).toContain("  limit?: number");
-		expect(api).toContain("export interface GetPetByIdPathParams {");
+		expect(api).toContain("export interface GetPetByIdPathParams extends BaseParams {");
 		expect(api).toContain("  petId: number");
-		expect(api).toContain("export interface DeletePetPathParams {");
+		expect(api).toContain("export interface DeletePetPathParams extends BaseParams {");
 		expect(api).toContain("  petId: string");
+		expect(api).toContain("export interface BaseParams {");
 
 		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
 		expect(idx).toContain('export * from "./api"');
