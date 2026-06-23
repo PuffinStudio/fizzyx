@@ -459,6 +459,7 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	if (hasPathParams) {
 		const typeName = `${typePrefix}PathParams`;
 		typeLines.push(`export interface ${typeName} {`);
+		typeLines.push("  [key: string]: unknown");
 		for (const p of pathParams) {
 			if (p.description) {
 				typeLines.push(`  /** ${p.description} */`);
@@ -482,6 +483,7 @@ function renderEndpoint(endpoint: ParsedEndpoint): string {
 	if (hasQueryParams) {
 		const typeName = `${typePrefix}QueryParams`;
 		typeLines.push(`export interface ${typeName} {`);
+		typeLines.push("  [key: string]: unknown");
 		for (const q of queryParams) {
 			if (q.description) {
 				typeLines.push(`  /** ${q.description} */`);
