@@ -6,6 +6,7 @@ export interface OpenApiGenConfig {
 	typesName?: string | false;
 	runtimeName?: string;
 	run?: string;
+	shareRuntime?: boolean;
 }
 
 export interface GenFileOptions {

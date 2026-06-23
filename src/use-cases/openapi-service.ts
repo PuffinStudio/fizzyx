@@ -1,4 +1,4 @@
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 import { existsSync } from "node:fs";
 import type { CodeGenerator } from "../ports/code-generator";
 import type { OpenApiLoader } from "../ports/openapi-loader";
@@ -45,6 +45,10 @@ export interface GenerateResult {
 	outputDir: string;
 }
 
+export interface GenerateManyResult {
+	results: GenerateResult[];
+}
+
 function resolveOutputPath(output: string): { dir: string; opts: Partial<GenFileOptions> } {
 	if (output.endsWith(".ts")) {
 		const lastSlash = output.lastIndexOf("/");
@@ -86,6 +90,41 @@ export const generate = (
 		return { files, spec, outputDir: input.output };
 	});
 
+function dedupeRuntimeFiles(
+	results: { files: GeneratedFile[]; outputDir: string }[],
+	shareRuntime: boolean,
+): void {
+	if (!shareRuntime) return;
+	const seen = new Set<string>();
+	for (const result of results) {
+		const deduped: GeneratedFile[] = [];
+		for (const file of result.files) {
+			const fullPath = file.path.startsWith("/") ? file.path : `${result.outputDir}/${file.path}`;
+			if (file.path.endsWith("-request.ts") || file.path.endsWith("request.ts")) {
+				if (seen.has(fullPath)) continue;
+				seen.add(fullPath);
+			}
+			deduped.push(file);
+		}
+		result.files.length = 0;
+		result.files.push(...deduped);
+	}
+}
+
+export const generateMany = (
+	inputs: GenerateInput[],
+	shareRuntime = false,
+): Effect.Effect<GenerateManyResult, SpecLoadError | SpecParseError | CodegenError> =>
+	Effect.gen(function* () {
+		const results: GenerateResult[] = [];
+		for (const input of inputs) {
+			const r = yield* generate(input);
+			results.push(r);
+		}
+		dedupeRuntimeFiles(results, shareRuntime);
+		return { results };
+	});
+
 export const writeFiles = (files: GeneratedFile[], baseDir: string): Effect.Effect<void, Error> =>
 	Effect.gen(function* () {
 		for (const file of files) {
@@ -106,62 +145,87 @@ export const writeFiles = (files: GeneratedFile[], baseDir: string): Effect.Effe
 		}
 	});
 
+export const writeManyFiles = (results: GenerateResult[]): Effect.Effect<void, Error> =>
+	Effect.gen(function* () {
+		for (const result of results) {
+			yield* writeFiles(result.files, result.outputDir);
+		}
+	});
+
 export const listGenerators = (): KnownGenerator[] =>
 	Object.values(BUILTIN_GENERATORS).map((g) => g.info);
 
 export interface GenerateCliInput {
-	input?: string;
-	output?: string;
+	inputs?: string[];
+	outputs?: string[];
 	client?: string;
 	apiName?: string;
 	typesName?: string | false;
 	runtimeName?: string;
+	run?: string;
 }
 
-export const generateFromCli = (
-	cli: GenerateCliInput,
-): Effect.Effect<
-	GenerateResult,
-	SpecLoadError | SpecParseError | CodegenError | ConfigValidationError,
-	ConfigRepo
-> =>
+export const generateFromCli = (cli: GenerateCliInput) =>
 	Effect.gen(function* () {
-		const resolved: GenerateInput = yield* resolveConfig(cli);
-		return yield* generate(resolved);
+		const resolved: GenerateInput[] = yield* resolveConfigs(cli);
+		const shareRuntime = yield* resolveShareRuntime(cli);
+		return yield* generateMany(resolved, shareRuntime);
 	});
 
-function loadProjectOpenapiConfig(): Effect.Effect<
-	| {
-			input: string;
-			output: string;
-			client: string;
-			apiName?: string;
-			typesName?: string | false;
-			runtimeName?: string;
-	  }
-	| undefined,
-	never
-> {
+function resolveShareRuntime(_cli: GenerateCliInput) {
+	return Effect.gen(function* () {
+		if (!existsSync(".fizzy.yaml")) return false;
+		const configRepo = yield* ConfigRepo;
+		const projectConfig = yield* configRepo
+			.loadProjectConfigOptional()
+			.pipe(Effect.catch(() => Effect.succeed(undefined)));
+		const entries = projectConfig?.openapi;
+		if (!entries) return false;
+		return entries.some((e) => e.shareRuntime === true);
+	});
+}
+
+function loadAllProjectOpenapiConfigs() {
 	return Effect.gen(function* () {
 		if (!existsSync(".fizzy.yaml")) return undefined;
 		const configRepo = yield* ConfigRepo;
-		const projectConfig = yield* configRepo.loadProjectConfigOptional().pipe(
-			Effect.catch(() => Effect.succeed(undefined)),
-		);
-		return projectConfig?.openapi?.[0];
+		const projectConfig = yield* configRepo
+			.loadProjectConfigOptional()
+			.pipe(Effect.catch(() => Effect.succeed(undefined)));
+		return projectConfig?.openapi;
 	});
 }
 
-function resolveConfig(
-	cli: GenerateCliInput,
-): Effect.Effect<GenerateInput, ConfigValidationError, ConfigRepo> {
+function resolveConfigs(cli: GenerateCliInput) {
 	return Effect.gen(function* () {
-		const fizzyConfig = yield* loadProjectOpenapiConfig();
+		const configEntries = yield* loadAllProjectOpenapiConfigs();
 
-		const input = cli.input ?? fizzyConfig?.input;
-		const client = cli.client ?? fizzyConfig?.client;
+		if (cli.inputs && cli.inputs.length > 0) {
+			const cfg = configEntries?.[0];
+			const client = cli.client ?? cfg?.client;
+			if (!client) {
+				return yield* Effect.fail(
+					new ConfigValidationError({
+						message: "--client required (target: wx)",
+						field: "client",
+					}),
+				);
+			}
+			return cli.inputs.map((input, i) => {
+				const rawOutput = cli.outputs?.[i] ?? cfg?.output;
+				const { dir, opts } = resolveOutputPath(rawOutput ?? "./src/api");
+				return {
+					input,
+					output: dir,
+					client,
+					apiName: cli.apiName ?? opts.apiName ?? "api.ts",
+					typesName: cli.typesName ?? cfg?.typesName ?? opts.typesName ?? "types.ts",
+					runtimeName: cli.runtimeName ?? cfg?.runtimeName ?? opts.runtimeName ?? "wx-request.ts",
+				} satisfies GenerateInput;
+			});
+		}
 
-		if (!input) {
+		if (!configEntries || configEntries.length === 0) {
 			return yield* Effect.fail(
 				new ConfigValidationError({
 					message: "--input required (spec file path or URL)",
@@ -170,51 +234,16 @@ function resolveConfig(
 			);
 		}
 
-		if (!client) {
-			return yield* Effect.fail(
-				new ConfigValidationError({
-					message: "--client required (target: wx)",
-					field: "client",
-				}),
-			);
-		}
-
-		const rawOutput = cli.output ?? fizzyConfig?.output;
-		const needsDefaultOutput = !rawOutput;
-		const output = rawOutput ?? "./src/api";
-
-		if (needsDefaultOutput) {
-			const hasFiles = yield* Effect.promise<boolean>(async () => {
-				try {
-					const dir = Bun.file(output);
-					if (!(await dir.exists())) return false;
-					const out = await Bun.$`ls -A ${output} 2>/dev/null | head -5`.text();
-					return out.trim().length > 0;
-				} catch {
-					return false;
-				}
-			});
-			if (hasFiles) {
-				yield* Console.warn(`\x1b[33m⚠  output directory "${output}" already has files.\x1b[0m`);
-				yield* Console.warn(
-					`  \x1b[33mSet a custom --output to avoid overwriting existing code.\x1b[0m`,
-				);
-				yield* Console.warn(`  \x1b[33mOr configure it in .fizzy.yaml: openapi[0].output\x1b[0m`);
-				yield* Console.warn("");
-			}
-		}
-
-		const { dir, opts } = resolveOutputPath(output);
-		const configApiName =
-			!cli.output?.endsWith(".ts") ? fizzyConfig?.apiName : undefined;
-
-		return {
-			input,
-			output: dir,
-			client,
-			apiName: cli.apiName ?? configApiName ?? opts.apiName ?? "api.ts",
-			typesName: cli.typesName ?? fizzyConfig?.typesName ?? opts.typesName ?? "types.ts",
-			runtimeName: cli.runtimeName ?? fizzyConfig?.runtimeName ?? opts.runtimeName ?? "wx-request.ts",
-		};
+		return configEntries.map((cfg) => {
+			const { dir, opts } = resolveOutputPath(cfg.output);
+			return {
+				input: cfg.input,
+				output: dir,
+				client: cfg.client,
+				apiName: cfg.apiName ?? opts.apiName ?? "api.ts",
+				typesName: cfg.typesName ?? opts.typesName ?? "types.ts",
+				runtimeName: cfg.runtimeName ?? opts.runtimeName ?? "wx-request.ts",
+			} satisfies GenerateInput;
+		});
 	});
 }

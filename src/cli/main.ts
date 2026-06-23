@@ -1,5 +1,5 @@
 import { Console, Effect } from "effect";
-import { generateFromCli, writeFiles, listGenerators } from "../use-cases/openapi-service";
+import { generateFromCli, writeManyFiles, listGenerators } from "../use-cases/openapi-service";
 import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
 import {
 	ossInitBlank,
@@ -585,15 +585,15 @@ const runOpenapi = (args: ReadonlyArray<string>) =>
 
 				const input = parseOpenapiGenerate(rest);
 
-				const result = yield* withSpinner(
-					`Generating client...`,
-					generateFromCli(input),
-				);
+				const manyResult = yield* withSpinner(`Generating client...`, generateFromCli(input));
 
-				yield* writeFiles(result.files, result.outputDir);
-				yield* Console.log(`generated ${result.files.length} file(s) to ${result.outputDir}`);
-				yield* Console.log(`endpoints: ${result.spec.endpoints.length}`);
-				yield* Console.log(`types: ${Object.keys(result.spec.types).length}`);
+				yield* writeManyFiles(manyResult.results);
+				for (const result of manyResult.results) {
+					yield* Console.log(`generated ${result.files.length} file(s) to ${result.outputDir}`);
+					yield* Console.log(
+						`  endpoints: ${result.spec.endpoints.length}  types: ${Object.keys(result.spec.types).length}`,
+					);
+				}
 
 				if (input.run) {
 					yield* runPostGenScript(input.run);
@@ -914,6 +914,17 @@ const parseFlag = (args: ReadonlyArray<string>, name: string): string | undefine
 	return args[index + 1];
 };
 
+const parseFlags = (args: ReadonlyArray<string>, name: string): string[] => {
+	const results: string[] = [];
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === name && args[i + 1]) {
+			results.push(args[i + 1]!);
+			i++;
+		}
+	}
+	return results;
+};
+
 const firstNonFlag = (args: ReadonlyArray<string>): string | undefined =>
 	args.find((arg) => !arg.startsWith("--"));
 
@@ -980,8 +991,8 @@ for generate help.`;
 const openapiGenerateUsage = (): string => `fizzyx openapi generate (or g) [options]
 
 Options:
-  -i, --input <url|path>   OpenAPI spec URL or file path
-  -o, --output <dir|file>  Output directory (or .ts file path for custom api name)
+  -i, --input <url|path>   OpenAPI spec URL or file path (repeatable for multiple inputs)
+  -o, --output <dir|file>  Output directory (repeatable, positionally paired with --input)
   -c, --client <name>      Client target (wx)
   --api-name <name>        Generated API filename (default: api.ts)
   --types-name <name>      Types filename (default: types.ts, use 'false' to inline)
@@ -989,11 +1000,12 @@ Options:
   --run <script|cmd>       Run npm script or shell command after generation
                            (matches package.json scripts first, else raw command)
 
-If --input/--output/--client are omitted, values from .fizzy.yaml openapi[0] are used.
+If --input/--output/--client are omitted, all entries from .fizzy.yaml openapi are used.
 If --output is also omitted, defaults to ./src/api.
 
 Examples:
   fizzyx openapi g -i ./openapi.json -c wx
+  fizzyx openapi g -i spec1.json -i spec2.json -o ./src/api -c wx
   fizzyx openapi generate -i ./openapi.json -o ./src/api -c wx
   fizzyx openapi generate -i ./openapi.json -o ./src/api/client.ts -c wx
   fizzyx openapi generate -i spec.yaml -o ./src/api -c wx --api-name sdk.ts --types-name false
@@ -1001,8 +1013,8 @@ Examples:
   fizzyx openapi generate -i spec.json -o ./src/api -c wx --run "oxlint ."`;
 
 interface OpenapiGenerateCli {
-	input?: string;
-	output?: string;
+	inputs?: string[];
+	outputs?: string[];
 	client?: string;
 	apiName?: string;
 	typesName?: string | false;
@@ -1011,8 +1023,12 @@ interface OpenapiGenerateCli {
 }
 
 const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli => {
-	const input = parseFlag(args, "--input") ?? parseFlag(args, "-i");
-	const output = parseFlag(args, "--output") ?? parseFlag(args, "-o");
+	const inputs = parseFlags(args, "--input");
+	const inputsShort = parseFlags(args, "-i");
+	const allInputs = [...inputs, ...inputsShort];
+	const outputs = parseFlags(args, "--output");
+	const outputsShort = parseFlags(args, "-o");
+	const allOutputs = [...outputs, ...outputsShort];
 	const client = parseFlag(args, "--client") ?? parseFlag(args, "-c");
 	const apiName = parseFlag(args, "--api-name");
 	const typesNameRaw = parseFlag(args, "--types-name");
@@ -1020,7 +1036,15 @@ const parseOpenapiGenerate = (args: ReadonlyArray<string>): OpenapiGenerateCli =
 	const runtimeName = parseFlag(args, "--runtime-name");
 	const run = parseFlag(args, "--run");
 
-	return { input, output, client, apiName, typesName, runtimeName, run };
+	return {
+		inputs: allInputs.length > 0 ? allInputs : undefined,
+		outputs: allOutputs.length > 0 ? allOutputs : undefined,
+		client,
+		apiName,
+		typesName,
+		runtimeName,
+		run,
+	};
 };
 
 const runPostGenScript = (script: string): Effect.Effect<void, Error> =>

@@ -385,6 +385,7 @@ const parseOpenapiConfig = (raw: unknown): OpenApiGenConfig[] | undefined => {
 			typesName: stringValue(obj.typesName) || undefined,
 			runtimeName: stringValue(obj.runtimeName) || undefined,
 			run: stringValue(obj.run) || undefined,
+			shareRuntime: obj.shareRuntime === true || undefined,
 		});
 	}
 	return entries.length > 0 ? entries : undefined;
