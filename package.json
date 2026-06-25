@@ -1,6 +1,6 @@
 {
 	"name": "@puffinstudio/fizzyx",
-	"version": "0.5.6",
+	"version": "0.6.0",
 	"homepage": "https://github.com/PuffinStudio/fizzyx#readme",
 	"bugs": {
 		"url": "https://github.com/PuffinStudio/fizzyx/issues"
@@ -15,7 +15,6 @@
 	},
 	"files": [
 		"dist/main.js",
-		"src/planner",
 		"docs/images",
 		"LICENSE",
 		"README.md"

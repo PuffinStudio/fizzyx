@@ -258,7 +258,9 @@ function PlannerViewRenderer({
 	const navigateToMyCards = () => onViewChange("my");
 	if (view === "roadmap") return <RoadmapView metrics={metrics} onSelect={onSelect} />;
 	if (view === "calendar")
-		return <CalendarView metrics={metrics} onSelect={onSelect} onNavigateToMyCards={navigateToMyCards} />;
+		return (
+			<CalendarView metrics={metrics} onSelect={onSelect} onNavigateToMyCards={navigateToMyCards} />
+		);
 	if (view === "my") return <MyCardsView snapshot={snapshot} onSelect={onSelect} />;
 	if (view === "board") return <BoardView cards={snapshot.cards} onSelect={onSelect} />;
 	if (view === "health")
@@ -293,12 +295,12 @@ function PlannerHeader({
 	return (
 		<header className="mb-4 rounded-2xl bg-muted/35 px-4 py-3 sm:px-5">
 			<div className="flex flex-wrap items-start justify-between gap-4">
-					<div>
-						<div className="mb-3 flex flex-wrap items-center gap-2">
-							<Badge className="rounded-full bg-primary/15 text-primary dark:text-primary">
-								Planner
-							</Badge>
-							<Badge className="rounded-full" variant="outline">
+				<div>
+					<div className="mb-3 flex flex-wrap items-center gap-2">
+						<Badge className="rounded-full bg-primary/15 text-primary dark:text-primary">
+							Planner
+						</Badge>
+						<Badge className="rounded-full" variant="outline">
 							{snapshot.cache === "stale" ? "cached" : "live"}
 						</Badge>
 					</div>

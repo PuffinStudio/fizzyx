@@ -73,10 +73,11 @@ export function PlannerShell({
 									key={view.key}
 									type="button"
 									onClick={() => onViewChange(view.key)}
-									className={`flex w-full items-center gap-2 rounded-full border border-transparent px-3 py-2.5 text-left text-sm transition-all ${activeView === view.key
+									className={`flex w-full items-center gap-2 rounded-full border border-transparent px-3 py-2.5 text-left text-sm transition-all ${
+										activeView === view.key
 											? "border-primary bg-sidebar-accent/55 text-primary font-semibold"
 											: "hover:border-sidebar-border/70 hover:bg-sidebar-accent/35"
-										}`}
+									}`}
 								>
 									<span className="grid size-5 place-items-center">{view.icon}</span>
 									<span className="truncate">{view.label}</span>

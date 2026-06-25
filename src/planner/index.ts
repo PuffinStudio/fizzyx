@@ -20,40 +20,23 @@ export type PlannerServerOptions = {
 export const DEFAULT_PLANNER_PORT = 24512;
 const plannerSnapshotRefreshes = new Map<string, Promise<void>>();
 
-const resolvePlannerIndexHtml = async (): Promise<URL> => {
-	const candidates: URL[] = [
-		new URL("./index.html", import.meta.url),
-		new URL("../planner/index.html", import.meta.url),
-		new URL("../src/planner/index.html", import.meta.url),
-	];
-
-	for (const candidate of candidates) {
-		if (await Bun.file(candidate).exists()) {
-			return candidate;
-		}
-	}
-
-	throw new Error(
-		`Unable to locate planner index.html. Checked: ${candidates.map((value) => value.pathname).join(", ")}`,
-	);
-};
-
 type PlannerAssets = {
 	readonly outdir: string;
 	readonly indexPath: string;
 };
 
 const buildPlannerAssets = async (): Promise<PlannerAssets> => {
-	const indexHtml = await resolvePlannerIndexHtml();
+	const entrypoints = [...new Bun.Glob("src/**/*.html").scanSync()];
 	const outdir = path.join(tmpdir(), `fizzyx-planner-${process.pid}`);
 	await rm(outdir, { recursive: true, force: true });
 
 	const result = await Bun.build({
-		entrypoints: [indexHtml.pathname],
+		entrypoints,
 		outdir,
 		plugins: [tailwind],
 		target: "browser",
 		minify: process.env.NODE_ENV === "production",
+		sourcemap: "none",
 		define: {
 			"process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "development"),
 		},
@@ -204,7 +187,7 @@ export const startPlannerServer = async (
 						if (typeof body.deadline === "string") {
 							deadline = body.deadline;
 						}
-					} catch {}
+					} catch { }
 
 					if (cardNumber === undefined) {
 						return new Response(JSON.stringify({ error: "Invalid cardNumber" }), { status: 400 });
@@ -234,7 +217,7 @@ export const startPlannerServer = async (
 						if (typeof body.defaultType === "string" && body.defaultType.trim() !== "") {
 							defaultType = body.defaultType.trim();
 						}
-					} catch {}
+					} catch { }
 					return plannerJsonResponse(
 						repairPlannerMetadata({ apply, defaultPriority, defaultType }).pipe(
 							Effect.provide(ConfigRepoLive),
@@ -293,7 +276,7 @@ const proxyAvatar = async (req: Request): Promise<Response> => {
 		const config = await Effect.runPromise(repo.loadProjectConfig());
 		const creds = await Effect.runPromise(repo.loadCredentials(config.account));
 		token = creds.token;
-	} catch {}
+	} catch { }
 
 	try {
 		const headers: Record<string, string> = {};
