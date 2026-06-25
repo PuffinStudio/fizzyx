@@ -74,5 +74,7 @@ await Bun.write(outfile, mainOutput);
 
 for (const output of result.outputs) {
 	const outputPath = output === mainOutput ? outfile : output.path;
-	console.log(` ${path.relative(process.cwd(), outputPath)}  ${(output.size / 1024).toFixed(1)} KB`);
+	console.log(
+		` ${path.relative(process.cwd(), outputPath)}  ${(output.size / 1024).toFixed(1)} KB`,
+	);
 }

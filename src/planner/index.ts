@@ -114,7 +114,7 @@ export const startPlannerServer = async (
 						if (typeof body.deadline === "string") {
 							deadline = body.deadline;
 						}
-					} catch { }
+					} catch {}
 
 					if (cardNumber === undefined) {
 						return new Response(JSON.stringify({ error: "Invalid cardNumber" }), { status: 400 });
@@ -144,7 +144,7 @@ export const startPlannerServer = async (
 						if (typeof body.defaultType === "string" && body.defaultType.trim() !== "") {
 							defaultType = body.defaultType.trim();
 						}
-					} catch { }
+					} catch {}
 					return plannerJsonResponse(
 						repairPlannerMetadata({ apply, defaultPriority, defaultType }).pipe(
 							Effect.provide(ConfigRepoLive),
@@ -203,7 +203,7 @@ const proxyAvatar = async (req: Request): Promise<Response> => {
 		const config = await Effect.runPromise(repo.loadProjectConfig());
 		const creds = await Effect.runPromise(repo.loadCredentials(config.account));
 		token = creds.token;
-	} catch { }
+	} catch {}
 
 	try {
 		const headers: Record<string, string> = {};
