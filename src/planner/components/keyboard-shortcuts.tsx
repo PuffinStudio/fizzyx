@@ -26,12 +26,16 @@ export interface Shortcut {
 export const SHORTCUTS: Shortcut[] = [
 	{ key: "d", description: "Toggle dark/light theme", action: "toggleTheme" },
 	{ key: "r", description: "Refresh board data", action: "refresh" },
+	{ key: "/", description: "Focus search", action: "focusSearch" },
 	{ key: "?", description: "Show keyboard shortcuts", action: "showShortcuts" },
-	// { key: "/", description: "Focus search (when available)", action: "focusSearch" },
 	// { key: "n", description: "Create new card (when available)", action: "newCard" },
 ];
 
-export function useKeyboardShortcuts(onRefresh: () => void, onToggleTheme: () => void) {
+export function useKeyboardShortcuts(
+	onRefresh: () => void,
+	onToggleTheme: () => void,
+	onFocusSearch?: () => void,
+) {
 	const [showShortcuts, setShowShortcuts] = useState(false);
 
 	useEffect(() => {
@@ -53,6 +57,9 @@ export function useKeyboardShortcuts(onRefresh: () => void, onToggleTheme: () =>
 			} else if (key === "?") {
 				event.preventDefault();
 				setShowShortcuts(true);
+			} else if (key === "/" && onFocusSearch) {
+				event.preventDefault();
+				onFocusSearch();
 			} else if (key === "d") {
 				onToggleTheme();
 			}

@@ -83,6 +83,22 @@ export const deriveProjectMetrics = (
 	const progressPercent = total === 0 ? 0 : Math.round((done / total) * 100);
 	const stepPercent =
 		totalSteps === 0 ? progressPercent : Math.round((completedSteps / totalSteps) * 100);
+	const laneCounts: Record<PlannerLane, number> = {
+		todo: 0,
+		ready: 0,
+		in_progress: 0,
+		review: 0,
+		done: 0,
+		blocked: 0,
+	};
+	const priorityCounts: Record<"p0" | "p1" | "p2", number> = { p0: 0, p1: 0, p2: 0 };
+	for (const card of cards) {
+		laneCounts[card.lane] += 1;
+		const priority = (card.metadata.priority || card.parsedTags.priority[0] || "").toLowerCase();
+		if (priority === "p0" || priority === "p1" || priority === "p2") {
+			priorityCounts[priority] += 1;
+		}
+	}
 	const firstDate = cards.map(cardDate).filter(Boolean).sort()[0];
 	const workDays = firstDate ? Math.max(1, daysBetween(new Date(firstDate), now) + 1) : 1;
 	const velocity = Math.round((done / workDays) * 10) / 10;
@@ -103,13 +119,13 @@ export const deriveProjectMetrics = (
 		workDays,
 		velocity,
 		laneProgress: laneOrder.map(({ lane, label }) => {
-			const count = snapshot.summary.lanes[lane] || 0;
+			const count = laneCounts[lane] || 0;
 			return { lane, label, count, percent: total === 0 ? 0 : Math.round((count / total) * 100) };
 		}),
 		priorityRows: [
-			{ label: "P0 Critical", value: snapshot.summary.priorities.p0, className: "bg-red-500" },
-			{ label: "P1 High", value: snapshot.summary.priorities.p1, className: "bg-amber-500" },
-			{ label: "P2 Normal", value: snapshot.summary.priorities.p2, className: "bg-sky-500" },
+			{ label: "P0 Critical", value: priorityCounts.p0, className: "bg-red-500" },
+			{ label: "P1 High", value: priorityCounts.p1, className: "bg-amber-500" },
+			{ label: "P2 Normal", value: priorityCounts.p2, className: "bg-sky-500" },
 		],
 		myCards,
 		timelineDays: buildTimelineDays(now),
