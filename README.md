@@ -23,7 +23,7 @@ fizzyx flow mine --fresh
 
 `flow doctor` can still be run for an explicit health check, but new `fizzyx flow ...` commands auto-repair workflow columns and ids when needed.
 
-### Create A Card
+### Create A Card (Manual)
 
 Use `--draft` to create a unique project-local draft file. This automatically creates `.fizzyx/` when needed and avoids collisions between multiple agents.
 
@@ -46,6 +46,7 @@ fizzyx flow add <user> "<title>" --desc <file|->
 ```sh
 fizzyx flow mine --fresh
 fizzyx flow next --fresh
+fizzyx flow next --fresh --start
 fizzyx flow show <card>
 fizzyx flow start <card>
 fizzyx flow complete-steps <card>

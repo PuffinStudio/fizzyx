@@ -194,6 +194,7 @@ const getBuiltinWorkflow = (): string =>
 		"## Daily",
 		"- fizzyx flow mine --fresh",
 		"- fizzyx planner health",
+		"- fizzyx flow next --fresh --start",
 		"- fizzyx flow start <card>",
 		"- fizzyx flow show <card>",
 		"",
@@ -313,6 +314,8 @@ fizzyx auth status
 fizzyx flow workflow
 fizzyx flow status --fresh
 fizzyx flow mine --fresh
+fizzyx flow next --fresh
+fizzyx flow next --fresh --start
 fizzyx flow show <card>
 fizzyx flow start <card>
 fizzyx flow template

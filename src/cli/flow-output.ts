@@ -70,8 +70,11 @@ export const formatNotNowSection = (count: number): string => `\n# not_now (${co
 
 export const formatNextSummary = (number: number, title: string): string => `#${number} ${title}`;
 
-export const formatNextInstruction = (number: number): string =>
-	`next: fizzyx flow start ${number}`;
+export const formatNextAutoStartSummary = (number: number): string =>
+	`started #${number} and now moving to execution`;
+
+export const formatNextActionHint = (number: number): string =>
+	`quick action: fizzyx flow start ${number}`;
 
 export const formatCompleteStepsSummary = (updatedCount: number, number: number): string => {
 	const plural = updatedCount === 1 ? "" : "s";

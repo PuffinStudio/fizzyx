@@ -266,6 +266,33 @@ export const next = (env: InitializedEnv, options: { fresh: boolean }) =>
 		return { user: result, card };
 	});
 
+export interface NextOrStartResult {
+	user: {
+		name: string;
+		userId: string;
+	};
+	card?: {
+		number: number;
+		title: string;
+	};
+	started: boolean;
+}
+
+export const nextOrStart = (env: InitializedEnv, options: { fresh: boolean; autoStart: boolean }) =>
+	Effect.gen(function* () {
+		const result = yield* next(env, options);
+		if (!options.autoStart || !result.card) {
+			return { ...result, started: false };
+		}
+
+		const cardNumber = result.card.number;
+		yield* start(env, cardNumber);
+		return {
+			...result,
+			started: true,
+		};
+	});
+
 export const start = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
 		const cache = yield* ensureCache(env, true);
@@ -482,7 +509,9 @@ export const standardizeBoard = (env: InitializedEnv) =>
 			return true;
 		});
 
-		const results = yield* Effect.forEach(cards, (card) => standardizeCard(env, card.number));
+		const results = yield* Effect.forEach(cards, (card) => standardizeCard(env, card.number), {
+			concurrency: 8,
+		});
 		return {
 			results,
 			total: results.length,

@@ -807,6 +807,15 @@ test("flow add requires description input", async () => {
 	expect(stdout).toContain("Create a new card");
 });
 
+test("flow next help documents the --start option", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "next", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("next");
+	expect(stdout).toContain("--start");
+	expect(stdout).toContain("Start the recommended card immediately");
+});
+
 test("flow init bootstraps missing flow in legacy config", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");

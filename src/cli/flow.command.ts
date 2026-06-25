@@ -33,8 +33,9 @@ import {
 	formatFlowStatusHeader,
 	formatAddedCard,
 	formatNotNowSection,
-	formatNextInstruction,
 	formatNextSummary,
+	formatNextAutoStartSummary,
+	formatNextActionHint,
 	formatCommentTemplate,
 	formatAddUsage,
 	formatSyncResult,
@@ -76,9 +77,9 @@ import {
 	completeSteps,
 	done,
 	mine,
-	next,
 	repairMarkdownDescription,
 	ready,
+	nextOrStart,
 	resolveDoneRefFromGit,
 	review,
 	show,
@@ -114,6 +115,9 @@ const handleMine = (config: {
 			}),
 		);
 		yield* Console.log(formatMineHeader(result.name, result.userId));
+		if (result.cards.length > 0) {
+			yield* Console.log(formatNextActionHint(result.cards[0]!.number));
+		}
 		yield* Console.log(printCards(result.cards));
 	});
 
@@ -142,17 +146,22 @@ const handleFlowStatus = (config: { fresh: boolean }): Effect.Effect<void, any, 
 		}
 	});
 
-const handleNext = (config: { fresh: boolean }): Effect.Effect<void, any, any> =>
+const handleNext = (config: { fresh: boolean; start: boolean }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const result = yield* runWithFlowEnv(formatLoadingNextTaskMessage(), (env) =>
-			next(env, { fresh: config.fresh }),
+			nextOrStart(env, { fresh: config.fresh, autoStart: config.start }),
 		);
 		if (!result.card) {
 			yield* Console.log(formatNoTodoCard(result.user.name));
 			return;
 		}
+		if (config.start) {
+			yield* logSuccess(formatStartedCard(result.card.number));
+			yield* Console.log(formatNextAutoStartSummary(result.card.number));
+			return;
+		}
 		yield* Console.log(formatNextSummary(result.card.number, result.card.title));
-		yield* Console.log(formatNextInstruction(result.card.number));
+		yield* Console.log(formatNextActionHint(result.card.number));
 	});
 
 const handleShow = (config: { card: number }): Effect.Effect<void, any, any> =>
@@ -404,9 +413,12 @@ const flowNextCmd = Command.make(
 	"next",
 	{
 		fresh: Flag.boolean("fresh").pipe(Flag.withDescription("Skip cache, fetch from API")),
+		start: Flag.boolean("start").pipe(
+			Flag.withDescription("Start the recommended card immediately"),
+		),
 	},
 	handleNext,
-).pipe(Command.withDescription("Show next TODO card"));
+).pipe(Command.withDescription("Show next TODO card or start it directly"));
 
 const flowShowCmd = Command.make(
 	"show",
@@ -578,7 +590,7 @@ const flowAddCmd = Command.make(
 		desc: Flag.string("desc").pipe(Flag.withDescription("Description file path ('-' for stdin)")),
 	},
 	handleAdd,
-).pipe(Command.withDescription("Create a new card"));
+).pipe(Command.withDescription("Create a new card (manual action)"));
 
 const flowStepsFromDescCmd = Command.make(
 	"steps-from-desc",
