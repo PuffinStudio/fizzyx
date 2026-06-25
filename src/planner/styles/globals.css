@@ -3,10 +3,25 @@
 @import "shadcn/tailwind.css";
 
 @font-face {
-	font-family: "Noto Serif Local";
-	src:
-		local("Noto Serif"), local("Times New Roman"), local("Georgia"), local("DejaVu Serif"),
-		local("Liberation Serif"), local("Cambria");
+	font-family: "Fizzyx Sans";
+	src: url("../assets/fonts/FizzyxSans-Regular.ttf") format("truetype");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: "Fizzyx Sans";
+	src: url("../assets/fonts/FizzyxSans-Italic.ttf") format("truetype");
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: "Fizzyx Sans";
+	src: url("../assets/fonts/FizzyxSans-SemiBold.ttf") format("truetype");
+	font-weight: 600;
 	font-style: normal;
 	font-display: swap;
 }
@@ -14,11 +29,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-	--font-heading: var(--font-serif);
-	--font-serif:
-		"Noto Serif Local", "Times New Roman", "Georgia", "Cambria", "DejaVu Serif", "Liberation Serif",
-		"Hiragino Mincho ProN", "Songti SC", "Songti TC", "PingFang SC", "PingFang TC", "STSong",
-		ui-serif, serif;
+	--font-heading: "Fizzyx Sans", "SF Pro Display", "Inter", "Avenir Next", "Segoe UI",
+		"PingFang SC", "PingFang TC", "Noto Sans SC", "Noto Sans TC", "Hiragino Sans GB",
+		"Microsoft YaHei", sans-serif;
+	--font-serif: var(--font-heading);
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -143,6 +157,6 @@
 	}
 
 	html {
-		@apply font-serif;
+		font-family: var(--font-serif);
 	}
 }

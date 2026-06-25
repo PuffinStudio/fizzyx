@@ -16,6 +16,7 @@
 	"files": [
 		"dist/main.js",
 		"src/planner",
+		"docs/images",
 		"LICENSE",
 		"README.md"
 	],

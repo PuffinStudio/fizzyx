@@ -1,5 +1,7 @@
 # fizzyx
 
+<img src="./src/planner/logo.svg" alt="fizzyx logo" width="120" />
+
 CLI tool for Fizzy board workflow, OSS/S3-compatible storage, and OpenAPI client generation.
 
 ## Install
@@ -75,6 +77,8 @@ fizzyx flow skill init [--force]
 - `flow block` moves the card to Not Now.
 - `flow workflow`, `flow skill`, and `flow template` prefer project-local overrides under `.agents/skills/fizzyx/`.
 
+![Flow command lifecycle](./docs/images/flow-workflow.svg)
+
 ## Planner Dashboard
 
 Start a local planner dashboard backed directly by the Fizzy API:
@@ -88,6 +92,8 @@ fizzyx planner repair-metadata
 fizzyx planner repair-metadata --apply
 fizzyx planner repair-metadata --apply --default-priority p2 --default-type chore
 ```
+
+![Planner dashboard workflow](./docs/images/planner-workflow.svg)
 
 `planner snapshot` prints the same JSON used by the web dashboard. Project workflow uses `BACKLOG → READY → IN PROGRESS → REVIEW → DONE`, with `DONE` coming from closed cards and `BLOCKED` from Not Now/postponed cards.
 
@@ -135,6 +141,8 @@ fizzyx oss setup --env dev
 - `--remote-prefix` is optional — omit to upload to bucket root
 - Credentials are stored in OS keychain via `Bun.secrets`, never in config files or shell history
 - Without `--env`, keys are stored as `default` — all environments fall back to it
+
+![OSS command workflow](./docs/images/oss-workflow.svg)
 
 ### Sync
 
@@ -277,6 +285,8 @@ const result = await someAction();
 ```sh
 fizzyx openapi list
 ```
+
+![OpenAPI generation workflow](./docs/images/openapi-workflow.svg)
 
 ### Initialize OpenAPI config
 

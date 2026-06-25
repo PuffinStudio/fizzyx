@@ -37,7 +37,7 @@ export function PlannerShell({
 	children: React.ReactNode;
 }) {
 	const footerPillClass =
-		"h-9 w-full rounded-full border border-sidebar-border/70 bg-background px-3 text-xs text-sidebar-foreground/75 flex items-center gap-2 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground";
+		"h-10 w-full rounded-full border border-sidebar-border/70 bg-background px-3 text-xs text-sidebar-foreground/75 flex items-center gap-2 transition-all hover:bg-sidebar-accent hover:text-sidebar-foreground";
 
 	return (
 		<SidebarProvider>
@@ -47,35 +47,36 @@ export function PlannerShell({
 				className="bg-background border-r border-sidebar-border/70 shadow-sm"
 			>
 				<SidebarHeader className="p-3">
-					<div className="space-y-1.5">
-						<div className="flex min-w-0 items-center gap-2">
-							<UserAvatar user={snapshot?.identity} size="lg" />
-							<p className="truncate text-sm font-medium text-sidebar-foreground">
-								{snapshot?.identity?.name || "Current user"}
-							</p>
-						</div>
-						<div className="flex min-w-0 items-center gap-2 px-1 py-0.5">
-							<Kanban className="mt-0.5 size-4 text-sidebar-foreground/80" />
-							<p className="truncate text-base font-semibold text-sidebar-foreground">
-								{snapshot?.boardName || snapshot?.board || "Board not loaded"}
-							</p>
+					<div className="space-y-2.5">
+						<div className="rounded-2xl border border-sidebar-border/10 bg-background px-3 py-2">
+							<div className="flex min-w-0 items-center gap-2">
+								<UserAvatar user={snapshot?.identity} size="md" />
+								<p className="truncate text-sm font-medium text-sidebar-foreground">
+									{snapshot?.identity?.name || "Current user"}
+								</p>
+							</div>
+							<div className="mt-2 flex min-w-0 items-center gap-2">
+								<Kanban className="size-4 text-sidebar-foreground/80" />
+								<p className="truncate text-sm text-sidebar-foreground">
+									{snapshot?.boardName || snapshot?.board || "Board not loaded"}
+								</p>
+							</div>
 						</div>
 					</div>
 				</SidebarHeader>
-				<SidebarContent>
+				<SidebarContent className="overflow-auto">
 					<SidebarGroup>
-						<SidebarGroupLabel className="rounded-full">Workspace</SidebarGroupLabel>
-						<SidebarGroupContent className="space-y-1.5 px-3">
+						<SidebarGroupLabel className="rounded-md">Workspace</SidebarGroupLabel>
+						<SidebarGroupContent className="space-y-1 px-2">
 							{views.map((view) => (
 								<button
 									key={view.key}
 									type="button"
 									onClick={() => onViewChange(view.key)}
-									className={`flex w-full items-center gap-2 rounded-full border border-transparent px-3 py-2 text-left text-sm transition-all ${
-										activeView === view.key
+									className={`flex w-full items-center gap-2 rounded-full border border-transparent px-3 py-2.5 text-left text-sm transition-all ${activeView === view.key
 											? "border-primary bg-sidebar-accent/55 text-primary font-semibold"
-											: "hover:border-sidebar-border/70 hover:bg-sidebar-accent/30"
-									}`}
+											: "hover:border-sidebar-border/70 hover:bg-sidebar-accent/35"
+										}`}
 								>
 									<span className="grid size-5 place-items-center">{view.icon}</span>
 									<span className="truncate">{view.label}</span>
@@ -85,8 +86,8 @@ export function PlannerShell({
 					</SidebarGroup>
 					{snapshot?.users && snapshot.users.length > 1 ? (
 						<SidebarGroup>
-							<SidebarGroupLabel className="rounded-full">Team</SidebarGroupLabel>
-							<SidebarGroupContent className="px-3">
+							<SidebarGroupLabel className="rounded-md">Team</SidebarGroupLabel>
+							<SidebarGroupContent className="space-y-1 px-2">
 								<div className="space-y-1">
 									{snapshot.users.slice(0, 8).map((user) => (
 										<UserAvatarLabel key={user.id} user={user} />
