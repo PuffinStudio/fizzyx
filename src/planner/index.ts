@@ -8,6 +8,7 @@ import {
 	loadPlannerSnapshotForRequest,
 	loadPlannerSnapshot,
 	repairPlannerMetadata,
+	setPlannerCardDeadline,
 } from "../use-cases/planner-service";
 import { normalizePriority } from "../use-cases/planner-transform";
 import { Live as ConfigRepoLive, makeBunConfigRepository } from "../adapters/bun-config-repository";
@@ -190,6 +191,30 @@ export const startPlannerServer = async (
 						})),
 					),
 				),
+
+			"/api/planner/update-deadline": {
+				POST: async (req) => {
+					let cardNumber: number | undefined;
+					let deadline: string | undefined;
+					try {
+						const body = (await req.json()) as { cardNumber?: unknown; deadline?: unknown };
+						if (typeof body.cardNumber === "number" && Number.isInteger(body.cardNumber)) {
+							cardNumber = body.cardNumber;
+						}
+						if (typeof body.deadline === "string") {
+							deadline = body.deadline;
+						}
+					} catch {}
+
+					if (cardNumber === undefined) {
+						return new Response(JSON.stringify({ error: "Invalid cardNumber" }), { status: 400 });
+					}
+
+					return plannerJsonResponse(
+						setPlannerCardDeadline({ cardNumber, deadline }).pipe(Effect.provide(ConfigRepoLive)),
+					);
+				},
+			},
 
 			"/api/planner/repair-metadata": {
 				POST: async (req) => {

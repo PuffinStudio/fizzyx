@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -16,11 +19,20 @@ import { UserAvatarLabel } from "./user-avatar-label";
 export function CardDetailSheet({
 	card,
 	onOpenChange,
+	onSaveDeadline,
 }: {
 	card: PlannerCard | null;
 	onOpenChange: (open: boolean) => void;
+	onSaveDeadline: (deadline: string) => Promise<void>;
 }) {
 	const progress = card ? getCardProgress(card) : 0;
+	const toDateInputValue = (value?: string): string => {
+		if (!value) return "";
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return value;
+		return date.toISOString().slice(0, 10);
+	};
+
 	return (
 		<Sheet open={card !== null} onOpenChange={onOpenChange}>
 			<SheetContent className="w-[min(94vw,68rem)]! sm:max-w-none! gap-0 p-0">
@@ -70,7 +82,11 @@ export function CardDetailSheet({
 										label="Owner"
 										value={card.metadata.owner || card.assignees[0]?.name}
 									/>
-									<MetadataChip label="Deadline" value={card.metadata.deadline} />
+									<DeadlineChip
+										label="Deadline"
+										value={toDateInputValue(card.metadata.deadline)}
+										onSave={(deadline) => onSaveDeadline(deadline || "")}
+									/>
 									<MetadataChip label="Impact" value={card.metadata.impact} />
 									<MetadataChip label="Effort" value={card.metadata.effort} />
 									<MetadataChip
@@ -151,6 +167,105 @@ export function CardDetailSheet({
 				) : null}
 			</SheetContent>
 		</Sheet>
+	);
+}
+
+function DeadlineChip({
+	label,
+	value,
+	onSave,
+}: {
+	label: string;
+	value: string;
+	onSave: (value: string) => Promise<void>;
+}) {
+	const [editing, setEditing] = useState(false);
+	const [draft, setDraft] = useState(value);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!editing) {
+			setDraft(value);
+		}
+	}, [editing, value]);
+
+	const save = async () => {
+		setSaving(true);
+		setError(null);
+		try {
+			await onSave(draft.trim());
+			setEditing(false);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : "Failed to save deadline");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<div className="min-w-0 rounded-lg bg-muted/30 px-3 py-2">
+			<div className="mb-2 flex items-center justify-between gap-2">
+				<p className="truncate text-[0.68rem] font-medium uppercase tracking-wide text-muted-foreground">
+					{label}
+				</p>
+				{editing ? null : (
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={() => setEditing(true)}
+						disabled={saving}
+						className="h-7 rounded-full px-2 text-xs"
+					>
+						Edit
+					</Button>
+				)}
+			</div>
+			{editing ? (
+				<div className="space-y-2">
+					<Input
+						type="date"
+						value={draft}
+						onChange={(event) => setDraft(event.currentTarget.value)}
+						disabled={saving}
+					/>
+					<div className="flex items-center gap-2">
+						<Button
+							size="sm"
+							onClick={() => void save()}
+							disabled={saving}
+							className="rounded-full"
+						>
+							Save
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => {
+								setDraft("");
+								void save();
+							}}
+							disabled={saving}
+							className="rounded-full"
+						>
+							Clear
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => setEditing(false)}
+							disabled={saving}
+							className="rounded-full"
+						>
+							Cancel
+						</Button>
+					</div>
+					{error ? <p className="text-xs text-destructive">{error}</p> : null}
+				</div>
+			) : (
+				<p className="truncate text-sm font-medium">{value || "—"}</p>
+			)}
+		</div>
 	);
 }
 

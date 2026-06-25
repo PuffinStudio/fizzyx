@@ -125,6 +125,20 @@ export function App() {
 			: snapshot?.cards.find((card) => card.number === selectedCardNumber) || null;
 	const selectCard = (card: PlannerCard) => void setSelectedCardNumber(card.number);
 	const activeView = views.find((item) => item.key === view) || views[0]!;
+	const updateDeadline = async (cardNumber: number, deadline: string | null) => {
+		try {
+			const response = await fetch("/api/planner/update-deadline", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ cardNumber, deadline: deadline ?? "" }),
+			});
+			const data = await response.json();
+			if (!response.ok) throw new Error(data.error || "Failed to update deadline");
+			await loadSnapshot(true);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		}
+	};
 
 	return (
 		<PlannerShell
@@ -153,6 +167,11 @@ export function App() {
 			<CardDetailSheet
 				card={selectedCard}
 				onOpenChange={(open) => !open && void setSelectedCardNumber(null)}
+				onSaveDeadline={async (deadline) => {
+					if (selectedCard) {
+						await updateDeadline(selectedCard.number, deadline);
+					}
+				}}
 			/>
 			<ShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
 		</PlannerShell>

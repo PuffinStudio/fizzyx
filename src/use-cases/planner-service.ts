@@ -12,6 +12,7 @@ import {
 	mergeCards,
 	planMetadataRepair,
 	normalizePriority,
+	renderMetadata,
 	restrictUsersToConfig,
 	toPlannerCard,
 	toPlannerUser,
@@ -19,6 +20,7 @@ import {
 	toPlannerComment,
 } from "./planner-transform";
 import type { ParsedPlannerTags, PlannerMetadata, PlannerPriority } from "./planner-metadata";
+import { parsePlannerDescription } from "./planner-metadata";
 
 export { analyzePlannerHealth } from "./planner-analytics";
 
@@ -106,6 +108,16 @@ export interface PlannerRepairMetadataChange {
 	action: "update_description" | "skip";
 	reason: string;
 	description?: string;
+}
+
+export interface PlannerUpdateDeadlineResult {
+	cardNumber: number;
+	deadline: string | null;
+}
+
+export interface PlannerSetDeadlineInput {
+	cardNumber: number;
+	deadline?: string;
 }
 
 const REPAIRABLE_METADATA_ISSUE_CODES = new Set([
@@ -343,3 +355,48 @@ export const repairPlannerMetadata = (
 
 		return { applied: options.apply, changes } satisfies PlannerRepairMetadataResult;
 	});
+
+export const setPlannerCardDeadline = (
+	input: PlannerSetDeadlineInput,
+): Effect.Effect<PlannerUpdateDeadlineResult, ConfigError | FileError | Error, ConfigRepository> =>
+	Effect.gen(function* () {
+		const { config, runtime } = yield* makePlannerServiceRuntime();
+		if (!config.board) {
+			return yield* Effect.fail(new Error("No board configured. Run: fizzyx setup <board-id>"));
+		}
+
+		if (!Number.isInteger(input.cardNumber) || input.cardNumber <= 0) {
+			return yield* Effect.fail(new Error("Invalid card number"));
+		}
+
+		const accountId = config.account;
+		const rawCard = yield* runtime
+			.getCard(accountId, input.cardNumber)
+			.pipe(
+				Effect.catch(() =>
+					Effect.fail(new Error(`Could not load planner card #${input.cardNumber}`)),
+				),
+			);
+		const parsed = parsePlannerDescription(rawCard.description);
+		const deadline = normalizeDeadlineInput(input.deadline);
+
+		const metadata = {
+			...parsed.metadata,
+			...(deadline ? { deadline } : {}),
+		};
+		if (deadline === null) {
+			delete metadata.deadline;
+		}
+
+		const nextDescription =
+			`${renderMetadata(metadata)}${parsed.body ? `\n${parsed.body}` : ""}`.trimEnd();
+		yield* runtime.updateCard(accountId, input.cardNumber, nextDescription);
+
+		return { cardNumber: input.cardNumber, deadline } satisfies PlannerUpdateDeadlineResult;
+	});
+
+const normalizeDeadlineInput = (value?: string): string | null => {
+	const raw = value?.trim();
+	if (!raw) return null;
+	return raw;
+};
