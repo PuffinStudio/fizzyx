@@ -22,7 +22,7 @@
 	"type": "module",
 	"main": "./dist/main.js",
 	"scripts": {
-		"build": "bun build ./src/main.ts --outfile ./dist/main.js --target bun --format esm --minify",
+		"build": "bun run build.ts",
 		"dev": "bun run src/main.ts",
 		"planner": "bun run src/main.ts planner",
 		"prepublishOnly": "bun run check && bun run build",
@@ -36,6 +36,7 @@
 		"@apidevtools/json-schema-ref-parser": "^15.4.0",
 		"@base-ui/react": "^1.6.0",
 		"@dnd-kit/react": "^0.5.0",
+		"@fontsource/noto-sans": "^5.2.10",
 		"@hugeicons/core-free-icons": "^4.2.1",
 		"@hugeicons/react": "^1.1.7",
 		"@radix-ui/react-label": "^2.1.7",

@@ -1,9 +1,6 @@
 import { serve } from "bun";
-import tailwind from "bun-plugin-tailwind";
 import { Effect } from "effect";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { plannerRoute } from "./planner-html";
 import {
 	loadPlannerSnapshotForRequest,
 	loadPlannerSnapshot,
@@ -19,75 +16,6 @@ export type PlannerServerOptions = {
 
 export const DEFAULT_PLANNER_PORT = 24512;
 const plannerSnapshotRefreshes = new Map<string, Promise<void>>();
-
-type PlannerAssets = {
-	readonly outdir: string;
-	readonly indexPath: string;
-};
-
-const buildPlannerAssets = async (): Promise<PlannerAssets> => {
-	const entrypoints = [...new Bun.Glob("src/**/*.html").scanSync()];
-	const outdir = path.join(tmpdir(), `fizzyx-planner-${process.pid}`);
-	await rm(outdir, { recursive: true, force: true });
-
-	const result = await Bun.build({
-		entrypoints,
-		outdir,
-		plugins: [tailwind],
-		target: "browser",
-		minify: process.env.NODE_ENV === "production",
-		sourcemap: "none",
-		define: {
-			"process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "development"),
-		},
-	});
-
-	if (!result.success) {
-		throw new Error("Failed to build planner web assets");
-	}
-
-	const htmlOutput = result.outputs.find((output) => output.path.endsWith(".html"));
-	if (htmlOutput === undefined) {
-		throw new Error("Planner web build did not emit index.html");
-	}
-
-	return {
-		outdir,
-		indexPath: htmlOutput.path,
-	};
-};
-
-const makePlannerResponseHandler = async () => {
-	const { outdir, indexPath } = await buildPlannerAssets();
-	const indexResponse = () =>
-		new Response(Bun.file(indexPath), {
-			headers: {
-				"content-type": "text/html; charset=utf-8",
-			},
-		});
-
-	return async (req: Request): Promise<Response> => {
-		const requestUrl = new URL(req.url);
-		const requestPath = decodeURIComponent(requestUrl.pathname);
-
-		if (requestPath === "/" || requestPath === "/index.html") {
-			return indexResponse();
-		}
-
-		const filePath = path.resolve(outdir, `.${requestPath}`);
-		const relativePath = path.relative(outdir, filePath);
-		if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-			return new Response("Not found", { status: 404 });
-		}
-
-		const maybeFile = Bun.file(filePath);
-		if (await maybeFile.exists()) {
-			return new Response(maybeFile);
-		}
-
-		return indexResponse();
-	};
-};
 
 const parsePortFromArgs = (args: string[]): number | undefined => {
 	for (let i = 0; i < args.length; i += 1) {
@@ -138,7 +66,6 @@ export const startPlannerServer = async (
 		typeof options.port === "number" && Number.isInteger(options.port)
 			? options.port
 			: DEFAULT_PLANNER_PORT;
-	const plannerHandler = await makePlannerResponseHandler();
 
 	const server = serve({
 		port,
@@ -226,8 +153,8 @@ export const startPlannerServer = async (
 				},
 			},
 
-			// Serve compiled planner assets and SPA fallback.
-			"/*": plannerHandler,
+			// Serve planner frontend and SPA fallback.
+			"/*": plannerRoute,
 		},
 
 		development: process.env.NODE_ENV !== "production" && {

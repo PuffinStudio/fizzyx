@@ -1,36 +1,13 @@
+@import "@fontsource/noto-sans/400.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-
-@font-face {
-	font-family: "Fizzyx Sans";
-	src: url("../assets/fonts/FizzyxSans-Regular.ttf") format("truetype");
-	font-weight: 400;
-	font-style: normal;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: "Fizzyx Sans";
-	src: url("../assets/fonts/FizzyxSans-Italic.ttf") format("truetype");
-	font-weight: 400;
-	font-style: italic;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: "Fizzyx Sans";
-	src: url("../assets/fonts/FizzyxSans-SemiBold.ttf") format("truetype");
-	font-weight: 600;
-	font-style: normal;
-	font-display: swap;
-}
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
 	--font-heading:
-		"Fizzyx Sans", "SF Pro Display", "Inter", "Avenir Next", "Segoe UI", "PingFang SC",
+		"Noto Sans", "SF Pro Display", "Inter", "Avenir Next", "Segoe UI", "PingFang SC",
 		"PingFang TC", "Noto Sans SC", "Noto Sans TC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 	--font-serif: var(--font-heading);
 	--color-sidebar-ring: var(--sidebar-ring);
