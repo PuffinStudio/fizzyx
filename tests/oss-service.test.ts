@@ -70,6 +70,7 @@ test("ossInitBlank returns false when oss section already exists", async () => {
 		saveCredentials: () => Effect.succeed(undefined),
 		deleteCredentials: () => Effect.succeed(undefined),
 		setupOssConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		setupOpenApiConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
 	};
 
 	const result = await Effect.runPromise(

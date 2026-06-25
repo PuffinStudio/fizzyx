@@ -1,21 +1,10 @@
-import { Console, Effect } from "effect";
-import { ApiError, AuthError, ConfigError, FileError, ValidationError } from "../domain/errors";
-import type {
-	BoardCache,
-	BoardColumn,
-	Step,
-	Identity,
-	InitializedProjectConfig,
-	ProjectConfig,
-} from "../domain/models";
-import type { CacheRepository } from "../ports/cache-repository";
-import type { ConfigRepository, SetupProjectConfigInput } from "../ports/config-repository";
-
-import type { FizzyApi } from "../ports/fizzy-api";
+import { Effect } from "effect";
+import { readGitCommandOutput } from "./flow-git";
+import { AuthError, ValidationError } from "../domain/errors";
+import type { BoardCache, ProjectConfig, Step } from "../domain/models";
+import type { SetupProjectConfigInput } from "../ports/config-repository";
 import { ConfigRepo, CONFIG_FILE } from "../ports/config-repository";
-import { isTaggedErrorWithMessage } from "../_shared/helpers";
-import { makeBunCacheRepository } from "../adapters/bun-cache-repository";
-import { makeFetchFizzyApi } from "../adapters/fetch-fizzy-api";
+import { ensureFlowConfig } from "./flow-bootstrap";
 import {
 	convertDescription,
 	parseTemplateDescription,
@@ -24,147 +13,42 @@ import {
 } from "./flow-card-content";
 import {
 	buildBoardUsers,
-	mergeFlowUsers,
+	isCurrentUserAlias,
 	resolveAssignableUser,
 	resolveMineUser,
 	resolveUser,
 } from "./flow-user-resolution";
+import { makeFlowApiWithAuthRetry } from "./flow-auth";
+import { buildStandardizedCommentBody, getStandardizedCommentTemplate } from "./flow-comment";
+import {
+	makeEnv,
+	makeFlowEnv,
+	makeFlowRuntimeEnv,
+	bootstrapFlowConfig,
+	DEFAULT_ACCOUNT,
+	DEFAULT_API_URL,
+	loadConfigOrDefaults,
+} from "./flow-env";
+import type { Env, InitializedEnv } from "./flow-env";
+import {
+	READY_COLUMN_ALIASES,
+	REVIEW_COLUMN_ALIASES,
+	isInProgressColumn,
+	isReadyColumn,
+	isTodoColumn,
+	moveToWorkflowColumn,
+	resolveInProgressColumnId,
+	resolveReadyColumnId,
+	resolveTodoColumnId,
+} from "./flow-workflow";
+import { analyzeDoctor, repairDoctor, type DoctorResult } from "./flow-doctor";
 export { convertDescription } from "./flow-card-content";
 export { resolveUser } from "./flow-user-resolution";
 
-export interface Env {
-	config: ProjectConfig;
-	configRepo: ConfigRepository;
-	cacheRepo: CacheRepository;
-	api: FizzyApi;
-}
-
-export interface InitializedEnv extends Env {
-	config: InitializedProjectConfig;
-}
-
-const DEFAULT_ACCOUNT = "1";
-const DEFAULT_API_URL = "https://fizzy.puffin.studio";
-
-type StandardizedCommentKind = "done" | "blocked" | "unblocked" | "handoff" | "note";
-
-const escapeHtml = (value: string): string =>
-	value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;");
-
-const standardizedCommentTemplate = (kind: StandardizedCommentKind): string => {
-	return {
-		done: "done: ",
-		blocked: "blocked: ",
-		unblocked: "unblocked: ",
-		handoff: "handoff: ",
-		note: "note: ",
-	}[kind];
-};
-
-export const buildStandardizedCommentBody = (
-	kind: StandardizedCommentKind,
-	value: string,
-): string => `<p>${standardizedCommentTemplate(kind)}${escapeHtml(value)}</p>`;
-
-export const getStandardizedCommentTemplate = (kind: StandardizedCommentKind): string => {
-	if (kind === "done") {
-		return "done: commit <sha>: <subject>";
-	}
-
-	if (kind === "blocked") {
-		return "blocked: <reason; owner/decision needed>";
-	}
-
-	if (kind === "unblocked") {
-		return "unblocked: <resource/decision ready>";
-	}
-
-	if (kind === "handoff") {
-		return "handoff: <current state; next step>";
-	}
-
-	return "note: <brief note>";
-};
-
-export const makeEnv = Effect.gen(function* () {
-	const configRepo = yield* ConfigRepo;
-	const config = yield* configRepo.loadProjectConfig();
-	const board = yield* requireBoard(config);
-	const credentials = yield* configRepo.loadCredentials(config.account).pipe(
-		Effect.catch(() =>
-			Effect.fail(
-				new AuthError({
-					message: `No token for account ${config.account}. Run: fizzyx auth login <token>`,
-				}),
-			),
-		),
-	);
-	const cacheRepo = makeBunCacheRepository(config.account, board);
-	const api = makeFetchFizzyApi(config, credentials.token);
-	return { config, configRepo, cacheRepo, api } satisfies Env;
-});
-
-export const makeFlowEnv = Effect.gen(function* () {
-	const configRepo = yield* ConfigRepo;
-	const config = yield* configRepo.loadProjectConfig();
-	const board = yield* requireBoard(config);
-	const credentials = yield* configRepo.loadCredentials(config.account).pipe(
-		Effect.catch(() =>
-			Effect.fail(
-				new AuthError({
-					message: `No token for account ${config.account}. Run: fizzyx auth login <token>`,
-				}),
-			),
-		),
-	);
-	const cacheRepo = makeBunCacheRepository(config.account, board);
-	const api = makeFlowApiWithAuthRetry(configRepo, config, credentials.token);
-	const initializedConfig = yield* ensureFlowConfig({ configRepo, api, config });
-
-	return { config: initializedConfig, configRepo, cacheRepo, api } satisfies InitializedEnv;
-});
-
-const loadConfigOrDefaults = (
-	configRepo: ConfigRepository,
-): Effect.Effect<ProjectConfig, ConfigError | FileError> =>
-	Effect.gen(function* () {
-		const config = yield* configRepo.loadProjectConfigOptional().pipe(
-			Effect.catchDefect((cause) =>
-				isTaggedErrorWithMessage(cause, "ConfigError") && isMissingConfigError(cause.message)
-					? Effect.succeed(undefined)
-					: Effect.fail(cause as ConfigError | FileError),
-			),
-			Effect.catch((cause) =>
-				isTaggedErrorWithMessage(cause, "ConfigError") && isMissingConfigError(cause.message)
-					? Effect.succeed(undefined)
-					: Effect.fail(cause as ConfigError | FileError),
-			),
-		);
-
-		return (
-			config || {
-				apiUrl: DEFAULT_API_URL,
-				account: DEFAULT_ACCOUNT,
-				configPath: `${process.cwd()}/${CONFIG_FILE}`,
-				rootDir: process.cwd(),
-			}
-		);
-	});
-
-const isMissingConfigError = (message: string): boolean =>
-	message.startsWith(`No .fizzyx.yaml`) || message.startsWith(`No .fizzy.yaml`);
-
-const requireBoard = (config: ProjectConfig): Effect.Effect<string, ValidationError> =>
-	config.board
-		? Effect.succeed(config.board)
-		: Effect.fail(
-				new ValidationError({ message: "No board configured. Run: fizzyx setup <board-id>" }),
-			);
+export type { Env, InitializedEnv };
+export { makeEnv, makeFlowEnv, makeFlowRuntimeEnv, bootstrapFlowConfig };
+export { analyzeDoctor, repairDoctor, type DoctorResult };
+export { buildStandardizedCommentBody, getStandardizedCommentTemplate };
 
 export const setup = (input: SetupProjectConfigInput) =>
 	Effect.gen(function* () {
@@ -192,7 +76,11 @@ export const setup = (input: SetupProjectConfigInput) =>
 				),
 			),
 		);
-		const api = makeFlowApiWithAuthRetry(configRepo, defaults, credentials.token);
+		const api = makeFlowApiWithAuthRetry({
+			configRepo,
+			config: defaults,
+			initialToken: credentials.token,
+		});
 
 		if (input.todoColumn && input.inProgressColumn) {
 			return yield* configRepo.setupProjectConfig({
@@ -226,87 +114,15 @@ export const listBoards = () =>
 				),
 			),
 		);
-		const api = makeFlowApiWithAuthRetry(configRepo, config, credentials.token);
+		const api = makeFlowApiWithAuthRetry({
+			configRepo,
+			config,
+			initialToken: credentials.token,
+		});
 		return yield* api.listBoards();
 	});
 
-const makeFlowApiWithAuthRetry = (
-	configRepo: ConfigRepository,
-	config: ProjectConfig,
-	initialToken: string,
-): FizzyApi => {
-	let token = initialToken;
-	let api = makeFetchFizzyApi(config, token);
-
-	const toApiError = (cause: unknown): ApiError =>
-		cause instanceof ApiError ? cause : new ApiError({ message: String(cause) });
-
-	const withAuthRetry = <T>(
-		action: (api: FizzyApi) => Effect.Effect<T, ApiError>,
-	): Effect.Effect<T, ApiError> =>
-		Effect.gen(function* () {
-			const first = yield* action(api).pipe(
-				Effect.map((right) => ({ _tag: "right", right }) as const),
-				Effect.catch((failure) =>
-					Effect.succeed({ _tag: "left", left: toApiError(failure) } as const),
-				),
-			);
-
-			if (first._tag === "right") {
-				return first.right;
-			}
-
-			const failure = first.left;
-			if (!isUnauthorizedApiError(failure)) {
-				return yield* Effect.fail(failure);
-			}
-
-			const migrated = yield* configRepo
-				.migrateCredentialsFromOfficial(config.account)
-				.pipe(Effect.catch(() => Effect.fail(failure)));
-
-			if (migrated.token !== token) {
-				token = migrated.token;
-				api = makeFetchFizzyApi(config, token);
-				yield* configRepo.saveCredentials(config.account, migrated).pipe(
-					Effect.catch(
-						(cause) =>
-							new ApiError({
-								message: `Failed to persist migrated credentials: ${
-									cause instanceof FileError ? cause.message : String(cause)
-								}`,
-							}),
-					),
-				);
-			}
-
-			return yield* action(api);
-		});
-
-	return {
-		identity: () => withAuthRetry((api) => api.identity()),
-		listBoards: () => withAuthRetry((api) => api.listBoards()),
-		listCards: (options) => withAuthRetry((api) => api.listCards(options)),
-		showCard: (number) => withAuthRetry((api) => api.showCard(number)),
-		listComments: (number) => withAuthRetry((api) => api.listComments(number)),
-		listColumns: () => withAuthRetry((api) => api.listColumns()),
-		createColumn: (name) => withAuthRetry((api) => api.createColumn(name)),
-		createCard: (input) => withAuthRetry((api) => api.createCard(input)),
-		updateCardDescription: (number, description) =>
-			withAuthRetry((api) => api.updateCardDescription(number, description)),
-		assignCard: (number, userId) => withAuthRetry((api) => api.assignCard(number, userId)),
-		moveCard: (number, columnId) => withAuthRetry((api) => api.moveCard(number, columnId)),
-		comment: (number, body) => withAuthRetry((api) => api.comment(number, body)),
-		closeCard: (number) => withAuthRetry((api) => api.closeCard(number)),
-		postponeCard: (number) => withAuthRetry((api) => api.postponeCard(number)),
-		updateStep: (number, stepId, input) =>
-			withAuthRetry((api) => api.updateStep(number, stepId, input)),
-		createStep: (number, content, completed) =>
-			withAuthRetry((api) => api.createStep(number, content, completed)),
-	} satisfies FizzyApi;
-};
-
-const isUnauthorizedApiError = (error: ApiError): boolean => error.status === 401;
+// Auth retry policy moved to flow-auth.ts
 
 export const initFlow = () =>
 	Effect.gen(function* () {
@@ -334,7 +150,11 @@ export const authStatus = Effect.gen(function* () {
 		};
 	}
 
-	const api = makeFetchFizzyApi(config, credentials.value.token);
+	const api = makeFlowApiWithAuthRetry({
+		configRepo,
+		config,
+		initialToken: credentials.value.token,
+	});
 	const identityResult = yield* api.identity().pipe(
 		Effect.map((identity) => ({ _tag: "success", identity }) as const),
 		Effect.catch((cause) =>
@@ -410,7 +230,7 @@ export const status = (env: InitializedEnv, options: { fresh: boolean }) =>
 		return { cache, age };
 	});
 
-export const show = (env: InitializedEnv, number: number) =>
+export const show = (env: Env, number: number) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);
 		const comments = yield* env.api
@@ -421,21 +241,44 @@ export const show = (env: InitializedEnv, number: number) =>
 
 export const next = (env: InitializedEnv, options: { fresh: boolean }) =>
 	Effect.gen(function* () {
-		const result = yield* mine(env, { fresh: options.fresh });
-		const card = result.cards.find((item) => item.column?.id === env.config.flow.columns.todo);
+		const cache = yield* ensureCache(env, options.fresh);
+		const result = (() => {
+			const user = resolveMineUser(env.config, cache);
+			const cards = cache.cards.filter((card) =>
+				card.assignees?.some((assignee) => assignee.id === user.userId),
+			);
+			return { ...user, cards };
+		})();
+		const readyColumnId = resolveReadyColumnId(cache.columns, env.config.flow.columns.todo);
+		const readyCard = readyColumnId
+			? result.cards.find(
+					(item) => item.column?.id === readyColumnId || isReadyColumn(item.column?.name),
+				)
+			: undefined;
+		if (readyCard) {
+			return { user: result, card: readyCard };
+		}
+
+		const todoColumnId = resolveTodoColumnId(cache.columns, env.config.flow.columns.todo);
+		const card = result.cards.find(
+			(item) => item.column?.id === todoColumnId || isTodoColumn(item.column?.name),
+		);
 		return { user: result, card };
 	});
 
 export const start = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
 		const cache = yield* ensureCache(env, true);
+		const inProgressColumnId = resolveInProgressColumnId(
+			cache.columns,
+			env.config.flow.columns.inProgress,
+		);
 		const target = cache.cards.find((card) => card.number === number);
 		if (!target) return yield* new ValidationError({ message: `Card #${number} not found` });
 		const userId = cache.identity.userId;
 		const active = cache.cards.filter(
 			(card) =>
-				(card.column?.id === env.config.flow.columns.inProgress ||
-					card.column?.name === "INPROGRESS") &&
+				(card.column?.id === inProgressColumnId || isInProgressColumn(card.column?.name)) &&
 				card.assignees?.some((assignee) => assignee.id === userId),
 		);
 		if (active.length >= env.config.flow.wipLimit) {
@@ -443,13 +286,38 @@ export const start = (env: InitializedEnv, number: number) =>
 				message: `Current user already has ${active.length} INPROGRESS cards`,
 			});
 		}
-		yield* env.api.moveCard(number, env.config.flow.columns.inProgress);
+		const startColumnId = inProgressColumnId;
+		yield* env.api.moveCard(number, startColumnId);
 		if (!target.assignees?.some((assignee) => assignee.id === userId)) {
 			yield* env.api.assignCard(number, userId);
 		}
 		yield* syncBoard(env);
 		return number;
 	});
+
+export const ready = (env: InitializedEnv, number: number) =>
+	moveToWorkflowColumn(
+		{
+			listColumns: env.api.listColumns,
+			moveCard: env.api.moveCard,
+		},
+		number,
+		READY_COLUMN_ALIASES,
+		"READY",
+		() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
+	);
+
+export const review = (env: InitializedEnv, number: number) =>
+	moveToWorkflowColumn(
+		{
+			listColumns: env.api.listColumns,
+			moveCard: env.api.moveCard,
+		},
+		number,
+		REVIEW_COLUMN_ALIASES,
+		"REVIEW",
+		() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
+	);
 
 export const done = (env: InitializedEnv, number: number, ref?: string) =>
 	Effect.gen(function* () {
@@ -475,8 +343,8 @@ export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
 	Effect.gen(function* () {
 		const cwd = options.cwd || process.cwd();
 		const [short, subject] = yield* Effect.all([
-			gitCommandOutput(cwd, ["rev-parse", "--short", "HEAD"]),
-			gitCommandOutput(cwd, ["log", "-1", "--format=%s"]),
+			readGitCommandOutput(cwd, ["rev-parse", "--short", "HEAD"]),
+			readGitCommandOutput(cwd, ["log", "-1", "--format=%s"]),
 		]);
 
 		if (short === "" || subject === "") {
@@ -507,14 +375,18 @@ export const add = (
 		}
 
 		const parsed = parseTemplateDescription(input.description);
-		const userId = resolveUser(env.config, input.user);
+		const userId = isCurrentUserAlias(input.user)
+			? resolveAssignableUser(yield* ensureCache(env, false), input.user)
+			: resolveUser(env.config, input.user);
+		const columns = yield* env.api.listColumns();
+		const todoColumnId = resolveTodoColumnId(columns, env.config.flow.columns.todo);
 		const card = yield* env.api.createCard({
 			title: input.title,
 			description: convertDescription(parsed.cardDescription),
 			board: env.config.board,
 		});
 		yield* env.api.assignCard(card.number, userId);
-		yield* env.api.moveCard(card.number, env.config.flow.columns.todo);
+		yield* env.api.moveCard(card.number, todoColumnId);
 		yield* Effect.forEach(parsed.templateSteps, (step) =>
 			env.api.createStep(card.number, step.content, step.completed),
 		);
@@ -621,93 +493,6 @@ export const standardizeBoard = (env: InitializedEnv) =>
 		};
 	});
 
-const ensureFlowConfig = (args: {
-	configRepo: ConfigRepository;
-	api: FizzyApi;
-	config: ProjectConfig;
-	initialUsers?: Record<string, string>;
-}): Effect.Effect<InitializedProjectConfig, unknown> =>
-	Effect.gen(function* () {
-		const identityResult = yield* args.api.identity().pipe(
-			Effect.map((identity): { _tag: "success"; identity: Identity } => ({
-				_tag: "success",
-				identity,
-			})),
-			Effect.catch(() => Effect.succeed({ _tag: "failure" } as const)),
-		);
-
-		const cards = yield* args.api
-			.listCards({ all: true })
-			.pipe(Effect.catch(() => Effect.succeed([] as const)));
-		const existingUsers = mergeFlowUsers({
-			config: args.config,
-			initialUsers: args.initialUsers,
-			cards,
-			identity: identityResult._tag === "success" ? identityResult.identity : undefined,
-		});
-
-		if (args.config.flow) {
-			if (!isUserMapChanged(args.config.flow.users, existingUsers)) {
-				return args.config as InitializedProjectConfig;
-			}
-
-			return yield* args.configRepo.setupProjectConfig({
-				account: args.config.account,
-				board: args.config.board,
-				todoColumn: args.config.flow.columns.todo,
-				inProgressColumn: args.config.flow.columns.inProgress,
-				users: existingUsers,
-				apiUrl: args.config.apiUrl,
-				configPath: args.config.configPath,
-			});
-		}
-
-		yield* Console.log("flow config missing; initializing...");
-		const columns = yield* args.api.listColumns();
-		const todoColumn = yield* ensureColumn(columns, "TODO", () => args.api.createColumn("TODO"));
-		const inProgressColumn = yield* ensureColumn(columns, "INPROGRESS", () =>
-			args.api.createColumn("INPROGRESS"),
-		);
-		return yield* args.configRepo.setupProjectConfig({
-			account: args.config.account,
-			board: args.config.board,
-			todoColumn,
-			inProgressColumn,
-			users: existingUsers,
-			apiUrl: args.config.apiUrl,
-			configPath: args.config.configPath,
-		});
-	});
-
-const isUserMapChanged = (
-	current: Record<string, string>,
-	next: Record<string, string>,
-): boolean => {
-	const currentKeys = Object.keys(current);
-	const nextKeys = Object.keys(next);
-	if (currentKeys.length !== nextKeys.length) return true;
-
-	for (const [key, value] of Object.entries(next)) {
-		if (current[key] !== value) return true;
-	}
-
-	return false;
-};
-
-const ensureColumn = (
-	columns: ReadonlyArray<BoardColumn>,
-	name: string,
-	createColumn: () => Effect.Effect<BoardColumn, unknown>,
-): Effect.Effect<string, unknown> =>
-	Effect.gen(function* () {
-		const lower = name.toLowerCase();
-		const existing = columns.find((column) => column.name.toLowerCase() === lower);
-		if (existing?.id) return existing.id;
-
-		const created = yield* createColumn();
-		return created.id;
-	});
-
 export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
 		if (users.length === 0)
@@ -723,106 +508,4 @@ export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray
 		});
 		yield* syncBoard(env);
 		return { number, userIds: toAssign };
-	});
-
-export interface DoctorResult {
-	account: string;
-	apiUrl: string;
-	boardId: string;
-	columns: { name: string; id: string; found: boolean }[];
-	allColumns: ReadonlyArray<BoardColumn>;
-	systemActions: ReadonlyArray<{ name: string; via: string }>;
-	configUpdated: boolean;
-	info: string[];
-	fixes: string[];
-}
-
-export const doctor = (env: InitializedEnv): Effect.Effect<DoctorResult, unknown> =>
-	Effect.gen(function* () {
-		const cache = yield* env.cacheRepo.read().pipe(Effect.catch(() => Effect.succeed(null)));
-		const config = env.config;
-		const info: string[] = [];
-		const fixes: string[] = [];
-		let columnsData = cache?.columns;
-
-		if (!columnsData || columnsData.length === 0) {
-			info.push("Fetched columns from API (not cached)");
-			columnsData = yield* env.api.listColumns();
-		}
-
-		const expected = ["TODO", "INPROGRESS"];
-		const columns: DoctorResult["columns"] = [];
-
-		for (const name of expected) {
-			const match = columnsData.find((c) => c.name.toLowerCase() === name.toLowerCase());
-			if (!match) {
-				fixes.push(`Created missing column "${name}"`);
-				const created = yield* env.api.createColumn(name);
-				columnsData = columnsData.concat(created);
-				columns.push({ name, id: created.id, found: true });
-			} else {
-				columns.push({ name, id: match.id, found: true });
-			}
-		}
-
-		const todoId = columns[0]!.id;
-		const inProgressId = columns[1]!.id;
-		let configUpdated = false;
-
-		if (config.flow?.columns.todo !== todoId || config.flow?.columns.inProgress !== inProgressId) {
-			fixes.push("Updated column IDs in config");
-			yield* env.configRepo.setupProjectConfig({
-				account: config.account,
-				board: config.board,
-				todoColumn: todoId,
-				inProgressColumn: inProgressId,
-				users: config.flow?.users,
-				apiUrl: config.apiUrl,
-				configPath: config.configPath,
-			});
-			configUpdated = true;
-		}
-
-		return {
-			account: config.account,
-			apiUrl: config.apiUrl,
-			boardId: config.board ?? "(unknown)",
-			columns,
-			allColumns: columnsData,
-			systemActions: [
-				{ name: "DONE", via: "closure endpoint" },
-				{ name: "NOT_NOW", via: "not_now endpoint" },
-			],
-			configUpdated,
-			info,
-			fixes,
-		};
-	});
-
-const gitCommandOutput = (cwd: string, args: ReadonlyArray<string>) =>
-	Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn({
-				cmd: ["git", ...args],
-				cwd,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-
-			const [stdout, stderr, exitCode] = await Promise.all([
-				new Response(proc.stdout).text(),
-				new Response(proc.stderr).text(),
-				proc.exited,
-			]);
-
-			if (exitCode !== 0) {
-				throw new Error(stderr.trim() || `git ${args.join(" ")} failed`);
-			}
-
-			return stdout.trim();
-		},
-		catch: (cause) =>
-			new ValidationError({
-				message: `Unable to derive done ref from git: ${String(cause)}. Pass an explicit ref.`,
-			}),
 	});

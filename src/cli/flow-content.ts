@@ -173,6 +173,7 @@ const getBuiltinWorkflow = (): string =>
 		"- fizzyx setup <board-id>",
 		"- fizzyx auth login <token>",
 		"- fizzyx auth status",
+		"- flow workflow columns are auto-healed on first run if missing/renamed",
 		"",
 		"## Create",
 		"- fizzyx flow template --draft",
@@ -182,14 +183,17 @@ const getBuiltinWorkflow = (): string =>
 		"- Use a unique random suffix so multiple agents do not collide.",
 		"",
 		"## Workflow",
-		"Cards move through workflow columns, then close into Done state.",
+		"Cards move BACKLOG -> READY -> IN PROGRESS -> REVIEW, then close into Done state.",
 		"",
-		"- fizzyx flow start <card> — moves card from TODO to IN PROGRESS, self-assigns",
+		"- fizzyx flow ready <card> — marks a backlog card ready for implementation",
+		"- fizzyx flow start <card> — moves card to IN PROGRESS, self-assigns",
+		"- fizzyx flow review <card> — moves card to REVIEW after implementation",
 		"- fizzyx flow done <card> — closes into Done, auto-detects git ref, comments",
 		'- fizzyx flow done <card> "commit <sha>: <subject>" — with explicit ref',
 		"",
 		"## Daily",
 		"- fizzyx flow mine --fresh",
+		"- fizzyx planner health",
 		"- fizzyx flow start <card>",
 		"- fizzyx flow show <card>",
 		"",
@@ -210,8 +214,10 @@ const getBuiltinWorkflow = (): string =>
 		"- Use fizzyx flow comment-template <kind> for manual comments, and keep comments concise.",
 		"",
 		"## Card structure",
-		"- Description stores context",
+		"- Description stores planner frontmatter plus context",
+		"- Use tags like priority:p0, type:feature, area:frontend, phase:integration",
 		"- Steps become Fizzy checklist items",
+		"- Legacy projects: run `fizzyx planner snapshot --auto-fix` once after migration",
 		"",
 		"## Close discipline",
 		"- Never close cards through the web UI.",
@@ -248,11 +254,14 @@ for project workflow. If fizzyx flow lacks an operation, stop and ask.
 
 ## Workflow
 
-Cards move through workflow columns, then close into **Done** state.
+Cards move **BACKLOG → READY → IN PROGRESS → REVIEW**, then close into
+**Done** state. Blocked work uses Fizzy Not Now.
 
 | Phase | Command | Action |
 |-------|---------|--------|
-| Start | fizzyx flow start <card> | Move TODO → IN PROGRESS, self-assign |
+| Ready | fizzyx flow ready <card> | Move BACKLOG → READY |
+| Start | fizzyx flow start <card> | Move READY → IN PROGRESS, self-assign |
+| Review | fizzyx flow review <card> | Move IN PROGRESS → REVIEW |
 | Steps | fizzyx flow complete-steps <card> | Mark all pending steps done |
 | Done | fizzyx flow done <card> "commit <sha>: <subject>" | Close into Done, comment |
 
@@ -281,6 +290,7 @@ Minimum sections:
 - Install/auth/setup commands.
 - Board/account/API/cache context.
 - Column meanings and IDs.
+- Metadata/tag conventions such as priority:p0, type:feature, owner, depends_on.
 - Card title formats and allowed scopes.
 - Assignment rules and user IDs.
 - Local delivery rules that differ from fizzyx flow workflow.
@@ -311,8 +321,12 @@ fizzyx flow comment-template <done|blocked|unblocked|handoff|note>
 fizzyx flow complete-steps <card>
 fizzyx flow done <card> "commit <sha>: <subject>"
 fizzyx flow block <card> "<reason>"
-fizzyx flow std <card>
-fizzyx flow std-all
+fizzyx flow standardize <card>  # alias: std
+fizzyx flow standardize-all    # alias: std-all
+fizzyx planner repair-metadata
+fizzyx planner snapshot
+fizzyx planner health
+fizzyx planner start
 
 ## Cards
 
@@ -322,7 +336,7 @@ fizzyx flow std-all
 - Description is context only. Card titles and fields are standardized in English.
 - Put work checklist under ## Steps; flow add converts it to card steps.
 - Step labels must be plain text: no Markdown links, code ticks, or bold.
-- Normalize existing cards with fizzyx flow std <card>.
+- Normalize existing cards with fizzyx flow standardize <card> (alias: std).
 
 ## Delivery
 
@@ -342,6 +356,12 @@ Generate a typed wx.request client from OpenAPI spec:
 
 \`\`\`
 fizzyx openapi g -i <url|path> -c wx
+\`\`\`
+
+Create a quick scaffold first (interactive by default when running in a terminal):
+
+\`\`\`
+fizzyx openapi init
 \`\`\`
 
 When no --output is given, defaults to ./src/api (creates 4 files:

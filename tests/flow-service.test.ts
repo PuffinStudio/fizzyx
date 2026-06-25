@@ -3,17 +3,20 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
+import type { BoardCache } from "../src/domain/models";
 import { ApiError, ConfigError, FileError, ValidationError } from "../src/domain/errors";
 import type { ConfigRepository } from "../src/ports/config-repository";
 import type { FizzyApi } from "../src/ports/fizzy-api";
 import {
 	add,
 	assign,
+	next,
 	completeSteps,
 	buildStandardizedCommentBody,
 	convertDescription,
 	getStandardizedCommentTemplate,
 	done,
+	start,
 	resolveDoneRefFromGit,
 	block,
 	standardizeBoard,
@@ -59,6 +62,8 @@ const makeConfigRepo = (): ConfigRepository =>
 		deleteCredentials: () => Effect.succeed(undefined),
 		setupOssConfig: () =>
 			Effect.fail(new FileError({ message: "config repo not mocked", path: "/tmp/.fizzy.yaml" })),
+		setupOpenApiConfig: () =>
+			Effect.fail(new FileError({ message: "config repo not mocked", path: "/tmp/.fizzy.yaml" })),
 	}) as ConfigRepository;
 
 const defaultApi = () =>
@@ -87,6 +92,12 @@ const makeEnv = (api: FizzyApi) => ({
 	configRepo: makeConfigRepo(),
 	cacheRepo: makeCacheRepo(),
 	api,
+});
+
+const makeCacheRepoFrom = (cache: BoardCache, age = 0) => ({
+	read: () => Effect.succeed(cache),
+	write: () => Effect.succeed(undefined),
+	ageSeconds: () => Effect.succeed(age),
 });
 
 const makeTempDir = (): string => mkdtempSync(join(tmpdir(), "fizzyx-cli-"));
@@ -145,6 +156,219 @@ test("done blocks closing cards with unfinished steps", async () => {
 	}
 
 	expect(calls).toEqual(["showCard"]);
+});
+
+test("start moves to IN PROGRESS instead of READY", async () => {
+	const moveCalls: Array<{ number: number; columnId: string }> = [];
+	const assignCalls: string[] = [];
+	const listColumnsCalls: string[] = [];
+	const api = defaultApi();
+	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity User" });
+	api.listColumns = () => {
+		listColumnsCalls.push("listColumns");
+		return Effect.succeed([
+			{ id: "backlog-id", name: "BACKLOG" },
+			{ id: "ready-id", name: "READY" },
+			{ id: "inprogress-id", name: "IN PROGRESS" },
+			{ id: "review-id", name: "REVIEW" },
+		]);
+	};
+	api.listCards = (options) => {
+		if (options?.indexedBy === "not_now") {
+			return Effect.succeed([]);
+		}
+
+		if (options?.all) {
+			return Effect.succeed([
+				{
+					number: 5,
+					title: "Card in backlog",
+					column: { id: "backlog-id", name: "BACKLOG" },
+					assignees: [],
+				},
+				{
+					number: 6,
+					title: "Ready card",
+					column: { id: "ready-id", name: "READY" },
+					assignees: [{ id: "identity-id", name: "Identity User" }],
+				},
+			]);
+		}
+
+		return Effect.succeed([]);
+	};
+	api.moveCard = (number, columnId) => {
+		moveCalls.push({ number, columnId });
+		return Effect.succeed(undefined);
+	};
+	api.assignCard = (_number, userId) => {
+		assignCalls.push(userId);
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(start(makeEnv(api), 5));
+
+	expect(result).toBe(5);
+	expect(listColumnsCalls).toEqual(["listColumns", "listColumns"]);
+	expect(moveCalls).toEqual([{ number: 5, columnId: "inprogress-id" }]);
+	expect(assignCalls).toEqual(["identity-id"]);
+});
+
+test("start ignores READY/REVIEW cards when enforcing WIP limit", async () => {
+	const moveCalls: Array<{ number: number; columnId: string }> = [];
+	const api = defaultApi();
+	api.identity = () => Effect.succeed({ userId: "identity-id" });
+	api.listColumns = () =>
+		Effect.succeed([
+			{ id: "backlog-id", name: "BACKLOG" },
+			{ id: "ready-id", name: "READY" },
+			{ id: "review-id", name: "REVIEW" },
+			{ id: "inprogress-id", name: "IN PROGRESS" },
+		]);
+	api.listCards = (options) => {
+		if (options?.indexedBy === "not_now") {
+			return Effect.succeed([]);
+		}
+
+		return Effect.succeed([
+			{ number: 5, title: "Target", column: { id: "backlog-id", name: "BACKLOG" }, assignees: [] },
+			{
+				number: 6,
+				title: "In-progress card",
+				column: { id: "inprogress-id", name: "IN PROGRESS" },
+				assignees: [{ id: "identity-id", name: "identity-id" }],
+			},
+			{
+				number: 7,
+				title: "Ready card",
+				column: { id: "ready-id", name: "READY" },
+				assignees: [{ id: "identity-id", name: "identity-id" }],
+			},
+			{
+				number: 8,
+				title: "Review card",
+				column: { id: "review-id", name: "REVIEW" },
+				assignees: [{ id: "identity-id", name: "identity-id" }],
+			},
+		]);
+	};
+	api.moveCard = (number, columnId) => {
+		moveCalls.push({ number, columnId });
+		return Effect.succeed(undefined);
+	};
+
+	const env = {
+		...makeEnv(api),
+		config: {
+			...baseConfig,
+			flow: {
+				...baseConfig.flow,
+				wipLimit: 1,
+			},
+		},
+	};
+
+	let error: unknown;
+	try {
+		await Effect.runPromise(start(env, 5));
+		error = undefined;
+	} catch (cause) {
+		error = cause;
+	}
+
+	expect(error).toBeInstanceOf(ValidationError);
+	if (error instanceof ValidationError) {
+		expect(error.message).toContain("Current user already has 1 INPROGRESS cards");
+	}
+	expect(moveCalls).toEqual([]);
+});
+
+test("next prefers READY cards over BACKLOG/legacy backlog", async () => {
+	const api = defaultApi();
+	const cache: BoardCache = {
+		identity: { userId: "identity-id", name: "Identity User" },
+		cards: [
+			{
+				number: 77,
+				title: "Backlog card",
+				column: { id: "backlog-id", name: "BACKLOG" },
+				assignees: [{ id: "identity-id", name: "me" }],
+			},
+			{
+				number: 78,
+				title: "Ready card",
+				column: { id: "ready-id", name: "READY" },
+				assignees: [{ id: "identity-id", name: "me" }],
+			},
+		],
+		notNow: [],
+		columns: [
+			{ id: "backlog-id", name: "BACKLOG" },
+			{ id: "ready-id", name: "READY" },
+			{ id: "inprogress-id", name: "IN PROGRESS" },
+		],
+		users: { me: "identity-id" },
+		syncedAt: "2026-01-01T00:00:00.000Z",
+	};
+
+	const env = {
+		...makeEnv(api),
+		config: {
+			...baseConfig,
+			flow: {
+				...baseConfig.flow,
+				columns: {
+					...baseConfig.flow.columns,
+					todo: "missing-todo-id",
+				},
+			},
+		},
+		cacheRepo: makeCacheRepoFrom(cache, 0),
+	};
+
+	const result = await Effect.runPromise(next(env, { fresh: false }));
+
+	expect(result.card?.number).toBe(78);
+	expect(result.user.name).toBe("me");
+});
+
+test("next falls back to BACKLOG/legacy TODO when READY is missing", async () => {
+	const api = defaultApi();
+	const cache: BoardCache = {
+		identity: { userId: "identity-id", name: "Identity User" },
+		cards: [
+			{
+				number: 77,
+				title: "Legacy backlog card",
+				column: { id: "todo-id", name: "TODO" },
+				assignees: [{ id: "identity-id", name: "me" }],
+			},
+		],
+		notNow: [],
+		columns: [{ id: "todo-id", name: "TODO" }],
+		users: { me: "identity-id" },
+		syncedAt: "2026-01-01T00:00:00.000Z",
+	};
+
+	const env = {
+		...makeEnv(api),
+		config: {
+			...baseConfig,
+			flow: {
+				...baseConfig.flow,
+				columns: {
+					...baseConfig.flow.columns,
+					todo: "missing-todo-id",
+				},
+			},
+		},
+		cacheRepo: makeCacheRepoFrom(cache, 0),
+	};
+
+	const result = await Effect.runPromise(next(env, { fresh: false }));
+
+	expect(result.card?.number).toBe(77);
+	expect(result.user.name).toBe("me");
 });
 
 test("completeSteps fails when pending steps are missing ids", async () => {
@@ -283,9 +507,7 @@ test("add with template extracts markdown step list into fizzy steps", async () 
 			...baseConfig,
 			flow: {
 				...baseConfig.flow,
-				users: {
-					me: "user-id",
-				},
+				users: {},
 			},
 		},
 	};
@@ -319,7 +541,7 @@ Add parser support for template-based step extraction.
 			description: Bun.markdown.html(expectedCardDescription),
 		},
 	]);
-	expect(actionLog).toEqual(["assign:101:user-id", "move:101:todo-id"]);
+	expect(actionLog).toEqual(["assign:101:identity-id", "move:101:todo-id"]);
 	expect(templateSteps).toEqual([
 		{ content: "Parse template section", completed: true },
 		{ content: "--radius-sm 降至 4rpx", completed: false },
@@ -329,7 +551,7 @@ Add parser support for template-based step extraction.
 		{ content: "Deprecated", completed: false },
 		{ content: "Italic", completed: false },
 	]);
-	expect(listCardsCalls).toBe(2);
+	expect(listCardsCalls).toBe(4);
 });
 
 test("add without template steps section preserves card body conversion and skips step creation", async () => {
@@ -376,6 +598,60 @@ test("add without template steps section preserves card body conversion and skip
 	expect(number).toBe(102);
 	expect(createCardInputs[0]!.description).toBe(Bun.markdown.html(description));
 	expect(templateSteps).toEqual([]);
+});
+
+test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
+	const moveCalls: Array<{ number: number; columnId: string }> = [];
+	const api = defaultApi();
+	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
+	api.listColumns = () =>
+		Effect.succeed([
+			{ id: "todo-id", name: "TODO" },
+			{ id: "backlog-id", name: "BACKLOG" },
+		]);
+	api.listCards = () => Effect.succeed([]);
+	api.createCard = (input) => {
+		return Effect.succeed({
+			number: 103,
+			title: input.title,
+			description: input.description,
+		});
+	};
+	api.assignCard = () => Effect.succeed(undefined);
+	api.moveCard = (number, columnId) => {
+		moveCalls.push({ number, columnId });
+		return Effect.succeed(undefined);
+	};
+	api.createStep = (_number, content, completed) => {
+		// No template steps expected for this flow.
+		void content;
+		void completed;
+		return Effect.succeed(undefined);
+	};
+
+	const env = {
+		...makeEnv(api),
+		config: {
+			...baseConfig,
+			flow: {
+				...baseConfig.flow,
+				columns: {
+					...baseConfig.flow.columns,
+					todo: "missing-todo-id",
+				},
+				users: {
+					me: "user-id",
+				},
+			},
+		},
+	};
+
+	const number = await Effect.runPromise(
+		add(env, { user: "me", title: "Alias target", description: "body" }),
+	);
+
+	expect(number).toBe(103);
+	expect(moveCalls).toEqual([{ number: 103, columnId: "backlog-id" }]);
 });
 
 test("assign supports current-user aliases and skips already assigned users", async () => {

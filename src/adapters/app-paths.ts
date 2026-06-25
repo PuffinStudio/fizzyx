@@ -40,6 +40,13 @@ export const resolveCachePath = (account: string, board: string): string => {
 	return `${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CACHE_DIR}/${safePathSegment(account)}/${safePathSegment(board)}/board.json`;
 };
 
+/** ~/.config/fizzy/cache/<account>/<board>/planner-snapshot.json */
+export const resolvePlannerSnapshotCachePath = (account: string, board: string): string => {
+	if (!account) throw new Error("cache requires account");
+	if (!board) throw new Error("cache requires board");
+	return `${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CACHE_DIR}/${safePathSegment(account)}/${safePathSegment(board)}/planner-snapshot.json`;
+};
+
 /** ~/.config/fizzy/config.yaml */
 export const resolveOfficialConfigPath = (): string => `${resolveHome()}/${OFFICIAL_CONFIG_FILE}`;
 

@@ -1,4 +1,5 @@
 import type { Card, Comment, Step } from "../domain/models";
+import { parsePlannerDescription } from "../use-cases/planner-metadata";
 
 export type RenderColumn<T> = {
 	header: string;
@@ -128,6 +129,7 @@ export const printCards = (cards: ReadonlyArray<Card>): string => {
 
 export const printCardDetail = (card: Card, comments: ReadonlyArray<Comment>): string => {
 	const steps = card.steps ?? [];
+	const parsedDescription = parsePlannerDescription(card.description || "");
 	const lines: string[] = [
 		`# #${card.number} ${card.title}`,
 		"",
@@ -138,7 +140,9 @@ export const printCardDetail = (card: Card, comments: ReadonlyArray<Comment>): s
 		]),
 		"",
 		"## Description",
-		...renderMarkdownText(card.description || ""),
+		...(parsedDescription.body || card.description
+			? renderMarkdownText(parsedDescription.body)
+			: ["(no description)"]),
 	];
 
 	if (steps.length > 0) {

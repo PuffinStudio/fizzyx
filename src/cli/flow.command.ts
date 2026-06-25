@@ -1,6 +1,62 @@
 import { Console, Effect, Option } from "effect";
 import { Command, Flag, Argument } from "effect/unstable/cli";
 import { printCardDetail, printCards, printSteps } from "./render";
+import { runWithFlowEnv, runWithFlowRuntimeEnv } from "./flow-workflow";
+import {
+	formatDoctorResult,
+	formatSyncingFizzyBoardMessage,
+	formatLoadingMyTasksMessage,
+	formatLoadingBoardStatusMessage,
+	formatLoadingNextTaskMessage,
+	formatLoadingCardDetailsMessage,
+	formatStartingCardMessage,
+	formatMovingCardToReadyMessage,
+	formatMovingCardToReviewMessage,
+	formatClosingCardMessage,
+	formatBlockingCardMessage,
+	formatAssigningCardMessage,
+	formatReadingWorkflowTemplateMessage,
+	formatWritingSkillScaffoldMessage,
+	formatReadingSkillFileMessage,
+	formatRepairingDescriptionMessage,
+	formatCompletingStepsMessage,
+	formatStandardizingCardMessage,
+	formatStandardizingBoardMessage,
+	formatCreatingCardMessage,
+	formatSyncingDoneWhenStepsMessage,
+	formatWritingCardDraftMessage,
+	formatReadingCardTemplateMessage,
+	formatCheckingFlowHealthMessage,
+	formatInitializingWorkflowConfigMessage,
+	formatFlowConfigured,
+	formatFlowConfigMissing,
+	formatFlowStatusHeader,
+	formatAddedCard,
+	formatNotNowSection,
+	formatNextInstruction,
+	formatNextSummary,
+	formatCommentTemplate,
+	formatAddUsage,
+	formatSyncResult,
+	formatCompleteStepsSummary,
+	formatStandardizeBoardSummary,
+	formatMineHeader,
+	formatNoTodoCard,
+	formatBlankLine,
+	formatRepairedCard,
+	formatBlockedCard,
+	formatStartedCard,
+	formatMovedCard,
+	formatClosedCard,
+	formatSkillTemplate,
+	formatAssignedCard,
+	formatCompletedSteps,
+	formatFlowTemplateDraftPath,
+	formatFlowTemplateContent,
+	formatWorkflowTemplate,
+	formatStandardizeBoardResults,
+	formatStandardizeResult,
+} from "./flow-output";
 import {
 	formatFlowScaffoldResult,
 	createFlowDraft,
@@ -10,18 +66,21 @@ import {
 	loadFlowWorkflowContent,
 } from "./flow-content";
 import {
+	bootstrapFlowConfig,
 	add,
 	assign,
 	block,
-	doctor,
+	analyzeDoctor,
+	repairDoctor,
 	getStandardizedCommentTemplate,
 	completeSteps,
 	done,
-	makeFlowEnv,
 	mine,
 	next,
 	repairMarkdownDescription,
+	ready,
 	resolveDoneRefFromGit,
+	review,
 	show,
 	start,
 	status,
@@ -31,18 +90,16 @@ import {
 	syncBoard,
 } from "../use-cases/flow-service";
 import { withSpinner, logSuccess } from "./ui";
+import { readDescription } from "./flow-input";
+import { formatCheckingPlannerHealthMessage, formatPlannerHealthResult } from "./planner-output";
+import { loadPlannerSnapshot } from "../use-cases/planner-service";
 
 const handleSync = (): Effect.Effect<void, any, any> =>
-	Effect.gen(function* () {
-		const cache = yield* withSpinner(
-			"Syncing Fizzy board...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* syncBoard(env);
-			}),
-		);
-		yield* logSuccess(`synced cards=${cache.cards.length} not_now=${cache.notNow.length}`);
-	});
+	runWithFlowEnv(formatSyncingFizzyBoardMessage(), (env) => syncBoard(env)).pipe(
+		Effect.flatMap((cache) =>
+			logSuccess(formatSyncResult(cache.cards.length, cache.notNow.length)),
+		),
+	);
 
 const handleMine = (config: {
 	fresh: boolean;
@@ -50,32 +107,26 @@ const handleMine = (config: {
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const resolvedUser = Option.isSome(config.user) ? config.user.value : undefined;
-		const result = yield* withSpinner(
-			"Loading my tasks...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* mine(env, {
-					fresh: config.fresh,
-					user: resolvedUser,
-				});
+		const result = yield* runWithFlowEnv(formatLoadingMyTasksMessage(), (env) =>
+			mine(env, {
+				fresh: config.fresh,
+				user: resolvedUser,
 			}),
 		);
-		yield* Console.log(`# ${result.name}: ${result.userId}`);
+		yield* Console.log(formatMineHeader(result.name, result.userId));
 		yield* Console.log(printCards(result.cards));
 	});
 
 const handleFlowStatus = (config: { fresh: boolean }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Loading board status...",
+		const result = yield* runWithFlowEnv(formatLoadingBoardStatusMessage(), (env) =>
 			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				const result = yield* status(env, { fresh: config.fresh });
-				return { env, result };
+				const statusResult = yield* status(env, { fresh: config.fresh });
+				return { env, result: statusResult };
 			}),
 		);
-		yield* Console.log(`# board cache age: ${result.result.age}s`);
-		yield* Console.log("");
+		yield* Console.log(formatFlowStatusHeader(result.result.age));
+		yield* Console.log(formatBlankLine());
 		const activeColumnIds = new Set([
 			result.env.config.flow.columns.inProgress,
 			result.env.config.flow.columns.todo,
@@ -86,50 +137,52 @@ const handleFlowStatus = (config: { fresh: boolean }): Effect.Effect<void, any, 
 			),
 		);
 		if (result.result.cache.notNow.length > 0) {
-			yield* Console.log(`\n# not_now (${result.result.cache.notNow.length})`);
+			yield* Console.log(formatNotNowSection(result.result.cache.notNow.length));
 			yield* Console.log(printCards(result.result.cache.notNow));
 		}
 	});
 
 const handleNext = (config: { fresh: boolean }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Loading next task...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* next(env, { fresh: config.fresh });
-			}),
+		const result = yield* runWithFlowEnv(formatLoadingNextTaskMessage(), (env) =>
+			next(env, { fresh: config.fresh }),
 		);
 		if (!result.card) {
-			yield* Console.log(`no TODO card for ${result.user.name}`);
+			yield* Console.log(formatNoTodoCard(result.user.name));
 			return;
 		}
-		yield* Console.log(`#${result.card.number} ${result.card.title}`);
-		yield* Console.log(`next: fizzyx flow start ${result.card.number}`);
+		yield* Console.log(formatNextSummary(result.card.number, result.card.title));
+		yield* Console.log(formatNextInstruction(result.card.number));
 	});
 
 const handleShow = (config: { card: number }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Loading card details...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* show(env, config.card);
-			}),
+		const result = yield* runWithFlowRuntimeEnv(formatLoadingCardDetailsMessage(), (env) =>
+			show(env, config.card),
 		);
 		yield* Console.log(printCardDetail(result.card, result.comments));
 	});
 
 const handleStart = (config: { card: number }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		yield* withSpinner(
-			"Starting card...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* start(env, config.card);
-			}),
+		yield* runWithFlowEnv(formatStartingCardMessage(), (env) => start(env, config.card));
+		yield* logSuccess(formatStartedCard(config.card));
+	});
+
+const handleReady = (config: { card: number }): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const result = yield* runWithFlowEnv(formatMovingCardToReadyMessage(), (env) =>
+			ready(env, config.card),
 		);
-		yield* logSuccess(`started #${config.card}`);
+		yield* logSuccess(formatMovedCard(result.number, result.column));
+	});
+
+const handleReview = (config: { card: number }): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const result = yield* runWithFlowEnv(formatMovingCardToReviewMessage(), (env) =>
+			review(env, config.card),
+		);
+		yield* logSuccess(formatMovedCard(result.number, result.column));
 	});
 
 const handleDone = (config: {
@@ -139,26 +192,18 @@ const handleDone = (config: {
 	Effect.gen(function* () {
 		const explicitRef = Option.isSome(config.ref) ? config.ref.value : undefined;
 		const resolvedRef = explicitRef ?? (yield* resolveDoneRefFromGit());
-		const result = yield* withSpinner(
-			"Closing card...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* done(env, config.card, resolvedRef);
-			}),
+		const result = yield* runWithFlowEnv(formatClosingCardMessage(), (env) =>
+			done(env, config.card, resolvedRef),
 		);
-		yield* logSuccess(`closed #${result.number} (${result.ref})`);
+		yield* logSuccess(formatClosedCard(result.number, result.ref));
 	});
 
 const handleBlock = (config: { card: number; reason: string }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Marking card blocked...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* block(env, config.card, config.reason);
-			}),
+		const result = yield* runWithFlowEnv(formatBlockingCardMessage(), (env) =>
+			block(env, config.card, config.reason),
 		);
-		yield* Console.log(`blocked #${result.number}: ${result.reason}`);
+		yield* Console.log(formatBlockedCard(result.number, result.reason));
 	});
 
 const handleAssign = (config: {
@@ -166,34 +211,42 @@ const handleAssign = (config: {
 	users: ReadonlyArray<string>;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Assigning card...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* assign(env, config.card, config.users as string[]);
-			}),
+		const result = yield* runWithFlowEnv(formatAssigningCardMessage(), (env) =>
+			assign(env, config.card, config.users as string[]),
 		);
-		yield* logSuccess(`assigned #${result.number} to ${result.userIds.join(", ")}`);
+		yield* logSuccess(formatAssignedCard(result.number, result.userIds.join(", ")));
 	});
 
 const handleCommentTemplate = (config: {
 	kind: "done" | "blocked" | "unblocked" | "handoff" | "note";
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		yield* Console.log(getStandardizedCommentTemplate(config.kind));
+		yield* Console.log(formatCommentTemplate(getStandardizedCommentTemplate(config.kind)));
 	});
 
 const handleWorkflow = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		yield* Console.log(
-			yield* withSpinner("Reading local workflow template...", loadFlowWorkflowContent()),
+		const workflow = yield* withSpinner(
+			formatReadingWorkflowTemplateMessage(),
+			loadFlowWorkflowContent(),
 		);
+		yield* Console.log(formatWorkflowTemplate(workflow));
+	});
+
+const handleHealth = (): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		yield* Console.log("`fizzyx flow health` is deprecated. Use `fizzyx planner health` instead.");
+		const snapshot = yield* withSpinner(
+			formatCheckingPlannerHealthMessage(),
+			loadPlannerSnapshot(),
+		);
+		yield* Console.log(formatPlannerHealthResult(snapshot));
 	});
 
 const handleSkillInit = (config: { force: boolean }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const results = yield* withSpinner(
-			"Writing flow skill scaffold...",
+			formatWritingSkillScaffoldMessage(),
 			initFlowScaffold({ force: config.force }),
 		);
 		for (const result of results) {
@@ -203,63 +256,44 @@ const handleSkillInit = (config: { force: boolean }): Effect.Effect<void, any, a
 
 const handleSkill = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const skill = yield* withSpinner("Reading local skill file...", loadFlowSkillContent());
-		yield* Console.log(skill);
+		const skill = yield* withSpinner(formatReadingSkillFileMessage(), loadFlowSkillContent());
+		yield* Console.log(formatSkillTemplate(skill));
 	});
 
 const handleRepairMarkdown = (config: { card: number }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const repaired = yield* withSpinner(
-			"Repairing card description...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* repairMarkdownDescription(env, config.card);
-			}),
+		const repaired = yield* runWithFlowEnv(formatRepairingDescriptionMessage(), (env) =>
+			repairMarkdownDescription(env, config.card),
 		);
-		yield* logSuccess(`repaired #${repaired}`);
+		yield* logSuccess(formatRepairedCard(repaired));
 	});
 
 const handleCompleteSteps = (config: { card: number }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Completing pending steps...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* completeSteps(env, config.card);
-			}),
+		const result = yield* runWithFlowEnv(formatCompletingStepsMessage(), (env) =>
+			completeSteps(env, config.card),
 		);
-		const plural = result.updatedCount === 1 ? "" : "s";
-		yield* logSuccess(`completed ${result.updatedCount} step${plural} for #${result.number}`);
+		yield* logSuccess(formatCompleteStepsSummary(result.updatedCount, result.number));
 		if (result.contents.length > 0) {
-			yield* Console.log(result.contents.map((content) => `- ${content}`).join("\n"));
+			yield* Console.log(formatCompletedSteps(result.contents));
 		}
 	});
 
 const handleStd = (config: { card: number }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Standardizing card...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* standardizeCard(env, config.card);
-			}),
+		const result = yield* runWithFlowEnv(formatStandardizingCardMessage(), (env) =>
+			standardizeCard(env, config.card),
 		);
 		yield* Console.log(formatStandardizeResult(result));
 	});
 
 const handleStdAll = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Standardizing board...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* standardizeBoard(env);
-			}),
+		const result = yield* runWithFlowEnv(formatStandardizingBoardMessage(), (env) =>
+			standardizeBoard(env),
 		);
-		yield* Console.log(result.results.map(formatStandardizeResult).join("\n"));
-		yield* Console.log(
-			`total=${result.total} descriptions=${result.descriptionUpdated} steps_created=${result.stepsCreated} steps_updated=${result.stepsUpdated} steps_completed=${result.stepsCompleted}`,
-		);
+		yield* Console.log(formatStandardizeBoardResults(result.results));
+		yield* Console.log(formatStandardizeBoardSummary(result));
 	});
 
 const handleAdd = (config: {
@@ -269,14 +303,12 @@ const handleAdd = (config: {
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		if (!config.desc) {
-			yield* Console.log("usage: fizzyx flow add <user> <title> --desc <file|->");
+			yield* Console.log(formatAddUsage());
 			return;
 		}
-		const number = yield* withSpinner(
-			"Creating card...",
+		const number = yield* runWithFlowEnv(formatCreatingCardMessage(), (env) =>
 			Effect.gen(function* () {
 				const description = yield* readDescription(config.desc!);
-				const env = yield* makeFlowEnv;
 				return yield* add(env, {
 					user: config.user,
 					title: config.title,
@@ -284,17 +316,13 @@ const handleAdd = (config: {
 				});
 			}),
 		);
-		yield* Console.log(number);
+		yield* Console.log(formatAddedCard(number));
 	});
 
 const handleStepsFromDesc = (config: { card: number }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const steps = yield* withSpinner(
-			"Syncing Done When steps...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* stepsFromDescription(env, config.card);
-			}),
+		const steps = yield* runWithFlowEnv(formatSyncingDoneWhenStepsMessage(), (env) =>
+			stepsFromDescription(env, config.card),
 		);
 		yield* Console.log(printSteps(steps));
 	});
@@ -302,63 +330,49 @@ const handleStepsFromDesc = (config: { card: number }): Effect.Effect<void, any,
 const handleFlowTemplate = (config: { draft: boolean }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		if (config.draft) {
-			const draftResult = yield* withSpinner("Writing card draft...", createFlowDraft());
-			yield* Console.log(draftResult.path);
+			const draftResult = yield* withSpinner(formatWritingCardDraftMessage(), createFlowDraft());
+			yield* Console.log(formatFlowTemplateDraftPath(draftResult.path));
 			return;
 		}
-		yield* Console.log(
-			yield* withSpinner("Reading local card template...", loadFlowTemplateContent()),
+		const template = yield* withSpinner(
+			formatReadingCardTemplateMessage(),
+			loadFlowTemplateContent(),
 		);
+		yield* Console.log(formatFlowTemplateContent(template));
 	});
 
-const handleDoctor = (): Effect.Effect<void, any, any> =>
+const handleDoctor = (config: { apply: boolean }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner(
-			"Checking flow health...",
-			Effect.gen(function* () {
-				const env = yield* makeFlowEnv;
-				return yield* doctor(env);
-			}),
+		const result = yield* runWithFlowRuntimeEnv(
+			formatCheckingFlowHealthMessage(),
+			config.apply ? repairDoctor : analyzeDoctor,
 		);
-		const lines: string[] = [];
-		lines.push("=== Board Health ===");
-		lines.push(`account: ${result.account}`);
-		lines.push(`board: ${result.boardId}`);
-		lines.push(`api: ${result.apiUrl}`);
-		lines.push("");
-		lines.push("API-visible columns:");
-		for (const col of result.allColumns) {
-			const isExpected = result.columns.some((c) => c.id === col.id);
-			const status = isExpected ? "\u2713" : "\u2022";
-			lines.push(`  ${status} ${col.name} (${col.id})`);
-		}
-		lines.push("");
-		lines.push("Implicit system actions:");
-		for (const action of result.systemActions) {
-			lines.push(`  \u2713 ${action.name} via ${action.via} (not listed by columns API)`);
-		}
-		if (result.info.length > 0) {
-			lines.push("");
-			for (const msg of result.info) {
-				lines.push(`  i ${msg}`);
-			}
-		}
-		if (result.fixes.length > 0) {
-			lines.push("\nFixes:");
-			for (const fix of result.fixes) {
-				lines.push(`  \u2022 ${fix}`);
-			}
-		} else {
-			lines.push("\nAll good!");
-		}
-		yield* Console.log(lines.join("\n"));
+		yield* Console.log(formatDoctorResult(result, { applied: config.apply }));
 	});
 
 const handleFlowInit = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const env = yield* withSpinner("Initializing workflow config...", makeFlowEnv);
+		const { hadMissingConfig, initializedConfig } = yield* runWithFlowRuntimeEnv(
+			formatInitializingWorkflowConfigMessage(),
+			(env) =>
+				Effect.gen(function* () {
+					const hadMissingConfig = !env.config.flow;
+					return {
+						hadMissingConfig,
+						initializedConfig: yield* bootstrapFlowConfig(env, {
+							repairWorkflowColumns: hadMissingConfig,
+						}),
+					};
+				}),
+		);
+		if (hadMissingConfig) {
+			yield* Console.log(formatFlowConfigMissing());
+		}
 		yield* Console.log(
-			`flow configured: todo=${env.config.flow.columns.todo} in_progress=${env.config.flow.columns.inProgress}`,
+			formatFlowConfigured(
+				initializedConfig.flow.columns.todo,
+				initializedConfig.flow.columns.inProgress,
+			),
 		);
 	});
 
@@ -415,6 +429,28 @@ const flowStartCmd = Command.make(
 	},
 	handleStart,
 ).pipe(Command.withDescription("Start a card"));
+
+const flowReadyCmd = Command.make(
+	"ready",
+	{
+		card: Argument.integer("card").pipe(
+			Argument.withDescription("Card number"),
+			Argument.withMetavar("CARD"),
+		),
+	},
+	handleReady,
+).pipe(Command.withDescription("Move a card to READY"));
+
+const flowReviewCmd = Command.make(
+	"review",
+	{
+		card: Argument.integer("card").pipe(
+			Argument.withDescription("Card number"),
+			Argument.withMetavar("CARD"),
+		),
+	},
+	handleReview,
+).pipe(Command.withDescription("Move a card to REVIEW"));
 
 const flowDoneCmd = Command.make(
 	"done",
@@ -515,8 +551,8 @@ const flowCompleteStepsCmd = Command.make(
 	handleCompleteSteps,
 ).pipe(Command.withDescription("Complete pending steps"));
 
-const flowStdCmd = Command.make(
-	"std",
+const flowStandardizeCmd = Command.make(
+	"standardize",
 	{
 		card: Argument.integer("card").pipe(
 			Argument.withDescription("Card number"),
@@ -524,10 +560,10 @@ const flowStdCmd = Command.make(
 		),
 	},
 	handleStd,
-).pipe(Command.withAlias("standardize-card"), Command.withDescription("Standardize a single card"));
+).pipe(Command.withAlias("std"), Command.withDescription("Standardize a single card"));
 
-const flowStdAllCmd = Command.make("std-all", {}, handleStdAll).pipe(
-	Command.withAlias("standardize-board"),
+const flowStandardizeAllCmd = Command.make("standardize-all", {}, handleStdAll).pipe(
+	Command.withAlias("std-all"),
 	Command.withDescription("Standardize all board cards"),
 );
 
@@ -563,33 +599,21 @@ const flowTemplateCmd = Command.make(
 	handleFlowTemplate,
 ).pipe(Command.withDescription("Read card template or create draft"));
 
-const flowDoctorCmd = Command.make("doctor", {}, handleDoctor).pipe(
-	Command.withDescription("Check flow health"),
+const flowDoctorCmd = Command.make(
+	"doctor",
+	{
+		apply: Flag.boolean("apply").pipe(Flag.withDescription("Apply flow health fixes")),
+	},
+	handleDoctor,
+).pipe(Command.withDescription("Check flow health"));
+
+const flowHealthCmd = Command.make("health", {}, handleHealth).pipe(
+	Command.withDescription("Deprecated: use `fizzyx planner health`"),
 );
 
 const flowInitCmd = Command.make("init", {}, handleFlowInit).pipe(
 	Command.withDescription("Initialize flow config"),
 );
-
-const formatStandardizeResult = (result: {
-	number: number;
-	descriptionUpdated: boolean;
-	stepsCreated: number;
-	stepsUpdated: number;
-	stepsCompleted: number;
-}): string =>
-	`standardized #${result.number} description=${result.descriptionUpdated ? "yes" : "no"} steps_created=${result.stepsCreated} steps_updated=${result.stepsUpdated} steps_completed=${result.stepsCompleted}`;
-
-const readDescription = (path: string): Effect.Effect<string, any, any> =>
-	path === "-"
-		? Effect.tryPromise({
-				try: () => Bun.stdin.text(),
-				catch: (cause) => new Error(`failed to read stdin: ${String(cause)}`),
-			})
-		: Effect.tryPromise({
-				try: () => Bun.file(path).text(),
-				catch: (cause) => new Error(`failed to read ${path}: ${String(cause)}`),
-			});
 
 export const flowCmd = Command.make("flow").pipe(
 	Command.withDescription("Manage Fizzy workflow boards"),
@@ -599,7 +623,9 @@ export const flowCmd = Command.make("flow").pipe(
 		flowStatusCmd,
 		flowNextCmd,
 		flowShowCmd,
+		flowReadyCmd,
 		flowStartCmd,
+		flowReviewCmd,
 		flowDoneCmd,
 		flowBlockCmd,
 		flowAssignCmd,
@@ -608,12 +634,13 @@ export const flowCmd = Command.make("flow").pipe(
 		flowSkillCmd,
 		flowRepairMarkdownCmd,
 		flowCompleteStepsCmd,
-		flowStdCmd,
-		flowStdAllCmd,
+		flowStandardizeCmd,
+		flowStandardizeAllCmd,
 		flowAddCmd,
 		flowStepsFromDescCmd,
 		flowTemplateCmd,
 		flowDoctorCmd,
+		flowHealthCmd,
 		flowInitCmd,
 	]),
 );

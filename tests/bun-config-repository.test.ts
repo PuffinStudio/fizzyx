@@ -386,3 +386,68 @@ oss:
 		}
 	});
 });
+
+describe("OpenAPI config", () => {
+	test("setupOpenApiConfig appends entry when file has other sections", async () => {
+		const root = mkdtempSync(join(tmpdir(), "fizzyx-openapi-"));
+		const configPath = join(root, ".fizzyx.yaml");
+		const repo = makeBunConfigRepository();
+
+		try {
+			writeFileSync(configPath, "api_url: https://example.com\naccount: 1\nboard: board-1\n");
+			await Effect.runPromise(
+				repo.setupOpenApiConfig({
+					entry: {
+						input: "https://api.example.com/openapi.json",
+						output: "./src/api",
+						client: "wx",
+					},
+					configPath,
+				}),
+			);
+
+			const text = await Bun.file(configPath).text();
+			expect(text).toContain("openapi:");
+			expect(text).toContain("input: https://api.example.com/openapi.json");
+			expect(text).toContain("client: wx");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("setupOpenApiConfig replaces openapi block with --force", async () => {
+		const root = mkdtempSync(join(tmpdir(), "fizzyx-openapi-"));
+		const configPath = join(root, ".fizzyx.yaml");
+		const repo = makeBunConfigRepository();
+
+		try {
+			writeFileSync(
+				configPath,
+				`openapi:
+  - input: ./old-spec.json
+    output: ./old
+    client: fetch
+`,
+			);
+
+			await Effect.runPromise(
+				repo.setupOpenApiConfig({
+					entry: {
+						input: "https://api.example.com/openapi.json",
+						output: "./src/api",
+						client: "wx",
+					},
+					force: true,
+					configPath,
+				}),
+			);
+
+			const text = await Bun.file(configPath).text();
+			expect(text).not.toContain("input: ./old-spec.json");
+			expect(text).toContain("input: https://api.example.com/openapi.json");
+			expect(text).toContain("client: wx");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});

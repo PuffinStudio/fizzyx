@@ -18,10 +18,10 @@ Manage a Fizzy board from a repository-local `.fizzy.yaml`.
 fizzyx setup <board-id>
 fizzyx auth login <token>
 fizzyx auth status
-fizzyx flow doctor
+fizzyx flow mine --fresh
 ```
 
-`flow doctor` shows account, board, workflow columns, and whether the CLI is ready to operate on the board.
+`flow doctor` can still be run for an explicit health check, but new `fizzyx flow ...` commands auto-repair workflow columns and ids when needed.
 
 ### Create A Card
 
@@ -62,8 +62,8 @@ fizzyx flow status [--fresh]
 fizzyx flow assign <card> <user|me> [user...]
 fizzyx flow block <card> "<reason>"
 fizzyx flow repair-markdown <card>
-fizzyx flow std <card>
-fizzyx flow std-all
+fizzyx flow standardize <card> (alias: std)
+fizzyx flow standardize-all (alias: std-all)
 fizzyx flow workflow
 fizzyx flow skill
 fizzyx flow skill init [--force]
@@ -73,6 +73,44 @@ fizzyx flow skill init [--force]
 - `flow assign` skips users who are already assigned.
 - `flow block` moves the card to Not Now.
 - `flow workflow`, `flow skill`, and `flow template` prefer project-local overrides under `.agents/skills/fizzyx/`.
+
+## Planner Dashboard
+
+Start a local planner dashboard backed directly by the Fizzy API:
+
+```sh
+fizzyx planner start
+fizzyx planner snapshot
+fizzyx planner snapshot --auto-fix
+fizzyx planner health
+fizzyx planner repair-metadata
+fizzyx planner repair-metadata --apply
+fizzyx planner repair-metadata --apply --default-priority p2 --default-type chore
+```
+
+`planner snapshot` prints the same JSON used by the web dashboard. Project workflow uses `BACKLOG → READY → IN PROGRESS → REVIEW → DONE`, with `DONE` coming from closed cards and `BLOCKED` from Not Now/postponed cards.
+
+`planner repair-metadata` is dry-run by default. It inserts/syncs deterministic frontmatter from existing tags and assignees. Missing priority/type are only filled when explicit defaults are passed.
+
+Planner conventions use tags for filtering:
+
+```text
+priority:p0 priority:p1 priority:p2
+type:bug type:feature type:chore type:blocker
+area:frontend area:api phase:integration
+```
+
+Cards can also include frontmatter for richer project details:
+
+```md
+---
+priority: P1
+type: feature
+owner: ellen
+depends_on: [123]
+api_status: not_connected
+---
+```
 
 ## OSS Commands
 
@@ -237,6 +275,12 @@ const result = await someAction();
 
 ```sh
 fizzyx openapi list
+```
+
+### Initialize OpenAPI config
+
+```sh
+fizzyx openapi init
 ```
 
 ### Config (`.fizzy.yaml`)

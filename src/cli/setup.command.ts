@@ -2,6 +2,13 @@ import { Console, Effect, Option } from "effect";
 import { Command, Flag, Argument } from "effect/unstable/cli";
 import { listBoards, setup } from "../use-cases/flow-service";
 import { renderTable } from "./render";
+import {
+	formatInitializingWorkflowMessage,
+	formatLoadingBoardsMessage,
+	formatNoBoards,
+	formatSetupCreatedConfig,
+	formatSetupUsage,
+} from "./setup-output";
 import { withSpinner, logSuccess } from "./ui";
 
 const handleSetup = (config: {
@@ -10,9 +17,9 @@ const handleSetup = (config: {
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		if (config.list) {
-			const boards = yield* withSpinner("Loading Fizzy boards...", listBoards());
+			const boards = yield* withSpinner(formatLoadingBoardsMessage(), listBoards());
 			if (boards.length === 0) {
-				yield* Console.log("(no boards)");
+				yield* Console.log(formatNoBoards());
 				return;
 			}
 
@@ -26,15 +33,15 @@ const handleSetup = (config: {
 		}
 
 		if (Option.isNone(config.boardId)) {
-			yield* Console.log("usage: fizzyx setup <board-id>\n       fizzyx setup --list");
+			yield* Console.log(formatSetupUsage());
 			return;
 		}
 
 		const configResult = yield* withSpinner(
-			"Initializing Fizzy workflow...",
+			formatInitializingWorkflowMessage(),
 			setup({ board: config.boardId.value }),
 		);
-		yield* logSuccess(`created ${configResult.configPath}`);
+		yield* logSuccess(formatSetupCreatedConfig(configResult.configPath));
 	});
 
 export const setupCmd = Command.make(

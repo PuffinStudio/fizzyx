@@ -71,9 +71,13 @@ export interface Card {
 	title: string;
 	description?: string;
 	descriptionHtml?: string;
+	tags?: ReadonlyArray<string>;
 	column?: ColumnRef;
 	assignees?: ReadonlyArray<Assignee>;
 	closed?: boolean;
+	postponed?: boolean;
+	created_at?: string;
+	last_active_at?: string;
 	golden?: boolean;
 	steps?: ReadonlyArray<Step>;
 }

@@ -3,10 +3,35 @@ import type { OpenApiLoader } from "../ports/openapi-loader";
 import { SpecLoadError, SpecParseError } from "../domain/errors";
 import { parseSpec } from "../use-cases/openapi-parser";
 
+function parseSpecResponseAsDoc(
+	text: string,
+	contentType?: string | null,
+): Record<string, unknown> {
+	const normalized = (contentType || "").toLowerCase();
+	const isYaml = normalized.includes("yaml") || normalized.includes("yml");
+
+	if (isYaml) {
+		return Bun.YAML.parse(text) as Record<string, unknown>;
+	}
+
+	try {
+		return JSON.parse(text) as Record<string, unknown>;
+	} catch (jsonError) {
+		try {
+			return Bun.YAML.parse(text) as Record<string, unknown>;
+		} catch (yamlError) {
+			throw new Error(
+				`neither JSON nor YAML (${contentType ?? "content-type unknown"}): ${jsonError instanceof Error ? jsonError.message : String(jsonError)} / ${yamlError instanceof Error ? yamlError.message : String(yamlError)}`,
+			);
+		}
+	}
+}
+
 export const openapiUrlLoader: OpenApiLoader = {
 	load: (input: string, headers?: Record<string, string>) =>
 		Effect.gen(function* () {
 			let text: string;
+			let contentType: string | null = null;
 			try {
 				const init: RequestInit = {};
 				if (headers && Object.keys(headers).length > 0) {
@@ -31,6 +56,8 @@ export const openapiUrlLoader: OpenApiLoader = {
 					);
 				}
 
+				contentType = response.headers.get("content-type");
+
 				text = yield* Effect.tryPromise({
 					try: () => response.text(),
 					catch: (cause) =>
@@ -53,11 +80,11 @@ export const openapiUrlLoader: OpenApiLoader = {
 
 			let doc: Record<string, unknown>;
 			try {
-				doc = JSON.parse(text) as Record<string, unknown>;
+				doc = parseSpecResponseAsDoc(text, contentType);
 			} catch (e) {
 				return yield* Effect.fail(
 					new SpecParseError({
-						message: "cannot parse spec response as JSON",
+						message: "cannot parse spec response as JSON or YAML",
 						cause: e,
 					}),
 				);

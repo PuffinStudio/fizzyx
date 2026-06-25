@@ -7,10 +7,11 @@ import { flowCmd } from "./flow.command";
 import { ossCmd } from "./oss.command";
 import { openapiCmd } from "./openapi.command";
 import { updateCmd } from "./update.command";
+import { plannerCmd } from "./planner.command";
 
 const rootCmd = Command.make("fizzyx").pipe(
 	Command.withDescription("Fizzyx CLI — Fizzy workflow and code generation tool"),
-	Command.withSubcommands([setupCmd, authCmd, flowCmd, ossCmd, openapiCmd, updateCmd]),
+	Command.withSubcommands([setupCmd, authCmd, flowCmd, ossCmd, openapiCmd, updateCmd, plannerCmd]),
 );
 
 export const runCli = (args: ReadonlyArray<string>) => {

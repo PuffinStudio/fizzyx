@@ -140,6 +140,54 @@ export const renderOssConfig = (input: OssSetupInput, existingText: string): str
 	return Bun.YAML.stringify(ordered, null, 2);
 };
 
+type OpenApiTemplateInput = {
+	entry: OpenApiGenConfig;
+	force?: boolean;
+};
+
+export const renderOpenApiConfig = (input: OpenApiTemplateInput, existingText: string): string => {
+	const existing = parseYaml(existingText);
+	const existingOpenapi = existing.openapi;
+	const existingEntries = parseOpenapiConfig(existingOpenapi)?.entries ?? [];
+	const nextEntries = (input.force ? [] : existingEntries).map(formatOpenApiEntryForYaml);
+	nextEntries.push(formatOpenApiEntryForYaml(input.entry));
+
+	const nextOpenapi: YamlObject =
+		existingOpenapi && typeof existingOpenapi === "object" && !Array.isArray(existingOpenapi)
+			? ({ ...(existingOpenapi as YamlObject), entries: nextEntries } as YamlObject)
+			: ({ entries: nextEntries } as YamlObject);
+
+	const ordered: YamlObject = {};
+	for (const [key, value] of Object.entries(existing)) {
+		if (key === "openapi") {
+			ordered[key] = nextOpenapi;
+		} else {
+			ordered[key] = value;
+		}
+	}
+	if (!("openapi" in existing)) {
+		ordered.openapi = nextOpenapi;
+	}
+
+	return Bun.YAML.stringify(ordered, null, 2);
+};
+
+const formatOpenApiEntryForYaml = (entry: OpenApiGenConfig): YamlObject => {
+	const result: YamlObject = {
+		input: entry.input,
+		output: entry.output,
+		client: entry.client,
+	};
+	if (entry.apiName !== undefined) result.apiName = entry.apiName;
+	if (entry.typesName !== undefined) result.typesName = entry.typesName;
+	if (entry.runtimeName !== undefined) result.runtimeName = entry.runtimeName;
+	if (entry.posthook !== undefined) result.posthook = entry.posthook;
+	if (entry.shareRuntime !== undefined) result.shareRuntime = entry.shareRuntime;
+	if (entry.headers !== undefined) result.headers = entry.headers as YamlValue;
+	if (entry.stateManagement !== undefined) result.stateManagement = entry.stateManagement;
+	return result;
+};
+
 export const parseCredentialsJson = (text: string, path: string): Credentials => {
 	if (text.trim() === "") {
 		throw new FileError({ message: `No token in ${path}`, path });

@@ -7,6 +7,7 @@ import { OFFICIAL_CONFIG_FILE } from "./app-paths";
 import type { Credentials, InitializedProjectConfig } from "../domain/models";
 import type { ConfigRepository } from "../ports/config-repository";
 import { ConfigRepo } from "../ports/config-repository";
+import type { OpenApiSetupInput } from "../ports/config-repository";
 import { isTaggedError } from "../_shared/helpers";
 import {
 	parseCredentialsJson,
@@ -14,6 +15,7 @@ import {
 	parseOssConfig,
 	parseProjectConfig,
 	parseYaml,
+	renderOpenApiConfig,
 	renderOssConfig,
 	renderProjectConfig,
 } from "./config-codec";
@@ -61,6 +63,14 @@ export const makeBunConfigRepository = (): ConfigRepository => ({
 				});
 			}
 			return parsed;
+		}),
+
+	setupOpenApiConfig: (input: OpenApiSetupInput) =>
+		Effect.gen(function* () {
+			const path = input.configPath || `${process.cwd()}/${CONFIG_FILE}`;
+			const existingText = yield* readOptionalText(path);
+			const config = renderOpenApiConfig(input, existingText);
+			yield* writeText(path, config, 0o600);
 		}),
 
 	loadCredentials: (profile) =>

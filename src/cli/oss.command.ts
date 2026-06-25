@@ -2,6 +2,40 @@ import { Console, Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { buildKeyTree } from "./render";
 import {
+	formatConfiguringKeys,
+	formatConfiguringOss,
+	formatAccessKeyIdPrompt,
+	formatSecretAccessKeyPrompt,
+	formatCredentialsStored,
+	formatKeysMissingMessage,
+	formatManifestPath,
+	formatNoCredentialsMessage,
+	formatNoObjects,
+	formatObjectCount,
+	formatOssConfigHint,
+	formatBlankLine,
+	formatOssConfigWritten,
+	formatOssScaffoldWritten,
+	formatCheckingOssConfigMessage,
+	formatCheckingOssStatusMessage,
+	formatListingObjectsMessage,
+	formatStoringCredentialsMessage,
+	formatWritingOssConfigMessage,
+	formatPendingDeletionHeader,
+	formatPendingDeletionItem,
+	formatPendingUploadHeader,
+	formatPendingUploadItem,
+	formatSetupUsage,
+	formatStatusEnv,
+	formatStatusManifestEntries,
+	formatStatusPendingDeletions,
+	formatStatusPendingUploads,
+	formatStatusTotalLocal,
+	formatSyncSummary,
+	formatUploadedObject,
+	formatTruncatedObjects,
+} from "./oss-output";
+import {
 	ossInitBlank,
 	ossSetup,
 	ossStoreCredentials,
@@ -15,11 +49,11 @@ import { withSpinner, logSuccess, logError } from "./ui";
 const handleLs = (config: { env: string; prefix?: string }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const result = yield* withSpinner(
-			`Listing ${config.env}...`,
+			formatListingObjectsMessage(config.env),
 			ossList({ env: config.env, prefix: config.prefix ?? undefined }),
 		);
 		if (result.objects.length === 0) {
-			yield* Console.log(`${config.env}: no objects found`);
+			yield* Console.log(formatNoObjects(config.env));
 			return;
 		}
 		const tree = buildKeyTree(result.objects as { key: string; size?: number }[]);
@@ -27,9 +61,9 @@ const handleLs = (config: { env: string; prefix?: string }): Effect.Effect<void,
 			yield* Console.log(line);
 		}
 		if (result.isTruncated) {
-			yield* Console.log("  ... (truncated, more objects available)");
+			yield* Console.log(formatTruncatedObjects());
 		}
-		yield* Console.log(`${config.env}: ${result.objects.length} objects`);
+		yield* Console.log(formatObjectCount(config.env, result.objects.length));
 	});
 
 const handleSyncCmd = (config: {
@@ -87,40 +121,41 @@ const handleSyncCmd = (config: {
 			result.durationMs >= 1000
 				? `${(result.durationMs / 1000).toFixed(1)}s`
 				: `${result.durationMs}ms`;
-		yield* logSuccess(
-			`${config.env} synced \u00b7 ${result.uploaded} uploaded \u00b7 ${result.skipped} skipped \u00b7 ${dur}`,
-		);
+		yield* logSuccess(formatSyncSummary(config.env, result.uploaded, result.skipped, dur));
 		if (!config.noUrls && result.uploadedKeys.length > 0) {
 			const base = result.endpoint.replace(/\/+$/, "");
 			for (const key of result.uploadedKeys) {
-				yield* Console.log(`    ${base}/${key}`);
+				yield* Console.log(formatUploadedObject(base, key));
 			}
 		}
 	});
 
 const handleStatusCmd = (config: { env: string; files: boolean }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const result = yield* withSpinner("Checking OSS status...", ossStatus({ env: config.env }));
-		yield* Console.log(`env: ${result.env}`);
-		yield* Console.log(`total local files: ${result.totalLocal}`);
-		yield* Console.log(`manifest entries: ${result.manifestEntries}`);
-		yield* Console.log(`pending uploads: ${result.pendingUploads}`);
-		yield* Console.log(`pending deletions: ${result.pendingDeletions}`);
+		const result = yield* withSpinner(
+			formatCheckingOssStatusMessage(),
+			ossStatus({ env: config.env }),
+		);
+		yield* Console.log(formatStatusEnv(result.env));
+		yield* Console.log(formatStatusTotalLocal(result.totalLocal));
+		yield* Console.log(formatStatusManifestEntries(result.manifestEntries));
+		yield* Console.log(formatStatusPendingUploads(result.pendingUploads));
+		yield* Console.log(formatStatusPendingDeletions(result.pendingDeletions));
 		if (config.files) {
 			if (result.pendingUploadFiles.length > 0) {
-				yield* Console.log("\npending upload files:");
+				yield* Console.log(formatPendingUploadHeader());
 				for (const file of result.pendingUploadFiles) {
-					yield* Console.log(`  + ${file}`);
+					yield* Console.log(formatPendingUploadItem(file));
 				}
 			}
 			if (result.pendingDeletionFiles.length > 0) {
-				yield* Console.log("\nmanifest-only files:");
+				yield* Console.log(formatPendingDeletionHeader());
 				for (const file of result.pendingDeletionFiles) {
-					yield* Console.log(`  - ${file}`);
+					yield* Console.log(formatPendingDeletionItem(file));
 				}
 			}
 		}
-		yield* Console.log(`manifest: ${result.manifestPath}`);
+		yield* Console.log(formatManifestPath(result.manifestPath));
 	});
 
 const handleSetupCmd = (config: {
@@ -135,43 +170,37 @@ const handleSetupCmd = (config: {
 		const resolvedEnv = config.env ?? "default";
 
 		if (!config.endpoint && !config.region && !config.localDir) {
-			const wrote = yield* withSpinner("Checking OSS config...", ossInitBlank());
+			const wrote = yield* withSpinner(formatCheckingOssConfigMessage(), ossInitBlank());
 			if (wrote) {
-				yield* Console.log("OSS scaffold written to .fizzy.yaml");
-				yield* Console.log(
-					"Edit endpoint, region, local_dir, and optionally bucket/remote_prefix in the file",
-				);
-				yield* Console.log("");
+				yield* Console.log(formatOssScaffoldWritten());
+				yield* Console.log(formatOssConfigHint());
+				yield* Console.log(formatBlankLine());
 			}
-			yield* Console.log(`Configuring keys for [${resolvedEnv}]:`);
-			const accessKeyId = yield* promptSecret("  Access Key ID: ");
-			const secretAccessKey = yield* promptSecret("  Secret Access Key: ");
+			yield* Console.log(formatConfiguringKeys(resolvedEnv));
+			const accessKeyId = yield* promptSecret(formatAccessKeyIdPrompt());
+			const secretAccessKey = yield* promptSecret(formatSecretAccessKeyPrompt());
 			if (!accessKeyId || !secretAccessKey) {
-				yield* Console.log(
-					"Keys not provided — add them later with: fizzyx oss setup --env <name>",
-				);
+				yield* Console.log(formatKeysMissingMessage());
 				return;
 			}
 			yield* withSpinner(
-				"Storing credentials...",
+				formatStoringCredentialsMessage(),
 				ossStoreCredentials(resolvedEnv, accessKeyId, secretAccessKey),
 			);
-			yield* logSuccess("Credentials stored in OS keychain (service: fizzyx-oss)");
+			yield* logSuccess(formatCredentialsStored());
 			return;
 		}
 
 		if (!config.endpoint || !config.region || !config.localDir) {
-			yield* Console.log(
-				"Usage: fizzyx oss setup --env <name> --endpoint <url> --region <region> --local-dir <path> [--bucket <name>] [--remote-prefix <prefix>]",
-			);
+			yield* Console.log(formatSetupUsage());
 			return;
 		}
 
-		yield* Console.log(`Configuring OSS [${resolvedEnv}]:`);
-		const accessKeyId = yield* promptSecret("  Access Key ID: ");
-		const secretAccessKey = yield* promptSecret("  Secret Access Key: ");
+		yield* Console.log(formatConfiguringOss(resolvedEnv));
+		const accessKeyId = yield* promptSecret(formatAccessKeyIdPrompt());
+		const secretAccessKey = yield* promptSecret(formatSecretAccessKeyPrompt());
 		if (!accessKeyId || !secretAccessKey) {
-			yield* Console.log("Access Key ID and Secret Access Key are required");
+			yield* Console.log(formatNoCredentialsMessage());
 			return;
 		}
 
@@ -189,11 +218,11 @@ const handleSetupCmd = (config: {
 				remotePrefix: config.remotePrefix ?? undefined,
 			},
 		};
-		const result = yield* withSpinner("Writing OSS config...", ossSetup(input));
+		const result = yield* withSpinner(formatWritingOssConfigMessage(), ossSetup(input));
 		const resultEnvConfig = result.environments[resolvedEnv];
 		if (!resultEnvConfig) throw new Error(`OSS environment "${resolvedEnv}" not found after setup`);
-		yield* logSuccess(`OSS ${resolvedEnv} config written to ${resultEnvConfig.endpoint}`);
-		yield* Console.log("Credentials stored in OS keychain (service: fizzyx-oss)");
+		yield* logSuccess(formatOssConfigWritten(resolvedEnv, resultEnvConfig.endpoint));
+		yield* Console.log(formatCredentialsStored());
 	});
 
 const ossLsCmd = Command.make(

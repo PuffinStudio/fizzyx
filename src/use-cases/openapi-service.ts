@@ -2,9 +2,16 @@ import { Effect } from "effect";
 import { existsSync } from "node:fs";
 import type { CodeExtensionGenerator, CodeGenerator } from "../ports/code-generator";
 import type { OpenApiLoader } from "../ports/openapi-loader";
-import { ConfigRepo, CONFIG_FILE, LEGACY_CONFIG_FILE } from "../ports/config-repository";
+import {
+	ConfigRepo,
+	CONFIG_FILE,
+	LEGACY_CONFIG_FILE,
+	type ConfigRepository,
+} from "../ports/config-repository";
 import {
 	CodegenError,
+	FileError,
+	ConfigError,
 	ConfigValidationError,
 	SpecLoadError,
 	SpecParseError,
@@ -14,6 +21,7 @@ import type {
 	GeneratedFile,
 	KnownGenerator,
 	ParsedSpec,
+	OpenApiGenConfig,
 	OpenApiProjectConfig,
 } from "../domain/openapi-models";
 import { openapiFileLoader } from "../adapters/openapi-file-loader";
@@ -38,6 +46,14 @@ const configFileExists = (): boolean => existsSync(CONFIG_FILE) || existsSync(LE
 
 const isUrl = (input: string): boolean =>
 	input.startsWith("http://") || input.startsWith("https://");
+
+const DEFAULT_OPENAPI_INPUT = "";
+const DEFAULT_OPENAPI_OUTPUT = "./src/api";
+const DEFAULT_OPENAPI_CLIENT = "fetch";
+
+const SUPPORTED_OPENAPI_CLIENTS = new Set(["wx", "fetch", "effect"]);
+
+const normalizeClient = (value: string): string => value.trim().toLowerCase();
 
 function selectLoader(input: string): OpenApiLoader {
 	return isUrl(input) ? openapiUrlLoader : openapiFileLoader;
@@ -200,6 +216,47 @@ export const writeManyFiles = (results: GenerateResult[]): Effect.Effect<void, E
 		for (const result of results) {
 			yield* writeFiles(result.files, result.outputDir);
 		}
+	});
+
+export interface OpenApiInitInput {
+	input?: string;
+	output?: string;
+	client?: string;
+	force?: boolean;
+}
+
+export const initOpenApiConfig = (
+	options: OpenApiInitInput = {},
+): Effect.Effect<boolean, ConfigError | FileError, ConfigRepository> =>
+	Effect.gen(function* () {
+		const configRepo = yield* ConfigRepo;
+		const projectConfig = configFileExists()
+			? yield* configRepo.loadProjectConfig().pipe(Effect.catch((cause) => Effect.fail(cause)))
+			: undefined;
+
+		const hasOpenApiConfig = (projectConfig?.openapi?.entries?.length ?? 0) > 0;
+		if (hasOpenApiConfig && !options.force) {
+			return false;
+		}
+
+		const resolvedClient = normalizeClient(options.client ?? DEFAULT_OPENAPI_CLIENT);
+		const supportedClient = SUPPORTED_OPENAPI_CLIENTS.has(resolvedClient)
+			? resolvedClient
+			: DEFAULT_OPENAPI_CLIENT;
+
+		const entry: OpenApiGenConfig = {
+			input: options.input?.trim() || DEFAULT_OPENAPI_INPUT,
+			output: options.output || DEFAULT_OPENAPI_OUTPUT,
+			client: supportedClient,
+		};
+
+		const configPath = projectConfig?.configPath ?? `${process.cwd()}/${CONFIG_FILE}`;
+		yield* configRepo.setupOpenApiConfig({
+			entry,
+			force: options.force ?? false,
+			configPath,
+		});
+		return true;
 	});
 
 export const listGenerators = (): KnownGenerator[] =>

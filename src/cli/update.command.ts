@@ -1,14 +1,22 @@
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { VERSION } from "../_shared/version";
-import { logSuccess, logInfo, logWarn } from "./ui";
+import {
+	formatAlreadyUpToDate,
+	formatInstallRunning,
+	formatUpdateAvailable,
+	formatUpdatedTo,
+	formatUpdateCheckMessage,
+	formatUpdateInstallFailed,
+} from "./update-output";
+import { logSuccess, logInfo, logWarn, logError } from "./ui";
 
 const CHECK_URL = "https://registry.npmjs.org/@puffinstudio/fizzyx/latest";
 const PACKAGE_NAME = "@puffinstudio/fizzyx";
 
 const handleUpdate = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		yield* logInfo("Checking for updates...");
+		yield* logInfo(formatUpdateCheckMessage());
 
 		const latest = yield* Effect.tryPromise({
 			try: async (): Promise<string> => {
@@ -27,12 +35,12 @@ const handleUpdate = (): Effect.Effect<void, any, any> =>
 		});
 
 		if (latest === VERSION) {
-			yield* logSuccess(`Already up to date (${VERSION})`);
+			yield* logSuccess(formatAlreadyUpToDate(VERSION));
 			return;
 		}
 
-		yield* logWarn(`Update available: ${VERSION} → ${latest}`);
-		yield* logInfo("Installing...");
+		yield* logWarn(formatUpdateAvailable(VERSION, latest));
+		yield* logInfo(formatInstallRunning());
 
 		const proc = yield* Effect.tryPromise({
 			try: async () => {
@@ -48,11 +56,11 @@ const handleUpdate = (): Effect.Effect<void, any, any> =>
 		});
 
 		if (proc.exitCode !== 0) {
-			yield* Console.error("Update installation failed");
+			yield* logError(formatUpdateInstallFailed());
 			return;
 		}
 
-		yield* logSuccess(`Updated to ${latest}`);
+		yield* logSuccess(formatUpdatedTo(latest));
 	});
 
 export const updateCmd = Command.make("update", {}, handleUpdate).pipe(

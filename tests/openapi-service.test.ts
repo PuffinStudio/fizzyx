@@ -155,6 +155,113 @@ test("openapi generate --help prints usage", async () => {
 	expect(stdout).toContain("--state-management");
 });
 
+test("openapi init --help prints usage", async () => {
+	const { stdout, exitCode } = await runCli(["openapi", "init", "--help"]);
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("fizzyx openapi init");
+	expect(stdout).toContain("--force");
+});
+
+test("openapi init writes a scaffold config when missing", async () => {
+	const root = makeTempDir();
+	try {
+		const fizzyPath = join(root, ".fizzyx.yaml");
+		expect(existsSync(fizzyPath)).toBe(false);
+
+		const { stdout, exitCode } = await runCli(
+			["openapi", "init", "-i", "https://example.com/openapi.json", "-o", "./src/api", "-c", "wx"],
+			{ cwd: root },
+		);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("OpenAPI config scaffold written to .fizzyx.yaml");
+		const yaml = readFileSync(fizzyPath, "utf-8");
+		expect(yaml).toContain("openapi:");
+		expect(yaml).toContain("input: https://example.com/openapi.json");
+		expect(yaml).toContain("output: ./src/api");
+		expect(yaml).toContain("client: wx");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi init writes scaffold with empty input when input is omitted", async () => {
+	const root = makeTempDir();
+	try {
+		const fizzyPath = join(root, ".fizzyx.yaml");
+		const { stdout, exitCode } = await runCli(["openapi", "init", "-o", "./src/api", "-c", "wx"], {
+			cwd: root,
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("OpenAPI config scaffold written to .fizzyx.yaml");
+		const yaml = readFileSync(fizzyPath, "utf-8");
+		expect(yaml).toContain("openapi:");
+		expect(yaml).toContain("input:");
+		expect(yaml).not.toContain("https://openapi.example.com/openapi.json");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi init will skip when config already has openapi entries unless --force", async () => {
+	const root = makeTempDir();
+	try {
+		const fizzyPath = join(root, ".fizzyx.yaml");
+		writeFileSync(
+			fizzyPath,
+			"openapi:\n  - input: ./old-spec.json\n    output: ./old-api\n    client: wx\n",
+		);
+
+		const { stdout, exitCode } = await runCli(
+			["openapi", "init", "-i", "https://example.com/openapi.json", "-o", "./src/api", "-c", "wx"],
+			{ cwd: root },
+		);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("openapi config already exists");
+		const yaml = readFileSync(fizzyPath, "utf-8");
+		expect(yaml).toContain("input: ./old-spec.json");
+		expect(yaml).not.toContain("https://example.com/openapi.json");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi init --force replaces existing openapi config", async () => {
+	const root = makeTempDir();
+	try {
+		const fizzyPath = join(root, ".fizzyx.yaml");
+		writeFileSync(
+			fizzyPath,
+			"openapi:\n  - input: ./old-spec.json\n    output: ./old-api\n    client: wx\n",
+		);
+
+		const { exitCode } = await runCli(
+			[
+				"openapi",
+				"init",
+				"--force",
+				"-i",
+				"https://example.com/new-spec.json",
+				"-o",
+				"./src/api",
+				"-c",
+				"fetch",
+			],
+			{ cwd: root },
+		);
+
+		expect(exitCode).toBe(0);
+		const yaml = readFileSync(fizzyPath, "utf-8");
+		expect(yaml).toContain("input: https://example.com/new-spec.json");
+		expect(yaml).toContain("client: fetch");
+		expect(yaml).not.toContain("input: ./old-spec.json");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("openapi list shows built-in generators", async () => {
 	const { stdout, exitCode } = await runCli(["openapi", "list"]);
 	expect(exitCode).toBe(0);
@@ -302,6 +409,109 @@ test("openapi generate with --output file path sets custom api name", async () =
 		const api = readFileSync(join(root, "api", "sdk.ts"), "utf-8");
 		expect(api).toContain("export function listPets");
 	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate accepts YAML from URL input", async () => {
+	const root = makeTempDir();
+	const server = Bun.serve({
+		port: 0,
+		hostname: "127.0.0.1",
+		fetch() {
+			return new Response(Bun.YAML.stringify(SAMPLE_SPEC), {
+				headers: { "content-type": "application/yaml; charset=utf-8" },
+			});
+		},
+	});
+
+	try {
+		const outDir = join(root, "api");
+
+		const { stdout, exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			`http://127.0.0.1:${server.port}/openapi.yaml`,
+			"-o",
+			outDir,
+			"-c",
+			"wx",
+		]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 4 file(s)");
+		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+	} finally {
+		server.stop();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate accepts YAML from URL with text/yaml header", async () => {
+	const root = makeTempDir();
+	const server = Bun.serve({
+		port: 0,
+		hostname: "127.0.0.1",
+		fetch() {
+			return new Response(Bun.YAML.stringify(SAMPLE_SPEC), {
+				headers: { "content-type": "text/yaml; charset=utf-8" },
+			});
+		},
+	});
+
+	try {
+		const outDir = join(root, "api");
+
+		const { stdout, exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			`http://127.0.0.1:${server.port}/openapi.yaml`,
+			"-o",
+			outDir,
+			"-c",
+			"wx",
+		]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 4 file(s)");
+		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+	} finally {
+		server.stop();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate accepts YAML from URL without content-type header", async () => {
+	const root = makeTempDir();
+	const server = Bun.serve({
+		port: 0,
+		hostname: "127.0.0.1",
+		fetch() {
+			return new Response(Bun.YAML.stringify(SAMPLE_SPEC));
+		},
+	});
+
+	try {
+		const outDir = join(root, "api");
+
+		const { stdout, exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			`http://127.0.0.1:${server.port}/openapi.yaml`,
+			"-o",
+			outDir,
+			"-c",
+			"wx",
+		]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("generated 4 file(s)");
+		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+	} finally {
+		server.stop();
 		rmSync(root, { recursive: true, force: true });
 	}
 });
@@ -707,6 +917,43 @@ test("openapi generate --posthook with raw command", async () => {
 
 		expect(exitCode).toBe(0);
 		expect(stderr).toContain("running: echo");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("openapi generate with multiple config entries runs a shared posthook only once", async () => {
+	const root = makeTempDir();
+	try {
+		const specA = join(root, "spec-a.json");
+		const specB = join(root, "spec-b.json");
+		const markerPath = join(root, "posthook.log");
+		writeFileSync(specA, JSON.stringify(SAMPLE_SPEC, null, 2));
+		writeFileSync(specB, JSON.stringify(SAMPLE_SPEC, null, 2));
+		writeFileSync(
+			join(root, "package.json"),
+			JSON.stringify({ scripts: { "trace-hook": `sh -lc 'printf "1" >> ${markerPath}'` } }),
+		);
+		writeFileSync(
+			join(root, ".fizzy.yaml"),
+			`openapi:
+  posthook: trace-hook
+  entries:
+    - input: ${specA}
+      output: ${join(root, "api-a")}
+      client: fetch
+    - input: ${specB}
+      output: ${join(root, "api-b")}
+      client: fetch
+`,
+		);
+
+		const { stderr, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
+
+		expect(exitCode).toBe(0);
+		const marker = readFileSync(markerPath, "utf-8");
+		expect(marker).toBe("1");
+		expect((stderr.match(/running: bun run trace-hook/g) || []).length).toBe(1);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

@@ -9,6 +9,7 @@ import type {
 	OssEnvironmentName,
 	ProjectConfig,
 } from "../domain/models";
+import type { OpenApiGenConfig } from "../domain/openapi-models";
 
 /** The well-known project config filename convention */
 export const CONFIG_FILE = ".fizzyx.yaml";
@@ -26,10 +27,17 @@ export interface ConfigRepository {
 		input: SetupProjectConfigInput,
 	) => Effect.Effect<InitializedProjectConfig, FileError>;
 	setupOssConfig: (input: OssSetupInput) => Effect.Effect<OssConfig, FileError>;
+	setupOpenApiConfig: (input: OpenApiSetupInput) => Effect.Effect<void, FileError>;
 	loadCredentials: (profile: string) => Effect.Effect<Credentials, FileError>;
 	migrateCredentialsFromOfficial: (profile: string) => Effect.Effect<Credentials, FileError>;
 	saveCredentials: (profile: string, credentials: Credentials) => Effect.Effect<void, FileError>;
 	deleteCredentials: (profile: string) => Effect.Effect<void, FileError>;
+}
+
+export interface OpenApiSetupInput {
+	entry: OpenApiGenConfig;
+	force?: boolean;
+	configPath?: string;
 }
 
 export interface SetupProjectConfigInput {

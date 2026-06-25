@@ -1,4 +1,5 @@
 import $RefParser from "@apidevtools/json-schema-ref-parser";
+import { toPascalCase } from "../domain/codegen-utils";
 import type {
 	ParsedEndpoint,
 	ParsedProperty,
@@ -8,13 +9,17 @@ import type {
 	QueryParam,
 } from "../domain/openapi-models";
 
+type SchemaNameResolver = (name: string) => string;
+
 export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpec> {
 	const info = doc.info as Record<string, unknown> | undefined;
 	const title = (info?.title as string) ?? "API";
 	const version = (info?.version as string) ?? "0.0.0";
 
-	const { refMap, inlineTypes } = buildSchemaRefMap(doc);
-	const propRefs = buildPropertyRefs(doc);
+	const schemas = extractRawSchemas(doc);
+	const resolveSchemaName = buildSchemaNameResolver(schemas);
+	const { refMap, inlineTypes } = buildSchemaRefMap(doc, resolveSchemaName);
+	const propRefs = buildPropertyRefs(doc, resolveSchemaName);
 
 	const dereferenced = (await $RefParser.dereference(JSON.parse(JSON.stringify(doc)), {
 		parse: { yaml: false },
@@ -23,17 +28,18 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 	const derefSchemas = parseAllSchemas(
 		dereferenced.components as Record<string, unknown> | undefined,
 		propRefs,
+		resolveSchemaName,
 	);
 
 	// Parse inline response/body schemas as named types so they appear in types.ts
 	for (const [typeName, schema] of inlineTypes) {
 		if (!derefSchemas[typeName]) {
-			derefSchemas[typeName] = parseSchema(typeName, schema, propRefs);
+			derefSchemas[typeName] = parseSchema(typeName, schema, propRefs, resolveSchemaName);
 		}
 	}
 
 	const paths = dereferenced.paths as Record<string, unknown> | undefined;
-	const endpoints = parseAllEndpoints(paths, derefSchemas, refMap);
+	const endpoints = parseAllEndpoints(paths, derefSchemas, refMap, resolveSchemaName);
 
 	return { title, version, endpoints, types: derefSchemas };
 }
@@ -43,7 +49,29 @@ function extractRawSchemas(doc: Record<string, unknown>): Record<string, unknown
 	return (components?.schemas as Record<string, unknown> | undefined) ?? {};
 }
 
-function buildSchemaRefMap(doc: Record<string, unknown>): {
+function buildSchemaNameResolver(schemas: Record<string, unknown>): SchemaNameResolver {
+	const used = new Set<string>();
+	const map = new Map<string, string>();
+
+	for (const [rawName] of Object.entries(schemas)) {
+		const base = toPascalCase(rawName);
+		let normalized = base;
+		let counter = 2;
+		while (used.has(normalized)) {
+			normalized = `${base}${counter}`;
+			counter += 1;
+		}
+		used.add(normalized);
+		map.set(rawName, normalized);
+	}
+
+	return (rawName) => map.get(rawName) ?? toPascalCase(rawName);
+}
+
+function buildSchemaRefMap(
+	doc: Record<string, unknown>,
+	resolveSchemaName: SchemaNameResolver,
+): {
 	refMap: Map<string, string>;
 	inlineTypes: Map<string, Record<string, unknown>>;
 } {
@@ -76,7 +104,7 @@ function buildSchemaRefMap(doc: Record<string, unknown>): {
 						if (typeof schema.$ref === "string") {
 							const name = schema.$ref.split("/").pop();
 							if (name && schemas[name]) {
-								refMap.set(`${opKey}/response`, name);
+								refMap.set(`${opKey}/response`, resolveSchemaName(name));
 							}
 						} else if (schema.type === "array") {
 							const items = schema.items as Record<string, unknown> | undefined;
@@ -84,7 +112,7 @@ function buildSchemaRefMap(doc: Record<string, unknown>): {
 							if (typeof ref === "string") {
 								const name = (ref as string).split("/").pop();
 								if (name && schemas[name]) {
-									refMap.set(`${opKey}/response`, `${name}[]`);
+									refMap.set(`${opKey}/response`, `${resolveSchemaName(name)}[]`);
 								}
 							} else {
 								const inner = maybeUnwrapEnvelope(schema);
@@ -93,7 +121,7 @@ function buildSchemaRefMap(doc: Record<string, unknown>): {
 									inlineTypes.set(typeName, inner);
 									refMap.set(`${opKey}/response`, typeName);
 								} else {
-									refMap.set(`${opKey}/response/raw`, schemaToTsType(inner));
+									refMap.set(`${opKey}/response/raw`, schemaToTsType(inner, resolveSchemaName));
 								}
 							}
 						} else {
@@ -103,7 +131,7 @@ function buildSchemaRefMap(doc: Record<string, unknown>): {
 								inlineTypes.set(typeName, inner);
 								refMap.set(`${opKey}/response`, typeName);
 							} else {
-								refMap.set(`${opKey}/response/raw`, schemaToTsType(inner));
+								refMap.set(`${opKey}/response/raw`, schemaToTsType(inner, resolveSchemaName));
 							}
 						}
 					}
@@ -120,7 +148,7 @@ function buildSchemaRefMap(doc: Record<string, unknown>): {
 					if (typeof schema.$ref === "string") {
 						const name = schema.$ref.split("/").pop();
 						if (name && schemas[name]) {
-							refMap.set(`${opKey}/body`, name);
+							refMap.set(`${opKey}/body`, resolveSchemaName(name));
 						}
 					} else if (schema.type === "array") {
 						const items = schema.items as Record<string, unknown> | undefined;
@@ -128,21 +156,21 @@ function buildSchemaRefMap(doc: Record<string, unknown>): {
 						if (typeof ref === "string") {
 							const name = (ref as string).split("/").pop();
 							if (name && schemas[name]) {
-								refMap.set(`${opKey}/body`, `${name}[]`);
+								refMap.set(`${opKey}/body`, `${resolveSchemaName(name)}[]`);
 							}
 						} else if (isObjectSchema(schema)) {
 							const typeName = `${toPascalCase(operationId)}Request`;
 							inlineTypes.set(typeName, schema);
 							refMap.set(`${opKey}/body`, typeName);
 						} else {
-							refMap.set(`${opKey}/body/raw`, schemaToTsType(schema));
+							refMap.set(`${opKey}/body/raw`, schemaToTsType(schema, resolveSchemaName));
 						}
 					} else if (isObjectSchema(schema)) {
 						const typeName = `${toPascalCase(operationId)}Request`;
 						inlineTypes.set(typeName, schema);
 						refMap.set(`${opKey}/body`, typeName);
 					} else {
-						refMap.set(`${opKey}/body/raw`, schemaToTsType(schema));
+						refMap.set(`${opKey}/body/raw`, schemaToTsType(schema, resolveSchemaName));
 					}
 				}
 			}
@@ -158,19 +186,14 @@ function isObjectSchema(schema: Record<string, unknown>): boolean {
 	return false;
 }
 
-function toPascalCase(s: string): string {
-	return s
-		.replace(/[-_.]/g, " ")
-		.split(" ")
-		.filter(Boolean)
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join("");
-}
-
-function buildPropertyRefs(doc: Record<string, unknown>): Map<string, string> {
+function buildPropertyRefs(
+	doc: Record<string, unknown>,
+	resolveSchemaName: SchemaNameResolver,
+): Map<string, string> {
 	const refs = new Map<string, string>();
 	const schemas = extractRawSchemas(doc);
 	for (const [schemaName, schema] of Object.entries(schemas)) {
+		const sourceName = resolveSchemaName(schemaName);
 		const props = (schema as Record<string, unknown>)?.properties as
 			| Record<string, unknown>
 			| undefined;
@@ -181,14 +204,14 @@ function buildPropertyRefs(doc: Record<string, unknown>): Map<string, string> {
 			if (typeof ref === "string") {
 				const targetName = ref.split("/").pop();
 				if (targetName && schemas[targetName]) {
-					refs.set(`${schemaName}.${propName}`, targetName);
+					refs.set(`${sourceName}.${propName}`, resolveSchemaName(targetName));
 				}
 			}
 			const itemsRef = (ps.items as Record<string, unknown> | undefined)?.$ref;
 			if (typeof itemsRef === "string") {
 				const targetName = itemsRef.split("/").pop();
 				if (targetName && schemas[targetName]) {
-					refs.set(`${schemaName}.${propName}`, `${targetName}[]`);
+					refs.set(`${sourceName}.${propName}`, `${resolveSchemaName(targetName)}[]`);
 				}
 			}
 		}
@@ -199,11 +222,18 @@ function buildPropertyRefs(doc: Record<string, unknown>): Map<string, string> {
 function parseAllSchemas(
 	components: Record<string, unknown> | undefined,
 	propRefs: Map<string, string>,
+	resolveSchemaName: SchemaNameResolver,
 ): Record<string, ParsedTypeDef> {
 	const rawSchemas = (components?.schemas as Record<string, unknown> | undefined) ?? {};
 	const result: Record<string, ParsedTypeDef> = {};
 	for (const [name, schema] of Object.entries(rawSchemas)) {
-		result[name] = parseSchema(name, schema as Record<string, unknown>, propRefs);
+		const resolvedName = resolveSchemaName(name);
+		result[resolvedName] = parseSchema(
+			resolvedName,
+			schema as Record<string, unknown>,
+			propRefs,
+			resolveSchemaName,
+		);
 	}
 	return result;
 }
@@ -212,6 +242,7 @@ function parseSchema(
 	name: string,
 	schema: Record<string, unknown>,
 	propRefs: Map<string, string>,
+	resolveSchemaName: SchemaNameResolver,
 ): ParsedTypeDef {
 	const description = (schema.description as string) || undefined;
 
@@ -223,9 +254,14 @@ function parseSchema(
 	if (schema.type === "array") {
 		const items = schema.items as Record<string, unknown> | undefined;
 		if (items?.type === "object" && items.properties) {
-			return parseSchema(name, items, propRefs);
+			return parseSchema(name, items, propRefs, resolveSchemaName);
 		}
-		return { name, kind: "alias", description, aliasType: schemaToTsType(schema) };
+		return {
+			name,
+			kind: "alias",
+			description,
+			aliasType: schemaToTsType(schema, resolveSchemaName),
+		};
 	}
 
 	if (schema.type === "object" || schema.properties) {
@@ -237,7 +273,7 @@ function parseSchema(
 				const ps = propSchema as Record<string, unknown>;
 				const context = `${name}.${propName}`;
 				const namedRef = propRefs.get(context);
-				const tsType = namedRef ?? schemaToTsType(ps);
+				const tsType = namedRef ?? schemaToTsType(ps, resolveSchemaName);
 				properties.push({
 					name: propName,
 					tsType,
@@ -249,7 +285,12 @@ function parseSchema(
 		return { name, kind: "interface", description, properties };
 	}
 
-	return { name, kind: "alias", description, aliasType: schemaToTsType(schema) };
+	return {
+		name,
+		kind: "alias",
+		description,
+		aliasType: schemaToTsType(schema, resolveSchemaName),
+	};
 }
 
 function maybeUnwrapEnvelope(schema: Record<string, unknown>): Record<string, unknown> {
@@ -262,24 +303,34 @@ function maybeUnwrapEnvelope(schema: Record<string, unknown>): Record<string, un
 	return schema;
 }
 
-function schemaToTsType(schema: Record<string, unknown>): string {
+function schemaToTsType(
+	schema: Record<string, unknown>,
+	resolveSchemaName: SchemaNameResolver,
+): string {
 	if (schema.nullable) {
-		const withoutNullable = { ...schema };
-		delete withoutNullable.nullable;
-		return `${schemaToTsType(withoutNullable)} | null`;
+		const { nullable: _nullable, ...withoutNullable } = schema;
+		void _nullable;
+		return `${schemaToTsType(withoutNullable, resolveSchemaName)} | null`;
 	}
 	if (schema.oneOf) {
-		return (schema.oneOf as Record<string, unknown>[]).map((s) => schemaToTsType(s)).join(" | ");
+		return (schema.oneOf as Record<string, unknown>[])
+			.map((s) => schemaToTsType(s, resolveSchemaName))
+			.join(" | ");
 	}
 	if (schema.anyOf) {
-		return (schema.anyOf as Record<string, unknown>[]).map((s) => schemaToTsType(s)).join(" | ");
+		return (schema.anyOf as Record<string, unknown>[])
+			.map((s) => schemaToTsType(s, resolveSchemaName))
+			.join(" | ");
 	}
 	if (schema.allOf) {
-		return (schema.allOf as Record<string, unknown>[]).map((s) => schemaToTsType(s)).join(" & ");
+		return (schema.allOf as Record<string, unknown>[])
+			.map((s) => schemaToTsType(s, resolveSchemaName))
+			.join(" & ");
 	}
 
 	if (schema.$ref && typeof schema.$ref === "string") {
-		return schema.$ref.split("/").pop() ?? "unknown";
+		const refName = schema.$ref.split("/").pop() ?? "unknown";
+		return refName === "unknown" ? "unknown" : resolveSchemaName(refName);
 	}
 
 	const type = schema.type as string | undefined;
@@ -294,7 +345,7 @@ function schemaToTsType(schema: Record<string, unknown>): string {
 		case "array": {
 			const items = schema.items as Record<string, unknown> | undefined;
 			if (!items) return "unknown[]";
-			return `${schemaToTsType(items)}[]`;
+			return `${schemaToTsType(items, resolveSchemaName)}[]`;
 		}
 		case "object": {
 			const props = schema.properties as Record<string, unknown> | undefined;
@@ -302,13 +353,13 @@ function schemaToTsType(schema: Record<string, unknown>): string {
 				const required = (schema.required as string[]) ?? [];
 				const fields = Object.entries(props).map(
 					([k, v]) =>
-						`${k}${required.includes(k) ? "" : "?"}: ${schemaToTsType(v as Record<string, unknown>)}`,
+						`${k}${required.includes(k) ? "" : "?"}: ${schemaToTsType(v as Record<string, unknown>, resolveSchemaName)}`,
 				);
 				return `{ ${fields.join("; ")} }`;
 			}
 			const additional = schema.additionalProperties;
 			if (additional !== undefined && additional !== true) {
-				return `Record<string, ${schemaToTsType(additional as Record<string, unknown>)}>`;
+				return `Record<string, ${schemaToTsType(additional as Record<string, unknown>, resolveSchemaName)}>`;
 			}
 			return "Record<string, unknown>";
 		}
@@ -321,6 +372,7 @@ function parseAllEndpoints(
 	paths: Record<string, unknown> | undefined,
 	schemas: Record<string, ParsedTypeDef>,
 	refMap: Map<string, string>,
+	resolveSchemaName: SchemaNameResolver,
 ): ParsedEndpoint[] {
 	const endpoints: ParsedEndpoint[] = [];
 	if (!paths) return endpoints;
@@ -354,7 +406,7 @@ function parseAllEndpoints(
 				const pIn = param.in as string;
 				const pRequired = (param.required as boolean) ?? false;
 				const pSchema = param.schema as Record<string, unknown> | undefined;
-				const tsType = pSchema ? schemaToTsType(pSchema) : "string";
+				const tsType = pSchema ? schemaToTsType(pSchema, resolveSchemaName) : "string";
 				const pDesc = (param.description as string) || undefined;
 				if (pIn === "path") {
 					pathParams.push({ name: pName, typeRef: tsType, description: pDesc });

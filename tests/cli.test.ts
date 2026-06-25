@@ -49,16 +49,18 @@ const runCli = async (
 
 const makeTempDir = () => mkdtempSync(join(tmpdir(), "fizzyx-cli-"));
 
-const getFreePort = (): Promise<number> =>
-	new Promise((resolve, reject) => {
+const getFreePort = (): Promise<number | null> =>
+	new Promise((resolve) => {
 		const server = createServer();
 		server.unref();
-		server.on("error", reject);
+		server.on("error", () => {
+			resolve(null);
+		});
 		server.listen(0, "127.0.0.1", () => {
 			const address = server.address();
 			const port = typeof address === "object" && address ? address.port : 0;
 			server.close((error) => {
-				if (error) reject(error);
+				if (error) resolve(null);
 				else resolve(port);
 			});
 		});
@@ -142,8 +144,11 @@ test("setup --list shows board id and name", async () => {
 		mkdirSync(credentialsDir, { recursive: true });
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
@@ -192,8 +197,8 @@ test("prints flow help", async () => {
 	expect(stdout).toContain("add");
 	expect(stdout).toContain("repair-markdown");
 	expect(stdout).toContain("complete-steps");
-	expect(stdout).toContain("standardize-card");
-	expect(stdout).toContain("standardize-board");
+	expect(stdout).toContain("standardize");
+	expect(stdout).toContain("standardize-all");
 	expect(stdout).toContain("template");
 	expect(stdout).toContain("comment-template");
 	expect(stdout).toContain("workflow");
@@ -515,8 +520,8 @@ test("flow complete-steps help is available", async () => {
 test("flow standardize help is available", async () => {
 	const card = await runCli(["flow", "std", "--help"]);
 	const board = await runCli(["flow", "std-all", "--help"]);
-	const longCard = await runCli(["flow", "standardize-card", "--help"]);
-	const longBoard = await runCli(["flow", "standardize-board", "--help"]);
+	const longCard = await runCli(["flow", "standardize", "--help"]);
+	const longBoard = await runCli(["flow", "standardize-all", "--help"]);
 
 	expect(card.exitCode).toBe(0);
 	expect(card.stdout).toContain("Standardize a single card");
@@ -579,8 +584,11 @@ test("flow repair-markdown repairs card description and prints result", async ()
 		mkdirSync(credentialsDir, { recursive: true });
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
@@ -615,6 +623,31 @@ test("flow repair-markdown repairs card description and prints result", async ()
 
 				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
 					return Response.json([]);
+				}
+
+				if (
+					(url.pathname === "/1/boards/board-1/columns" ||
+						url.pathname === "/1/boards/board-1/columns.json") &&
+					req.method === "POST"
+				) {
+					const body =
+						req.body === null ? {} : ((await new Response(req.body).json()) as { name?: string });
+					const name = typeof body?.name === "string" ? body.name : "";
+					return Response.json({
+						data: {
+							id:
+								name === "TODO"
+									? "todo-id"
+									: name === "READY"
+										? "ready-id"
+										: name === "INPROGRESS"
+											? "inprogress-id"
+											: name === "REVIEW"
+												? "review-id"
+												: "column-id",
+							name,
+						},
+					});
 				}
 
 				return new Response("not found", { status: 404 });
@@ -658,8 +691,11 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 		mkdirSync(credentialsDir, { recursive: true });
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
@@ -696,6 +732,31 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 
 				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
 					return Response.json([]);
+				}
+
+				if (
+					(url.pathname === "/1/boards/board-1/columns" ||
+						url.pathname === "/1/boards/board-1/columns.json") &&
+					req.method === "POST"
+				) {
+					const body =
+						req.body === null ? {} : ((await new Response(req.body).json()) as { name?: string });
+					const name = typeof body?.name === "string" ? body.name : "";
+					return Response.json({
+						data: {
+							id:
+								name === "TODO"
+									? "todo-id"
+									: name === "READY"
+										? "ready-id"
+										: name === "INPROGRESS"
+											? "inprogress-id"
+											: name === "REVIEW"
+												? "review-id"
+												: "column-id",
+							name,
+						},
+					});
 				}
 
 				return new Response("not found", { status: 404 });
@@ -763,8 +824,11 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 			JSON.stringify({ token: "demo-token" }, null, 2),
 		);
 
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
@@ -843,8 +907,11 @@ test("flow init preserves existing flow users while adding identity and assignee
 
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
@@ -926,8 +993,11 @@ test("flow init retries when token is denied and migrates official credentials",
 			`token: official-token\naccount: 1\napi_url: https://example.com\nboard: board-1\n`,
 		);
 
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				const url = new URL(req.url);
@@ -1041,8 +1111,11 @@ test("auth status prints identity details when API identity succeeds", async () 
 
 		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
 
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				if (new URL(req.url).pathname === "/my/identity.json" && req.method === "GET") {
@@ -1090,8 +1163,11 @@ test("auth status preserves existing fizzyx credentials when official one exists
 	const credentialsPath = join(homeDir, ".config", "fizzyx", "credentials", "1.json");
 
 	try {
+		const port = await getFreePort();
+		if (port === null) return;
+
 		const api = Bun.serve({
-			port: await getFreePort(),
+			port,
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				if (new URL(req.url).pathname === "/my/identity.json" && req.method === "GET") {

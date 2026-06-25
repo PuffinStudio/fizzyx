@@ -1,6 +1,23 @@
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
-import { generateFromCli, writeManyFiles, listGenerators } from "../use-cases/openapi-service";
+import {
+	generateFromCli,
+	initOpenApiConfig,
+	listGenerators,
+	writeManyFiles,
+} from "../use-cases/openapi-service";
+import {
+	formatGeneratedDetails,
+	formatGeneratedOutput,
+	formatOpenApiInitDone,
+	formatOpenApiInitMessage,
+	formatOpenApiInitSkipped,
+	formatGeneratorItem,
+	formatGeneratorsHeader,
+	formatNoGenerators,
+	formatPostGenCommand,
+	formatGeneratingClientMessage,
+} from "./openapi-output";
 import { withSpinner, logSuccess, logInfo } from "./ui";
 
 const handleGenerate = (config: {
@@ -21,7 +38,7 @@ const handleGenerate = (config: {
 		const resolvedTypesName = rawTypesName === "false" ? false : rawTypesName;
 
 		const manyResult = yield* withSpinner(
-			"Generating client...",
+			formatGeneratingClientMessage(),
 			generateFromCli({
 				inputs: allInputs,
 				outputs: allOutputs,
@@ -40,12 +57,18 @@ const handleGenerate = (config: {
 
 		yield* writeManyFiles(manyResult.results);
 		for (const result of manyResult.results) {
-			yield* logSuccess(`generated ${result.files.length} file(s) to ${result.outputDir}`);
+			yield* logSuccess(formatGeneratedOutput(result.files.length, result.outputDir));
 			yield* logInfo(
-				`endpoints: ${result.spec.endpoints.length}  types: ${Object.keys(result.spec.types).length}`,
+				formatGeneratedDetails(result.spec.endpoints.length, Object.keys(result.spec.types).length),
 			);
-			if (result.posthook) {
-				yield* runPostGenScript(result.posthook);
+		}
+
+		const hooks = Array.from(
+			new Set(manyResult.results.map((result) => result.posthook).filter(Boolean)),
+		);
+		for (const hook of hooks) {
+			if (hook) {
+				yield* runPostGenScript(hook);
 			}
 		}
 	});
@@ -54,13 +77,88 @@ const handleList = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const generators = listGenerators();
 		if (generators.length === 0) {
-			yield* Console.log("(no generators available)");
+			yield* Console.log(formatNoGenerators());
 			return;
 		}
-		yield* Console.log("available generators:");
+		yield* Console.log(formatGeneratorsHeader());
 		for (const g of generators) {
-			yield* Console.log(`  ${g.name}  ${g.description}`);
+			yield* Console.log(formatGeneratorItem(g.name, g.description));
 		}
+	});
+
+const promptLine = (message: string): Effect.Effect<string, any, any> =>
+	Effect.tryPromise({
+		try: () =>
+			new Promise<string>((resolve) => {
+				const rl = require("node:readline").createInterface({
+					input: process.stdin,
+					output: process.stderr,
+				});
+				rl.question(message, (value: string) => {
+					rl.close();
+					resolve(value.trim());
+				});
+			}),
+		catch: (cause) => new Error(String(cause)),
+	});
+
+const resolveClient = (raw: string): string | undefined => {
+	const normalized = raw.trim().toLowerCase();
+	if (normalized === "") return undefined;
+	if (normalized === "1") return "fetch";
+	if (normalized === "2") return "wx";
+	if (normalized === "3") return "effect";
+	if (normalized === "fetch" || normalized === "wx" || normalized === "effect") return normalized;
+	return undefined;
+};
+
+const promptOpenApiClient = (): Effect.Effect<string, any, any> =>
+	Effect.gen(function* () {
+		const raw = yield* promptLine("OpenAPI client (1=fetch, 2=wx, 3=effect) [fetch]: ");
+		const client = resolveClient(raw);
+		if (client) return client;
+		yield* logInfo("Please enter 1, 2, 3, fetch, wx, or effect");
+		return yield* promptOpenApiClient();
+	});
+
+const handleInit = (config: {
+	input: Option.Option<string>;
+	output: Option.Option<string>;
+	client: Option.Option<string>;
+	force: boolean;
+}): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		let input = Option.getOrElse(config.input, () => "");
+		let output = Option.getOrElse(config.output, () => "");
+		let client = Option.getOrElse(config.client, () => "");
+
+		if (process.stdin.isTTY) {
+			if (!input) {
+				input = yield* promptLine("OpenAPI spec URL or file path: ");
+			}
+			if (!output) {
+				output = yield* promptLine("Output directory [./src/api]: ");
+			}
+			if (!client) {
+				client = yield* promptOpenApiClient();
+			}
+		}
+
+		const wrote = yield* withSpinner(
+			formatOpenApiInitMessage(),
+			initOpenApiConfig({
+				input: input || undefined,
+				output: output || undefined,
+				client: client || undefined,
+				force: config.force,
+			}),
+		);
+
+		if (wrote) {
+			yield* logSuccess(formatOpenApiInitDone());
+			return;
+		}
+		yield* logInfo(formatOpenApiInitSkipped());
 	});
 
 const openapiGenerateCmd = Command.make(
@@ -119,9 +217,34 @@ const openapiGenerateCmd = Command.make(
 	Command.withDescription("Generate API client code from OpenAPI spec"),
 );
 
+const openapiInitCmd = Command.make(
+	"init",
+	{
+		input: Flag.optional(
+			Flag.string("input").pipe(Flag.withAlias("i"), Flag.withDescription("OpenAPI spec URL/path")),
+		),
+		output: Flag.optional(
+			Flag.string("output").pipe(Flag.withAlias("o"), Flag.withDescription("Output directory")),
+		),
+		client: Flag.optional(
+			Flag.string("client").pipe(
+				Flag.withAlias("c"),
+				Flag.withDescription("Client target (wx, fetch, effect)"),
+			),
+		),
+		force: Flag.boolean("force").pipe(
+			Flag.withDescription("Replace existing openapi config block"),
+		),
+	},
+	handleInit,
+).pipe(Command.withDescription("Create a blank OpenAPI config scaffold in .fizzyx.yaml"));
+
 const openapiListCmd = Command.make("list", {}, handleList).pipe(
 	Command.withDescription("List available client generators"),
 );
+
+const resolveShellCommand = (command: string): string[] =>
+	process.platform === "win32" ? ["cmd", "/c", command] : ["sh", "-lc", command];
 
 const runPostGenScript = (script: string): Effect.Effect<void, any, any> =>
 	Effect.tryPromise({
@@ -129,32 +252,36 @@ const runPostGenScript = (script: string): Effect.Effect<void, any, any> =>
 			const pkgPath = `${process.cwd()}/package.json`;
 			const pkgFile = Bun.file(pkgPath);
 			const exists = await pkgFile.exists();
-			let cmd: string;
+
+			let cmd = script;
 			if (exists) {
 				const pkg = await pkgFile.json();
 				if (pkg.scripts?.[script]) {
 					cmd = `bun run ${script}`;
-				} else {
-					cmd = script;
 				}
-			} else {
-				cmd = script;
 			}
-			process.stderr.write(`running: ${cmd}\n`);
-			const proc = Bun.spawnSync(cmd.split(" "), {
+
+			await Bun.write(Bun.stderr, `${formatPostGenCommand(cmd)}\n`);
+			const shell = resolveShellCommand(cmd);
+			const proc = Bun.spawnSync(shell, {
 				stdio: ["inherit", "inherit", "inherit"],
 			});
 			if (proc.exitCode !== 0) {
 				throw new Error(`"${cmd}" exited with code ${proc.exitCode}`);
 			}
 		},
-		catch: (cause) =>
-			new Error(
-				`post-gen script failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+		catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+	}).pipe(
+		Effect.catch((cause) =>
+			Effect.fail(
+				new Error(
+					`post-gen script failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+				),
 			),
-	});
+		),
+	);
 
 export const openapiCmd = Command.make("openapi").pipe(
 	Command.withDescription("Generate API client code from OpenAPI specs"),
-	Command.withSubcommands([openapiGenerateCmd, openapiListCmd]),
+	Command.withSubcommands([openapiGenerateCmd, openapiInitCmd, openapiListCmd]),
 );

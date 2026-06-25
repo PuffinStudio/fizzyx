@@ -1,18 +1,21 @@
 {
 	"compilerOptions": {
 		// Environment setup & latest features
-		"lib": ["ESNext"],
+		"lib": ["ESNext", "DOM"],
 		"target": "ESNext",
 		"module": "Preserve",
 		"moduleDetection": "force",
 		"jsx": "react-jsx",
 		"allowJs": true,
-		"types": ["bun", "miniprogram-api-typings"],
+		"types": ["bun", "miniprogram-api-typings", "react", "react-dom"],
 		// Bundler mode
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true,
 		"noEmit": true,
+		"paths": {
+			"@/*": ["./src/planner/*"]
+		},
 		// Best practices
 		"strict": true,
 		"skipLibCheck": true,
