@@ -185,9 +185,9 @@ function DeadlineChip({
 
 	const date = value
 		? (() => {
-			const parts = value.split("-");
-			return new Date(Number(parts[0]!), Number(parts[1]!) - 1, Number(parts[2]!));
-		})()
+				const parts = value.split("-");
+				return new Date(Number(parts[0]!), Number(parts[1]!) - 1, Number(parts[2]!));
+			})()
 		: undefined;
 
 	const formatDate = (d: Date) =>
