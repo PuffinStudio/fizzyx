@@ -15,6 +15,7 @@ export type ShortcutAction =
 	| "refresh"
 	| "showShortcuts"
 	| "focusSearch"
+	| "toggleChat"
 	| "newCard";
 
 export interface Shortcut {
@@ -26,6 +27,7 @@ export interface Shortcut {
 export const SHORTCUTS: Shortcut[] = [
 	{ key: "d", description: "Toggle dark/light theme", action: "toggleTheme" },
 	{ key: "r", description: "Refresh board data", action: "refresh" },
+	{ key: "c", description: "Toggle team chat", action: "toggleChat" },
 	{ key: "/", description: "Focus search", action: "focusSearch" },
 	{ key: "?", description: "Show keyboard shortcuts", action: "showShortcuts" },
 	// { key: "n", description: "Create new card (when available)", action: "newCard" },
@@ -35,6 +37,7 @@ export function useKeyboardShortcuts(
 	onRefresh: () => void,
 	onToggleTheme: () => void,
 	onFocusSearch?: () => void,
+	onToggleChat?: () => void,
 ) {
 	const [showShortcuts, setShowShortcuts] = useState(false);
 
@@ -57,6 +60,9 @@ export function useKeyboardShortcuts(
 			} else if (key === "?") {
 				event.preventDefault();
 				setShowShortcuts(true);
+			} else if (key === "c" && onToggleChat) {
+				event.preventDefault();
+				onToggleChat();
 			} else if (key === "/" && onFocusSearch) {
 				event.preventDefault();
 				onFocusSearch();
@@ -67,7 +73,7 @@ export function useKeyboardShortcuts(
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [onRefresh, onToggleTheme]);
+	}, [onRefresh, onToggleTheme, onToggleChat]);
 
 	return { showShortcuts, setShowShortcuts };
 }

@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { Clock, Kanban, Keyboard, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Clock, Kanban, Keyboard, MessageSquare, RefreshCw } from "lucide-react";
 import {
 	Sidebar,
 	SidebarContent,
@@ -24,6 +25,9 @@ export function PlannerShell({
 	onViewChange,
 	onRefresh,
 	onShowShortcuts,
+	onToggleChat,
+	chatOpen,
+	chatOnlineCount,
 	children,
 }: {
 	snapshot: PlannerSnapshot | null;
@@ -34,6 +38,9 @@ export function PlannerShell({
 	onViewChange: (view: PlannerView) => void;
 	onRefresh: () => Promise<void>;
 	onShowShortcuts: (show: boolean) => void;
+	onToggleChat?: () => void;
+	chatOpen?: boolean;
+	chatOnlineCount?: number;
 	children: React.ReactNode;
 }) {
 	const footerPillClass =
@@ -94,6 +101,28 @@ export function PlannerShell({
 										<UserAvatarLabel key={user.id} user={user} />
 									))}
 								</div>
+								{onToggleChat ? (
+									<button
+										type="button"
+										onClick={onToggleChat}
+										className={`flex w-full items-center gap-2 rounded-full border px-3 py-2 text-left text-xs transition-all ${
+											chatOpen
+												? "border-primary/50 bg-primary/10 text-primary font-medium"
+												: "border-transparent text-sidebar-foreground/60 hover:border-sidebar-border/70 hover:bg-sidebar-accent/35"
+										}`}
+									>
+										<MessageSquare className="size-3.5" strokeWidth={2} />
+										<span className="truncate">Team Chat</span>
+										{chatOnlineCount !== undefined && chatOnlineCount > 0 ? (
+											<Badge
+												variant="default"
+												className="ml-auto size-4.5 rounded-full p-0 text-[9px] leading-none grid place-items-center"
+											>
+												{chatOnlineCount}
+											</Badge>
+										) : null}
+									</button>
+								) : null}
 							</SidebarGroupContent>
 						</SidebarGroup>
 					) : null}
