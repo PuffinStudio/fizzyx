@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { TeamChat } from "./components/chat/team-chat";
 import {
 	Calendar,
 	HeartPulse,
@@ -11,7 +12,6 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BoardView } from "./components/board-view";
 import { HealthView } from "./components/health-view";
@@ -19,7 +19,6 @@ import { CalendarView } from "./components/calendar-view";
 import { CardDetailSheet } from "./components/card-detail-sheet";
 import { MyCardsView } from "./components/my-cards-view";
 import { deriveProjectMetrics } from "./components/planner-model";
-import { PlannerLoading } from "./components/planner-loading";
 import { PlannerShell } from "./components/planner-shell";
 import { ShortcutsDialog, useKeyboardShortcuts } from "./components/keyboard-shortcuts";
 import { useTheme } from "./components/theme-provider";
@@ -80,6 +79,7 @@ export function App() {
 	const [error, setError] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isRefreshing, setIsRefreshing] = useState(false);
+	const [chatOpen, setChatOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useQueryState("q", parseAsString.withDefault(""));
 	const [view, setView] = useQueryState(
 		"view",
@@ -140,6 +140,7 @@ export function App() {
 			searchInputRef.current?.focus();
 			searchInputRef.current?.select();
 		},
+		() => setChatOpen((v) => !v),
 	);
 
 	const selectedCard =
@@ -188,6 +189,54 @@ export function App() {
 		}
 	};
 
+	if (isLoading && !snapshot) {
+		return (
+			<div className="grid min-h-screen place-items-center bg-background p-8">
+				<div className="max-w-sm text-center">
+					<div className="mx-auto mb-5 grid size-14 place-items-center rounded-full bg-muted">
+						<div className="size-6 animate-spin rounded-full border-2 border-foreground/20 border-t-foreground/60" />
+					</div>
+					<h1 className="mb-3 text-xl font-semibold tracking-tight">Loading planner</h1>
+					<p className="text-sm leading-relaxed text-muted-foreground">
+						Fetching your board data — this can take a moment.
+						<br />
+						Please don&apos;t close this page.
+					</p>
+				</div>
+			</div>
+		);
+	}
+
+	if (error) {
+		const isWarning =
+			error.includes("No .fizzy") || error.includes("No board") || error.includes("not configured");
+		return (
+			<div className="grid min-h-screen place-items-center bg-background p-8">
+				<div className="max-w-sm text-center">
+					<div className="mx-auto mb-5 grid size-14 place-items-center rounded-full bg-amber-500/10">
+						<Kanban className="size-7 text-amber-500" />
+					</div>
+					<Badge
+						variant={isWarning ? "secondary" : "destructive"}
+						className="mb-4 rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider"
+					>
+						{isWarning ? "Setup required" : "Error"}
+					</Badge>
+					<h1 className="mb-3 text-xl font-semibold tracking-tight">Planner unavailable</h1>
+					<p className="mb-8 text-sm leading-relaxed text-muted-foreground">{error}</p>
+					<Button
+						variant="outline"
+						size="sm"
+						className="rounded-full px-6"
+						onClick={() => void loadSnapshot()}
+					>
+						Retry
+					</Button>
+				</div>
+			</div>
+		);
+	}
+
 	return (
 		<PlannerShell
 			snapshot={snapshot}
@@ -198,6 +247,8 @@ export function App() {
 			onViewChange={(next) => void setView(next)}
 			onRefresh={loadSnapshot}
 			onShowShortcuts={setShowShortcuts}
+			onToggleChat={() => setChatOpen((v) => !v)}
+			chatOpen={chatOpen}
 		>
 			{snapshot ? (
 				<PlannerHeader
@@ -212,7 +263,6 @@ export function App() {
 					totalCount={searchTotalCount}
 				/>
 			) : null}
-			{error ? <ErrorCard error={error} /> : null}
 			{snapshot ? (
 				<PlannerViewRenderer
 					snapshot={filteredSnapshot || snapshot}
@@ -222,9 +272,7 @@ export function App() {
 					onViewChange={(next) => void setView(next)}
 					onRefreshFresh={() => loadSnapshot(true)}
 				/>
-			) : (
-				<PlannerLoading />
-			)}
+			) : null}
 			<CardDetailSheet
 				card={selectedCard}
 				onOpenChange={(open) => !open && void setSelectedCardNumber(null)}
@@ -235,6 +283,18 @@ export function App() {
 				}}
 			/>
 			<ShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
+			{snapshot &&
+			chatOpen &&
+			snapshot.identity &&
+			snapshot.users.some((u) => u.id === snapshot.identity!.id) ? (
+				<TeamChat
+					open={chatOpen}
+					account={snapshot.account}
+					board={snapshot.board}
+					identity={snapshot.identity}
+					onClose={() => setChatOpen(false)}
+				/>
+			) : null}
 		</PlannerShell>
 	);
 }
@@ -347,17 +407,6 @@ function PlannerHeader({
 				) : null}
 			</div>
 		</header>
-	);
-}
-
-function ErrorCard({ error }: { error: string }) {
-	return (
-		<Card className="mb-4 bg-destructive/5 shadow-none ring-0">
-			<CardHeader>
-				<CardTitle>Planner unavailable</CardTitle>
-				<CardDescription>{error}</CardDescription>
-			</CardHeader>
-		</Card>
 	);
 }
 

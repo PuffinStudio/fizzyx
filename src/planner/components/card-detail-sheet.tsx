@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { CalendarDays } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -35,7 +37,7 @@ export function CardDetailSheet({
 
 	return (
 		<Sheet open={card !== null} onOpenChange={onOpenChange}>
-			<SheetContent className="w-[min(94vw,68rem)]! sm:max-w-none! gap-0 p-0">
+			<SheetContent className="w-[min(100vw,80rem)]! sm:max-w-none! gap-0 p-0">
 				{card ? (
 					<>
 						<SheetHeader className="p-5">
@@ -77,13 +79,12 @@ export function CardDetailSheet({
 						</SheetHeader>
 						<ScrollArea className="h-[calc(100vh-9rem)]">
 							<div className="space-y-4 p-5">
-								<section className="grid gap-3 md:grid-cols-4">
+								<section className="grid grid-cols-4 gap-3 lg:grid-cols-8">
 									<MetadataChip
 										label="Owner"
 										value={card.metadata.owner || card.assignees[0]?.name}
 									/>
 									<DeadlineChip
-										label="Deadline"
 										value={toDateInputValue(card.metadata.deadline)}
 										onSave={(deadline) => onSaveDeadline(deadline || "")}
 									/>
@@ -103,7 +104,7 @@ export function CardDetailSheet({
 									/>
 									<MetadataChip label="API" value={card.metadata.api_status} />
 								</section>
-								<section className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+								<section className="grid gap-4 lg:grid-cols-2">
 									<DetailPanel
 										title="Steps"
 										action={`${card.stepProgress.completed}/${card.stepProgress.total}`}
@@ -115,16 +116,6 @@ export function CardDetailSheet({
 											<StepItem key={step.id || index} step={step} />
 										))}
 									</DetailPanel>
-									<DetailPanel title="Comments" action={`${card.comments.length} recent`}>
-										{card.comments.length === 0 ? (
-											<p className="text-sm text-muted-foreground">No comments.</p>
-										) : null}
-										{card.comments.map((comment) => (
-											<CommentItem key={comment.id} comment={comment} />
-										))}
-									</DetailPanel>
-								</section>
-								<section className="grid gap-4 lg:grid-cols-[0.7fr_1.3fr]">
 									<DetailPanel title="People" action={`${card.assignees.length} assigned`}>
 										<div className="flex flex-wrap gap-2">
 											{card.assignees.length === 0 ? (
@@ -155,12 +146,24 @@ export function CardDetailSheet({
 											/>
 										</div>
 									</DetailPanel>
-									<DetailPanel title="Description" action="body">
-										<div className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-4 text-sm text-muted-foreground">
-											{card.body || "No description body."}
-										</div>
-									</DetailPanel>
 								</section>
+								<DetailPanel title="Description">
+									{card.body?.trim() ? (
+										<div className="whitespace-pre-wrap rounded-xl bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+											{card.body.trim()}
+										</div>
+									) : (
+										<p className="text-sm text-muted-foreground">No description body.</p>
+									)}
+								</DetailPanel>
+								<DetailPanel title="Comments" action={`${card.comments.length} total`}>
+									{card.comments.length === 0 ? (
+										<p className="text-sm text-muted-foreground">No comments.</p>
+									) : null}
+									{card.comments.map((comment) => (
+										<CommentItem key={comment.id} comment={comment} />
+									))}
+								</DetailPanel>
 							</div>
 						</ScrollArea>
 					</>
@@ -171,100 +174,75 @@ export function CardDetailSheet({
 }
 
 function DeadlineChip({
-	label,
 	value,
 	onSave,
 }: {
-	label: string;
 	value: string;
 	onSave: (value: string) => Promise<void>;
 }) {
-	const [editing, setEditing] = useState(false);
-	const [draft, setDraft] = useState(value);
-	const [saving, setSaving] = useState(false);
+	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	useEffect(() => {
-		if (!editing) {
-			setDraft(value);
-		}
-	}, [editing, value]);
+	const date = value
+		? (() => {
+			const parts = value.split("-");
+			return new Date(Number(parts[0]!), Number(parts[1]!) - 1, Number(parts[2]!));
+		})()
+		: undefined;
 
-	const save = async () => {
-		setSaving(true);
+	const formatDate = (d: Date) =>
+		d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+	const toIso = (d: Date) =>
+		`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+	const save = async (d: Date | undefined) => {
+		setOpen(false);
 		setError(null);
 		try {
-			await onSave(draft.trim());
-			setEditing(false);
+			const iso = d ? toIso(d) : "";
+			await onSave(iso);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Failed to save deadline");
-		} finally {
-			setSaving(false);
 		}
 	};
 
 	return (
 		<div className="min-w-0 rounded-lg bg-muted/30 px-3 py-2">
-			<div className="mb-2 flex items-center justify-between gap-2">
-				<p className="truncate text-[0.68rem] font-medium uppercase tracking-wide text-muted-foreground">
-					{label}
-				</p>
-				{editing ? null : (
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={() => setEditing(true)}
-						disabled={saving}
-						className="h-7 rounded-full px-2 text-xs"
-					>
-						Edit
-					</Button>
-				)}
-			</div>
-			{editing ? (
-				<div className="space-y-2">
-					<Input
-						type="date"
-						value={draft}
-						onChange={(event) => setDraft(event.currentTarget.value)}
-						disabled={saving}
-					/>
-					<div className="flex items-center gap-2">
-						<Button
-							size="sm"
-							onClick={() => void save()}
-							disabled={saving}
-							className="rounded-full"
-						>
-							Save
-						</Button>
+			<Popover open={open} onOpenChange={setOpen}>
+				<PopoverTrigger
+					render={
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => {
-								setDraft("");
-								void save();
-							}}
-							disabled={saving}
-							className="rounded-full"
-						>
-							Clear
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => setEditing(false)}
-							disabled={saving}
-							className="rounded-full"
-						>
-							Cancel
-						</Button>
-					</div>
-					{error ? <p className="text-xs text-destructive">{error}</p> : null}
-				</div>
-			) : (
-				<p className="truncate text-sm font-medium">{value || "—"}</p>
-			)}
+							className="w-full justify-start gap-2 rounded-full"
+						/>
+					}
+				>
+					<CalendarDays className="size-3.5 shrink-0" />
+					{date ? (
+						<span className="text-sm font-medium">{formatDate(date)}</span>
+					) : (
+						<span className="text-sm text-muted-foreground">Set deadline</span>
+					)}
+				</PopoverTrigger>
+				<PopoverContent className="w-auto p-0" align="start">
+					<Calendar mode="single" selected={date} onSelect={(d) => void save(d)} />
+					{date ? (
+						<div className="border-t border-border px-3 pb-3 pt-2">
+							<Button
+								variant="ghost"
+								size="sm"
+								className="w-full rounded-full text-xs text-destructive"
+								onClick={() => void save(undefined)}
+							>
+								Clear deadline
+							</Button>
+						</div>
+					) : null}
+					{error ? <p className="px-3 pb-3 text-xs text-destructive">{error}</p> : null}
+				</PopoverContent>
+			</Popover>
 		</div>
 	);
 }
