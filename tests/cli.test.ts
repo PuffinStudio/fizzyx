@@ -296,9 +296,17 @@ test("flow workflow prints process checklist", async () => {
 
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("## Workflow");
-		expect(stdout).toContain("fizzyx flow comment-template <kind>");
-		expect(stdout).toContain("fizzyx flow repair-metadata");
-		expect(stdout).toContain("flow done");
+		expect(stdout).toContain("fizzyx flow work");
+		expect(stdout).toContain("fizzyx flow repair");
+		expect(stdout).toContain("fizzyx skill");
+		expect(stdout).toContain("fizzyx planner start");
+		expect(stdout).toContain("fizzyx planner snapshot");
+		expect(stdout).not.toContain("fizzyx flow mine");
+		expect(stdout).not.toContain("fizzyx flow add");
+		expect(stdout).not.toContain("fizzyx flow ready");
+		expect(stdout).not.toContain("fizzyx flow repair-metadata");
+		expect(stdout).not.toContain("api_status");
+		expect(stdout).not.toContain("skill:*");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -310,14 +318,25 @@ test("flow skill prints english skill template", async () => {
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("name: fizzyx");
 	expect(stdout).toContain("# fizzyx");
-	expect(stdout).toContain("fizzyx flow workflow");
-	expect(stdout).toContain("fizzyx flow repair-metadata");
+	expect(stdout).toContain("fizzyx flow work");
+	expect(stdout).toContain("fizzyx flow repair");
+	expect(stdout).toContain("fizzyx skill list");
+	expect(stdout).toContain("fizzyx planner start");
+	expect(stdout).toContain("fizzyx planner snapshot");
 	expect(stdout).toContain("## Context Loading");
 	expect(stdout).toContain("Treat this skill as generic");
 	expect(stdout).toContain("Do not infer identity from git user");
+	expect(stdout).toContain("Suggested Skills");
+	expect(stdout).not.toContain("api_status");
+	expect(stdout).not.toContain("skill:");
 	expect(stdout).not.toContain("Youda-mini");
 	expect(stdout).not.toContain("03gaf3a10zn8g6flsloi7swvi");
 	expect(stdout).not.toContain("AGENTS.md 片段");
+	expect(stdout).not.toContain("fizzyx flow add");
+	expect(stdout).not.toContain("fizzyx flow mine");
+	expect(stdout).not.toContain("fizzyx flow ready");
+	expect(stdout).not.toContain("fizzyx flow repair-metadata");
+	expect(stdout).not.toContain("fizzyx flow standardize");
 });
 
 test("flow workflow prefers local override content", async () => {
@@ -449,18 +468,23 @@ test("flow template command prints card template sections", async () => {
 
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("## Goal");
-		expect(stdout).toContain("## Scope");
-		expect(stdout).toContain("### In");
-		expect(stdout).toContain("### Out");
-		expect(stdout).toContain("## Notes");
-		expect(stdout).toContain("## Files");
-		expect(stdout).toContain("## Verification");
+		expect(stdout).toContain("## Context");
+		expect(stdout).toContain("## Acceptance Criteria");
+		expect(stdout).toContain("## Inputs Needed");
+		expect(stdout).toContain("## Constraints");
+		expect(stdout).toContain("## Suggested Skills");
+		expect(stdout).toContain("## Plan");
 		expect(stdout).toContain("## Steps");
+		expect(stdout).not.toContain("## Scope");
+		expect(stdout).not.toContain("### In");
+		expect(stdout).not.toContain("### Out");
 		expect(stdout).not.toContain("## References");
 		expect(stdout).not.toContain("## Backup");
 		expect(stdout).not.toContain("## Depends On");
-		expect(stdout).toContain("Define the ticket objective in 1-2 concise sentences.");
-		expect(stdout).toContain("- [ ] Replace goal + scope text with final content");
+		expect(stdout).toContain("What outcome this card should deliver.");
+		expect(stdout).toContain("Architectural/security/performance constraints.");
+		expect(stdout).toContain("- [ ] Confirm goal, context, and constraints");
+		expect(stdout).not.toContain("## Verification");
 		expect(stdout).not.toContain("- [ ] `");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -511,9 +535,12 @@ test("flow template uses English defaults when config has legacy language", asyn
 
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("## Goal");
-		expect(stdout).toContain("## Scope");
-		expect(stdout).toContain("### In");
-		expect(stdout).toContain("### Out");
+		expect(stdout).toContain("## Context");
+		expect(stdout).toContain("## Acceptance Criteria");
+		expect(stdout).toContain("## Inputs Needed");
+		expect(stdout).toContain("## Constraints");
+		expect(stdout).toContain("## Suggested Skills");
+		expect(stdout).toContain("## Plan");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

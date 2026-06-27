@@ -171,288 +171,196 @@ const getBuiltinWorkflow = (): string =>
 		"",
 		"## Setup",
 		"- fizzyx setup <board-id>",
-		"- fizzyx auth login <token>",
 		"- fizzyx auth status",
-		"- flow workflow columns are auto-healed on first run if missing/renamed",
+		"- fizzyx auth login <token>",
 		"",
-		"## Create",
-		"- fizzyx flow template --draft",
-		"- edit card content and steps in .fizzyx/card-<random>.md",
-		'- fizzyx flow create <user> "<title>" --desc .fizzyx/card-<random>.md',
-		"- fizzyx flow add is kept as a compatibility alias for create",
-		"- delete .fizzyx/card-<random>.md after the card is created",
-		"- Use a unique random suffix so multiple agents do not collide.",
+		"## Work Entry Point",
+		"- Start each local cycle with `fizzyx flow work`.",
+		"- flow work returns board context, next recommended card, blockers, and the next action.",
 		"",
-		"## Workflow",
-		"Cards move BACKLOG -> READY -> IN PROGRESS -> REVIEW, then close into Done state.",
+		"## Card Lifecycle",
+		"- fizzyx flow create <user> \"<title>\" --desc .fizzyx/card-<random>.md",
+		"- fizzyx flow start <card> — move to IN PROGRESS and self-assign",
+		"- fizzyx flow review <card> — request review-ready state",
+		"- fizzyx flow done <card> — close with execution evidence",
+		"- fizzyx flow done <card> --complete-steps — optional flow-time guard before close",
+		"- fizzyx flow block <card> \"<reason>\" — pause work due to dependency or input gap",
+		"- fizzyx flow repair [--apply] — normalize legacy tags and checklist fields",
 		"",
-		"- fizzyx flow ready <card> — marks a backlog card ready for implementation",
-		"- fizzyx flow start <card> — moves card to IN PROGRESS, self-assigns",
-		"- fizzyx flow review <card> — moves card to REVIEW after implementation",
-		"- fizzyx flow done <card> — closes into Done, auto-detects git ref, comments",
-		'- fizzyx flow done <card> "commit <sha>: <subject>" — with explicit ref',
+		"## Card Template",
+		"- Use `fizzyx flow template --draft` to create `.fizzyx/card-<random>.md`",
+		"- Keep draft content project-agnostic and project-localized.",
+		"- Delete the draft file after card creation succeeds.",
 		"",
-		"## Daily",
-		"- fizzyx flow mine --fresh",
-		"- fizzyx flow health",
-		"- fizzyx flow next --fresh --start",
-		"- fizzyx flow start <card>",
-		"- fizzyx flow show <card>",
+		"## Metadata",
+		"- Use tags for stable facets only: priority, type, area, phase, depends_on, blocks.",
+		"- `area` and `phase` values come from project vocabulary; read",
+		"  `.fizzyx.yaml`, `AGENTS.md`, `CONTEXT.md`, and project docs before adding them.",
+		"- Do not invent `area` or `phase` values without local project docs.",
+		"- Keep mutable execution state in `## Steps`, `## Inputs Needed`,",
+		"  or blocker commands and comments.",
 		"",
-		"## Work",
-		"- Inspect task goal and constraints",
-		"- Draft clear implementation steps",
-		"- Implement changes",
-		"- Verify tests and acceptance criteria",
+		"## Skill Management",
+		"- skill lifecycle is managed by `fizzyx skill` commands only.",
+		"- `fizzyx flow` may recommend skills but does not install/remove skills.",
 		"",
-		"## Complete",
-		"- fizzyx flow complete-steps <card>   — mark all pending steps done (required before done)",
-		"- fizzyx flow done <card>             — closes into Done and writes comment (ref auto-detected from git)",
-		'- fizzyx flow done <card> "message"   — with explicit ref',
-		"- flow done requires all steps complete; otherwise it fails with an error listing unfinished steps.",
+		"## Planner",
+		"- `fizzyx planner start` — visualization mode for board/work planning.",
+		"- `fizzyx planner snapshot` — create immutable debugging snapshots.",
 		"",
-		"## Block",
-		'- fizzyx flow block <card> "<reason>"',
-		"- Use fizzyx flow comment-template <kind> for manual comments, and keep comments concise.",
-		"",
-		"## Card structure",
-		"- flow add renders template markdown to Fizzy HTML so card bodies stay readable",
-		"- flow add converts priority/type metadata into tags such as priority:p0 and type:feature",
-		"- Use tags for stable planner facets: priority, type, area, phase, api_status",
-		"- Do not rely on hidden description metadata for mutable fields until the project documents it",
-		"- Steps become Fizzy checklist items",
-		"- Legacy projects: run `fizzyx flow repair-metadata` first, then `fizzyx flow repair-metadata --apply` after reviewing planned tag changes",
-		"- `fizzyx planner snapshot --auto-fix` remains available for planner-specific automation",
-		"",
-		"## Close discipline",
-		"- Never close cards through the web UI.",
-		"- Close only via CLI:",
-		"  1) fizzyx flow complete-steps <card>",
-		"  2) fizzyx flow done <card>",
-		"",
+		"## Close Discipline",
+		"- Never close cards through the UI.",
+		"- close through `fizzyx flow` only.",
 	].join("\n");
 
-const getBuiltinSkill = (): string => `---
-name: fizzyx
-description: Manage this repository's board through fizzyx flow commands.
-triggers:
-  - fizzyx
-  - /fizzyx
-  - create card
-  - close card
-  - move card
-  - assign card
-  - add comment
-  - add step
-  - my cards
-  - my tasks
-  - board status
-  - card workflow
-invocable: true
-argument-hint: "[flow action] [args...]"
----
+const getBuiltinSkill = (): string =>
+	[
+		"---",
+		"name: fizzyx",
+		"description: Manage project workflow with flow and manage skills with skill.",
+		"triggers:",
+		"  - fizzyx",
+		"  - /fizzyx",
+		"  - flow work",
+		"  - flow create",
+		"  - flow start",
+		"  - flow review",
+		"  - flow done",
+		"  - flow repair",
+		"  - flow block",
+		"  - skill list",
+		"  - my cards",
+		"  - planner start",
+		"  - planner snapshot",
+		"invocable: true",
+		"argument-hint: \"[flow|skill|planner action] [args...]\"",
+		"---",
+		"",
+		"# fizzyx",
+		"",
+		"Use fizzyx flow for board workflow. The daily entry point is fizzyx flow work.",
+		"Use fizzyx skill for skill installation, updates, and health checks.",
+		"Flow may recommend skills based on tags; it does not install or remove skills.",
+		"",
+		"## Workflow",
+		"",
+		"Flow is used for planning execution and day-to-day board movement.",
+		"",
+		"### Core loop",
+		"- fizzyx flow work",
+		"- fizzyx flow start <card>",
+		"- fizzyx flow review <card>",
+		"- fizzyx flow done <card> — close with execution evidence",
+		"- fizzyx flow block <card> \"<reason>\"",
+		"- fizzyx flow repair [--apply] — fix legacy metadata and steps",
+		"",
+		"Planner is limited to:",
+		"- fizzyx planner start",
+		"- fizzyx planner snapshot",
+		"",
+		"## Context Loading",
+		"",
+		"- Treat this skill as generic and project-neutral.",
+		"- Do not hardcode board IDs, column IDs, user IDs, or local conventions.",
+		"- Project context is loaded from .fizzy.yaml.",
+		"- Do not infer identity from git user, OS user, commit author, branch, or card assignee.",
+		"- For identity-sensitive actions, run fizzyx auth status first.",
+		"- For project-specific semantics, inspect AGENTS.md, CONTEXT.md, and",
+		"  local workflow docs before creating or moving cards.",
+		"- The CLI reads .fizzy.yaml automatically from the current repository.",
+		"  If machine auth is missing, run fizzyx setup <board-id> first.",
+		"",
+		"## Metadata",
+		"",
+		"- Use tags for stable metadata only: priority, type, area, phase,",
+		"  depends_on, blocks.",
+		"- area and phase are project-defined. Verify values from .fizzyx.yaml,",
+		"  AGENTS.md, CONTEXT.md, and local docs before inventing them.",
+		"- Mutable execution state belongs in ## Steps, ## Inputs Needed, and blocker",
+		"  commands/comments, not tags.",
+		"- Avoid status tags outside stable metadata fields.",
+		"",
+		"## Suggested Skills",
+		"",
+		"- Use flow recommendations from each card, then install or enable through",
+		"  top-level fizzyx skill.",
+		"",
+		"## Close Discipline",
+		"",
+		"- Do not close cards through the web UI.",
+		"- Close through CLI commands only.",
+		"- Preserve a single execution source of truth in Fizzy cards.",
+		"",
+		"## Commands",
+		"",
+		"commands:",
+		"fizzyx auth status",
+		"fizzyx flow work",
+		"fizzyx flow status --fresh",
+		"fizzyx flow start <card>",
+		"fizzyx flow show <card>",
+		"fizzyx flow template --draft",
+		"fizzyx flow create <user> \"<title>\" --desc <file|->",
+		"fizzyx flow repair --apply",
+		"fizzyx flow comment-template <done|blocked|unblocked|handoff|note>",
+		"fizzyx flow done <card> \"commit <sha>: <subject>\"",
+		"fizzyx flow done <card> --complete-steps",
+		"fizzyx flow block <card> \"<reason>\"",
+		"fizzyx flow doctor",
+		"fizzyx planner snapshot",
+		"fizzyx planner start",
+		"fizzyx skill list",
+		"fizzyx skill add <source>",
+		"fizzyx skill remove <name>",
+		"fizzyx skill update [name]",
+		"fizzyx skill info <name>",
+		"fizzyx skill run <name>",
+		"fizzyx skill doctor",
+		"fizzyx skill migrate",
+		"",
+		"## Cards",
+		"- fizzyx flow template --draft",
+		"- fizzyx flow create <user> \"<title>\" --desc .fizzyx/card-<random>.md",
+		"- fizzyx flow show <card>",
+		"- fizzyx flow repair [--apply]",
+		"- fizzyx flow block <card> \"<reason>\"",
+	].join("\n");
 
-# fizzyx
-
-Use fizzyx flow ... for board workflow. Do not use the legacy official CLI
-for project workflow. If fizzyx flow lacks an operation, stop and ask.
-
-## Workflow
-
-Cards move **BACKLOG → READY → IN PROGRESS → REVIEW**, then close into
-**Done** state. Blocked work uses Fizzy Not Now.
-
-| Phase | Command | Action |
-|-------|---------|--------|
-| Ready | fizzyx flow ready <card> | Move BACKLOG → READY |
-| Start | fizzyx flow start <card> | Move READY → IN PROGRESS, self-assign |
-| Review | fizzyx flow review <card> | Move IN PROGRESS → REVIEW |
-| Steps | fizzyx flow complete-steps <card> | Mark all pending steps done |
-| Done | fizzyx flow done <card> "commit <sha>: <subject>" | Close into Done, comment |
-
-**Never** close a card directly without flow done.
-
-## Context Loading
-
-- Treat this skill as generic. Do not hardcode board IDs, column IDs, users,
-  scopes, title formats, or assignment rules here.
-- Project data comes from .fizzy.yaml, the repo's AGENTS.md, and local
-  workflow docs referenced by AGENTS.md.
-- The CLI reads .fizzy.yaml automatically from the current repository.
-- Before creating or assigning cards, inspect the project's local tracking rules
-  instead of guessing from this skill.
-- If project context is missing, run fizzyx setup <board-id> for machine
-  config, then create or update a local project workflow doc such as
-  docs/fizzy-workflow.md and link it from AGENTS.md.
-
-## Project Workflow Doc
-
-Keep project-specific board details out of this skill. Put them in a local doc
-near the repo's other docs, usually docs/fizzy-workflow.md.
-
-Minimum sections:
-
-- Install/auth/setup commands.
-- Board/account/API/cache context.
-- Column meanings and IDs.
-- Metadata/tag conventions such as priority:p0, type:feature, area:frontend, phase:integration.
-- Which metadata is tag-backed versus body-only. Tags are safest for stable facets; mutable fields need explicit project rules.
-- Card title formats and allowed scopes.
-- Assignment rules and user IDs.
-- Local delivery rules that differ from fizzyx flow workflow.
-
-If any of these facts are unknown, ask before creating cards that depend on
-them.
-
-## Identity
-
-- my work, my cards, and my tasks mean the authenticated fizzyx user.
-- Do not infer identity from git user, OS user, commit author, branch, or card assignee.
-- For identity-sensitive requests, run fizzyx auth status first.
-- Then run fizzyx flow mine --fresh.
-- Use fizzyx flow status --fresh only as extra board context.
-
-## Commands
-
-commands:
-fizzyx auth status
-fizzyx flow workflow
-fizzyx flow status --fresh
-fizzyx flow mine --fresh
-fizzyx flow next --fresh
-fizzyx flow next --fresh --start
-fizzyx flow show <card>
-fizzyx flow start <card>
-fizzyx flow template
-fizzyx flow create <user> "<title>" --desc <file|->
-fizzyx flow add <user> "<title>" --desc <file|->  # compatibility alias
-fizzyx flow comment-template <done|blocked|unblocked|handoff|note>
-fizzyx flow complete-steps <card>
-fizzyx flow done <card> "commit <sha>: <subject>"
-fizzyx flow block <card> "<reason>"
-fizzyx flow standardize <card>  # alias: std
-fizzyx flow standardize-all    # alias: std-all
-fizzyx flow health
-fizzyx flow doctor
-fizzyx flow repair-metadata     # alias: repair-tags
-fizzyx planner repair-metadata  # compatibility / planner-specific entry
-fizzyx planner snapshot
-fizzyx planner start
-
-## Cards
-
-- Generate new card bodies with fizzyx flow template.
-- Prefer fizzyx flow template --draft for temporary card drafts; it creates .fizzyx/card-<random>.md with a unique suffix.
-- Delete the matching temporary draft after fizzyx flow add succeeds.
-- Description is context only. flow add renders it to Fizzy HTML and applies stable metadata tags.
-- Put machine-readable metadata in ## Tags; do not add hidden metadata to new cards.
-- Put work checklist under ## Steps; flow add converts it to card steps.
-- Step labels must be plain text: no Markdown links, code ticks, or bold.
-- Normalize existing cards with fizzyx flow standardize <card> (alias: std).
-- Repair missing tag-backed metadata with fizzyx flow repair-metadata, then rerun with --apply after reviewing the dry-run.
-
-## Delivery
-
-- Do not create cards for typo fixes or tiny chore commits.
-- Do not maintain a parallel progress document; board is execution state.
-- **Always close cards through the CLI**, never by clicking close in the UI.
-- Close sequence:
-   1. fizzyx flow complete-steps <card>  — mark all pending steps done
-   2. fizzyx flow done <card>             — close into Done and comment (ref auto-detected from git)
-   3. fizzyx flow done <card> "message"   — with explicit ref (optional)
-- flow done requires all steps to be complete; it will fail with an error if any step is unfinished.
-- flow done auto-ref requires a clean git worktree; commit first or pass an explicit ref.
- - Keep comments concise; use fizzyx flow comment-template <kind> for format.
-
-## OpenAPI Client
-
-Generate a typed wx.request client from OpenAPI spec:
-
-\`\`\`
-fizzyx openapi g -i <url|path> -c wx
-\`\`\`
-
-Create a quick scaffold first (interactive by default when running in a terminal):
-
-\`\`\`
-fizzyx openapi init
-\`\`\`
-
-When no --output is given, defaults to ./src/api (creates 4 files:
-wx-request.ts, types.ts, api.ts, index.ts). Configure --api-name,
---types-name, --runtime-name for custom filenames, or set in .fizzy.yaml:
-
-\`\`\`yaml
-openapi:
-  - input: ./openapi.json
-    output: ./src/api
-    client: wx
-    run: check
-\`\`\`
-
-
-For full details: fizzyx openapi generate -h`;
-
-const getBuiltinTemplate = (): string => {
-	const labels = getTemplateLabels();
-	const text = getTemplateText();
-
-	return `## Tags
+const getBuiltinTemplate = (): string =>
+	`## Tags
 - priority:p2
 - type:chore
+- area:<project-area>
+- phase:<project-phase>
 
-## ${labels.goal}
-${text.goal}
+## Goal
+What outcome this card should deliver.
 
-## ${labels.scope}
-### ${labels.include}
-- ${text.include}
+## Context
+- Important background context and assumptions.
 
-### ${labels.exclude}
-- ${text.exclude}
+## Acceptance Criteria
+- [ ] User-visible behavior
+- [ ] Error/empty/loading behavior
+- [ ] Regression coverage
 
-## ${labels.notes}
-- ${text.noteSmall}
-- ${text.notePattern}
+## Inputs Needed
+- Design/API/product inputs
 
-## ${labels.files}
-- ${text.files}
+## Constraints
+- Architectural/security/performance constraints.
+- Do not persist mutable execution state as tags.
 
-## ${labels.verification}
-- ${text.verification}
+## Suggested Skills
+- tdd
+
+## Plan
+- Confirm scope and blockers.
+- Implement with minimal surface area.
+- Verify and document before closure.
 
 ## Steps
 
-- [ ] ${text.stepGoal}
-- [ ] ${text.stepImplementation}
-- [ ] ${text.stepPlain}
-- [ ] ${text.stepClose}`;
-};
-
-const getTemplateText = () => {
-	return {
-		goal: "Define the ticket objective in 1-2 concise sentences.",
-		include: "What should be included",
-		exclude: "What should not be included",
-		noteSmall: "Keep changes small and deterministic",
-		notePattern: "Prefer existing patterns",
-		files: "Files to touch (relative path)",
-		verification: "Validation and acceptance checks to run before handoff",
-		stepGoal: "Replace goal + scope text with final content",
-		stepImplementation: "Add or update implementation files",
-		stepPlain: "Keep step descriptions in plain text",
-		stepClose: "Confirm checks and run fizzyx flow done <number> to close",
-	};
-};
-
-const getTemplateLabels = () => {
-	return {
-		scope: "Scope",
-		goal: "Goal",
-		include: "In",
-		exclude: "Out",
-		files: "Files",
-		verification: "Verification",
-		notes: "Notes",
-	};
-};
+- [ ] Confirm goal, context, and constraints
+- [ ] Add or update implementation files
+- [ ] Validate checks and run fizzyx flow done`;
