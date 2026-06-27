@@ -2,6 +2,11 @@ import type { OpenApiProjectConfig } from "./openapi-models";
 
 export type CardNumber = number;
 
+export interface FlowTagConfig {
+	areas: ReadonlyArray<string>;
+	phases: ReadonlyArray<string>;
+}
+
 export interface FlowConfig {
 	columns: {
 		todo: string;
@@ -10,6 +15,29 @@ export interface FlowConfig {
 	users: Record<string, string>;
 	wipLimit: number;
 	cacheTtlSeconds: number;
+	tags?: FlowTagConfig;
+}
+
+export interface ProjectSkillSourceConfig {
+	repo: string;
+	ref?: string;
+}
+
+export interface ProjectInstalledSkillConfig {
+	source: string;
+	version?: string;
+	repo?: string;
+	ref?: string;
+	commit?: string;
+	path?: string;
+}
+
+export interface ProjectSkillsConfig {
+	version: number;
+	sources: Record<string, ProjectSkillSourceConfig>;
+	installed: Record<string, ProjectInstalledSkillConfig>;
+	defaults: Record<string, ReadonlyArray<string>>;
+	areas: Record<string, ReadonlyArray<string>>;
 }
 
 export interface Board {
@@ -24,6 +52,7 @@ export interface ProjectConfig {
 	flow?: FlowConfig;
 	oss?: OssConfig;
 	openapi?: OpenApiProjectConfig;
+	skills?: ProjectSkillsConfig;
 	configPath: string;
 	rootDir: string;
 }

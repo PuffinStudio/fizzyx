@@ -2,10 +2,14 @@ import { ConfigError, FileError } from "../domain/errors";
 import type {
 	Credentials,
 	FlowConfig,
+	FlowTagConfig,
 	OssConfig,
 	OssEnvironmentConfig,
 	OssSyncConfig,
+	ProjectInstalledSkillConfig,
 	ProjectConfig,
+	ProjectSkillsConfig,
+	ProjectSkillSourceConfig,
 } from "../domain/models";
 import type { OpenApiGenConfig, OpenApiProjectConfig } from "../domain/openapi-models";
 import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
@@ -27,6 +31,7 @@ export const parseProjectConfig = (
 	const flow = parseFlowConfig(raw.flow);
 	const oss = parseOssConfig(raw.oss);
 	const openapi = parseOpenapiConfig(raw.openapi);
+	const skills = parseProjectSkillsConfig(raw.skills);
 	if (!board) {
 		return {
 			apiUrl,
@@ -35,6 +40,7 @@ export const parseProjectConfig = (
 			flow,
 			oss,
 			openapi,
+			skills,
 			configPath,
 			rootDir,
 		};
@@ -47,6 +53,7 @@ export const parseProjectConfig = (
 		flow,
 		oss,
 		openapi,
+		skills,
 		configPath,
 		rootDir,
 	};
@@ -56,7 +63,7 @@ export const renderProjectConfig = (input: SetupProjectConfigInput, existingText
 	const existing = parseYaml(existingText);
 	const existingFlow = objectValue(existing.flow);
 
-	const flow = {
+	const flow: YamlObject = {
 		columns: {
 			todo: input.todoColumn || stringValue(objectValue(existingFlow.columns).todo) || "",
 			in_progress:
@@ -65,7 +72,11 @@ export const renderProjectConfig = (input: SetupProjectConfigInput, existingText
 		users: parseUsersInput(input.users || {}),
 		wip_limit: numberValue(existingFlow.wip_limit) || DEFAULT_WIP_LIMIT,
 		cache_ttl: numberValue(existingFlow.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
-	} satisfies YamlObject;
+	};
+	const existingFlowTags = objectValue(existingFlow.tags);
+	if (Object.keys(existingFlowTags).length > 0) {
+		flow.tags = existingFlowTags;
+	}
 
 	const ordered: YamlObject = {};
 
@@ -256,7 +267,92 @@ const parseFlowConfig = (raw: unknown): FlowConfig | undefined => {
 		users: parsedUsers,
 		wipLimit: numberValue(flow.wip_limit) || DEFAULT_WIP_LIMIT,
 		cacheTtlSeconds: numberValue(flow.cache_ttl) || DEFAULT_CACHE_TTL_SECONDS,
+		tags: parseFlowTagConfig(flow.tags),
 	};
+};
+
+const parseFlowTagConfig = (raw: unknown): FlowTagConfig | undefined => {
+	const obj = objectValue(raw);
+	if (Object.keys(obj).length === 0) return undefined;
+
+	const areas = stringArrayValue(obj.areas);
+	const phases = stringArrayValue(obj.phases);
+	if (!areas && !phases) return undefined;
+
+	return {
+		areas: areas ?? [],
+		phases: phases ?? [],
+	};
+};
+
+const parseProjectSkillsConfig = (raw: unknown): ProjectSkillsConfig | undefined => {
+	const obj = objectValue(raw);
+	const version = numberValue(obj.version);
+	if (!version) return undefined;
+
+	return {
+		version,
+		sources: parseProjectSkillSources(obj.sources),
+		installed: parseInstalledSkills(obj.installed),
+		defaults: parseSkillMap(obj.defaults),
+		areas: parseSkillMap(obj.areas),
+	};
+};
+
+const parseProjectSkillSources = (raw: unknown): Record<string, ProjectSkillSourceConfig> => {
+	const obj = objectValue(raw);
+	const sources: Record<string, ProjectSkillSourceConfig> = {};
+
+	for (const [key, value] of Object.entries(obj)) {
+		const sourceObj = objectValue(value);
+		const repo = stringValue(sourceObj.repo);
+		if (!repo) continue;
+		const source: ProjectSkillSourceConfig = { repo };
+		const ref = stringValue(sourceObj.ref);
+		if (ref) source.ref = ref;
+		sources[key] = source;
+	}
+
+	return sources;
+};
+
+const parseInstalledSkills = (raw: unknown): Record<string, ProjectInstalledSkillConfig> => {
+	const obj = objectValue(raw);
+	const installed: Record<string, ProjectInstalledSkillConfig> = {};
+
+	for (const [key, value] of Object.entries(obj)) {
+		const skillObj = objectValue(value);
+		const source = stringValue(skillObj.source);
+		if (!source) continue;
+		const installedSkill: ProjectInstalledSkillConfig = { source };
+		const version = stringValue(skillObj.version);
+		const repo = stringValue(skillObj.repo);
+		const ref = stringValue(skillObj.ref);
+		const commit = stringValue(skillObj.commit);
+		const path = stringValue(skillObj.path);
+
+		if (version) installedSkill.version = version;
+		if (repo) installedSkill.repo = repo;
+		if (ref) installedSkill.ref = ref;
+		if (commit) installedSkill.commit = commit;
+		if (path) installedSkill.path = path;
+
+		installed[key] = installedSkill;
+	}
+
+	return installed;
+};
+
+const parseSkillMap = (raw: unknown): Record<string, ReadonlyArray<string>> => {
+	const obj = objectValue(raw);
+	const parsed: Record<string, ReadonlyArray<string>> = {};
+
+	for (const [key, value] of Object.entries(obj)) {
+		const names = stringArrayValue(value);
+		if (names) parsed[key] = names;
+	}
+
+	return parsed;
 };
 
 const parseOssEnvConfig = (raw: unknown): OssEnvironmentConfig | undefined => {
@@ -369,6 +465,13 @@ const objectValue = (value: unknown): YamlObject =>
 
 const arrayValue = (value: unknown): readonly YamlValue[] | undefined =>
 	Array.isArray(value) ? (value as readonly YamlValue[]) : undefined;
+
+const stringArrayValue = (value: unknown): string[] | undefined => {
+	const arr = arrayValue(value);
+	if (!arr) return undefined;
+	const result = arr.map(stringValue).filter((item) => item !== "");
+	return result;
+};
 
 const parseObjectHeaders = (raw: unknown): Record<string, string> | undefined => {
 	const obj = objectValue(raw);

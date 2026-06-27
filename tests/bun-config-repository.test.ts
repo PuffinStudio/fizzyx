@@ -194,6 +194,264 @@ flow:
 	}
 });
 
+test("loadProjectConfig parses flow tag vocabularies", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+	const originalCwd = process.cwd();
+
+	try {
+		process.chdir(root);
+		writeFileSync(
+			configPath,
+			`api_url: https://example.com
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users: {}
+  tags:
+    areas:
+      - flow
+      - auth
+    phases:
+      - discovery
+      - polish
+`,
+		);
+
+		const config = await Effect.runPromise(repo.loadProjectConfig());
+
+		expect(config.flow?.tags).toEqual({
+			areas: ["flow", "auth"],
+			phases: ["discovery", "polish"],
+		});
+	} finally {
+		process.chdir(originalCwd);
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("setupProjectConfig preserves flow tag vocabularies", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+
+	try {
+		writeFileSync(
+			configPath,
+			`api_url: https://example.com
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users: {}
+  tags:
+    areas:
+      - flow
+      - auth
+    phases:
+      - discovery
+      - polish
+`,
+		);
+
+		await Effect.runPromise(
+			repo.setupProjectConfig({
+				account: "1",
+				board: "board-1",
+				todoColumn: "todo-id",
+				inProgressColumn: "inprogress-id",
+				users: {},
+				apiUrl: "https://example.com",
+				configPath,
+			}),
+		);
+
+		const text = await Bun.file(configPath).text();
+		expect(text).toContain("tags:");
+		expect(text).toContain("areas:");
+		expect(text).toContain("- flow");
+		expect(text).toContain("- auth");
+		expect(text).toContain("phases:");
+		expect(text).toContain("- discovery");
+		expect(text).toContain("- polish");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("loadProjectConfig parses project skills config", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+	const originalCwd = process.cwd();
+
+	try {
+		process.chdir(root);
+		writeFileSync(
+			configPath,
+			`api_url: https://example.com
+account: 1
+board: board-1
+skills:
+  version: 1
+  sources:
+    mattpocock:
+      repo: https://github.com/mattpocock/skills
+      ref: v1.0.1
+  installed:
+    tdd:
+      source: builtin
+      version: 1.0.0
+    improve-codebase:
+      source: git
+      repo: https://github.com/mattpocock/skills
+      ref: v1.0.1
+      commit: abc123
+      path: skills/engineering/improve-codebase-architecture
+  defaults:
+    feature:
+      - tdd
+      - codebase-design
+    bug:
+      - diagnose
+      - tdd
+  areas:
+    auth:
+      - security-review
+`,
+		);
+
+		const config = await Effect.runPromise(repo.loadProjectConfig());
+
+		expect(config.skills).toEqual({
+			version: 1,
+			sources: {
+				mattpocock: {
+					repo: "https://github.com/mattpocock/skills",
+					ref: "v1.0.1",
+				},
+			},
+			installed: {
+				tdd: {
+					source: "builtin",
+					version: "1.0.0",
+				},
+				"improve-codebase": {
+					source: "git",
+					repo: "https://github.com/mattpocock/skills",
+					ref: "v1.0.1",
+					commit: "abc123",
+					path: "skills/engineering/improve-codebase-architecture",
+				},
+			},
+			defaults: {
+				feature: ["tdd", "codebase-design"],
+				bug: ["diagnose", "tdd"],
+			},
+			areas: {
+				auth: ["security-review"],
+			},
+		});
+	} finally {
+		process.chdir(originalCwd);
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("setupProjectConfig preserves project skills config", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+	const originalCwd = process.cwd();
+
+	try {
+		process.chdir(root);
+		writeFileSync(
+			configPath,
+			`api_url: https://example.com
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users: {}
+skills:
+  version: 1
+  sources:
+    mattpocock:
+      repo: https://github.com/mattpocock/skills
+      ref: v1.0.1
+  installed:
+    tdd:
+      source: builtin
+      version: 1.0.0
+  defaults:
+    feature:
+      - tdd
+  areas:
+    auth:
+      - security-review
+`,
+		);
+
+		const config = await Effect.runPromise(
+			repo.setupProjectConfig({
+				account: "1",
+				board: "board-1",
+				todoColumn: "todo-id",
+				inProgressColumn: "inprogress-id",
+				users: {},
+				apiUrl: "https://example.com",
+				configPath,
+			}),
+		);
+
+		const text = await Bun.file(configPath).text();
+		expect(config.skills).toEqual({
+			version: 1,
+			sources: {
+				mattpocock: {
+					repo: "https://github.com/mattpocock/skills",
+					ref: "v1.0.1",
+				},
+			},
+			installed: {
+				tdd: {
+					source: "builtin",
+					version: "1.0.0",
+				},
+			},
+			defaults: {
+				feature: ["tdd"],
+			},
+			areas: {
+				auth: ["security-review"],
+			},
+		});
+		expect(text).toContain("skills:");
+		expect(text).toContain("version: 1");
+		expect(text).toContain("sources:");
+		expect(text).toContain("mattpocock:");
+		expect(text).toContain("installed:");
+		expect(text).toContain("source: builtin");
+		expect(text).toContain("defaults:");
+		expect(text).toContain("feature:");
+		expect(text).toContain("areas:");
+		expect(text).toContain("auth:");
+		expect(text).toContain("- security-review");
+	} finally {
+		process.chdir(originalCwd);
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 describe("OSS config", () => {
 	test("setupOssConfig writes non-sensitive config without credentials", async () => {
 		const root = mkdtempSync(join(tmpdir(), "fizzyx-oss-"));
