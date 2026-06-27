@@ -102,7 +102,6 @@ export function CardDetailSheet({
 										label="Phase"
 										value={card.metadata.phase || card.parsedTags.phase[0]}
 									/>
-									<MetadataChip label="API" value={card.metadata.api_status} />
 								</section>
 								<section className="grid gap-4 lg:grid-cols-2">
 									<DetailPanel

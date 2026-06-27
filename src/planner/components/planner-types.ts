@@ -21,7 +21,6 @@ export type PlannerCard = {
 		type: string[];
 		area: string[];
 		phase: string[];
-		apiStatus: string[];
 		dependsOn: number[];
 		blocks: number[];
 	};
@@ -35,7 +34,6 @@ export type PlannerCard = {
 		depends_on: number[];
 		blocks: number[];
 		phase?: string;
-		api_status?: string;
 	};
 	body: string;
 	assignees: PlannerUser[];

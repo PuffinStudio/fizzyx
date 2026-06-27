@@ -12,70 +12,45 @@ bun add -g @puffinstudio/fizzyx
 
 ## Flow Commands
 
-Manage a Fizzy board from a repository-local `.fizzy.yaml`.
-
-### Setup
+Use `.fizzyx.yaml` as the project config file for board and workflow settings.
 
 ```sh
-fizzyx setup <board-id>
-fizzyx auth login <token>
-fizzyx auth status
-fizzyx flow mine --fresh
-```
-
-`flow doctor` can still be run for an explicit health check, but new `fizzyx flow ...` commands auto-repair workflow columns and ids when needed.
-
-### Create A Card (Manual)
-
-Use `--draft` to create a unique project-local draft file. This automatically creates `.fizzyx/` when needed and avoids collisions between multiple agents.
-
-```sh
-draft=$(fizzyx flow template --draft)
-$EDITOR "$draft"
-fizzyx flow add Ellen "Implement feature" --desc "$draft"
-rm "$draft"
-```
-
-You can also pipe or provide your own file:
-
-```sh
-fizzyx flow template
-fizzyx flow add <user> "<title>" --desc <file|->
-```
-
-### Work A Card
-
-```sh
-fizzyx flow mine --fresh
-fizzyx flow next --fresh
-fizzyx flow next --fresh --start
+fizzyx flow work
+fizzyx flow create <user> "<title>" --desc <file|->
 fizzyx flow show <card>
 fizzyx flow start <card>
-fizzyx flow complete-steps <card>
+fizzyx flow review <card>
 fizzyx flow done <card> "commit <sha>: <subject>"
+fizzyx flow block <card> "<reason>"
+fizzyx flow improve
+fizzyx flow doctor
+fizzyx flow repair
 ```
 
 `flow done` requires all steps to be complete and closes the card into Done.
 
-### Other Flow Commands
+Use `fizzyx skill ...` and `fizzyx migrate --check/--apply` for skill and config migration, and use flow commands for repair/health workflows.
+
+## Skill Commands
 
 ```sh
-fizzyx flow sync
-fizzyx flow status [--fresh]
-fizzyx flow assign <card> <user|me> [user...]
-fizzyx flow block <card> "<reason>"
-fizzyx flow repair-markdown <card>
-fizzyx flow standardize <card> (alias: std)
-fizzyx flow standardize-all (alias: std-all)
-fizzyx flow workflow
-fizzyx flow skill
-fizzyx flow skill init [--force]
+fizzyx skill list
+fizzyx skill add <source>
+fizzyx skill remove <name>
+fizzyx skill update [name]
+fizzyx skill info <name>
+fizzyx skill run <name>
+fizzyx skill doctor
+fizzyx skill migrate --check
+fizzyx skill migrate --apply
 ```
 
-- `flow assign <card> me` assigns the card to the authenticated Fizzy user.
-- `flow assign` skips users who are already assigned.
-- `flow block` moves the card to Not Now.
-- `flow workflow`, `flow skill`, and `flow template` prefer project-local overrides under `.agents/skills/fizzyx/`.
+## Migrate
+
+```sh
+fizzyx migrate --check
+fizzyx migrate --apply
+```
 
 ![Flow command lifecycle](./docs/images/flow-workflow.svg)
 
@@ -86,18 +61,11 @@ Start a local planner dashboard backed directly by the Fizzy API:
 ```sh
 fizzyx planner start
 fizzyx planner snapshot
-fizzyx planner snapshot --auto-fix
-fizzyx planner health
-fizzyx planner repair-metadata
-fizzyx planner repair-metadata --apply
-fizzyx planner repair-metadata --apply --default-priority p2 --default-type chore
 ```
 
 ![Planner dashboard workflow](./docs/images/planner-workflow.svg)
 
 `planner snapshot` prints the same JSON used by the web dashboard. Project workflow uses `BACKLOG → READY → IN PROGRESS → REVIEW → DONE`, with `DONE` coming from closed cards and `BLOCKED` from Not Now/postponed cards.
-
-`planner repair-metadata` is dry-run by default. It inserts/syncs deterministic frontmatter from existing tags and assignees. Missing priority/type are only filled when explicit defaults are passed.
 
 Planner conventions use tags for filtering:
 
@@ -115,9 +83,10 @@ priority: P1
 type: feature
 owner: ellen
 depends_on: [123]
-api_status: not_connected
 ---
 ```
+
+`api_status:*` and `skill:*` are not standard tags in 1.0 and are treated as free-form tags only.
 
 ## OSS Commands
 

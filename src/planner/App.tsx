@@ -434,7 +434,6 @@ const filterCardsBySearch = (cards: PlannerCard[], query: string): PlannerCard[]
 			card.metadata.impact,
 			card.metadata.effort,
 			card.metadata.phase,
-			card.metadata.api_status,
 		];
 		for (const value of metadataValues) {
 			if (value?.toLowerCase().includes(query)) return true;

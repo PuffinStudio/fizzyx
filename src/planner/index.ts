@@ -4,10 +4,8 @@ import { plannerRoute } from "./planner-html";
 import {
 	loadPlannerSnapshotForRequest,
 	loadPlannerSnapshot,
-	repairPlannerMetadata,
 	setPlannerCardDeadline,
 } from "../use-cases/planner-service";
-import { normalizePriority } from "../use-cases/planner-transform";
 import { Live as ConfigRepoLive, makeBunConfigRepository } from "../adapters/bun-config-repository";
 
 export type PlannerServerOptions = {
@@ -122,33 +120,6 @@ export const startPlannerServer = async (
 
 					return plannerJsonResponse(
 						setPlannerCardDeadline({ cardNumber, deadline }).pipe(Effect.provide(ConfigRepoLive)),
-					);
-				},
-			},
-
-			"/api/planner/repair-metadata": {
-				POST: async (req) => {
-					let apply = true;
-					let defaultPriority: "p0" | "p1" | "p2" | undefined;
-					let defaultType: string | undefined;
-					try {
-						const body = (await req.json()) as {
-							apply?: boolean;
-							defaultPriority?: unknown;
-							defaultType?: unknown;
-						};
-						if (typeof body.apply === "boolean") apply = body.apply;
-						if (typeof body.defaultPriority === "string") {
-							defaultPriority = normalizePriority(body.defaultPriority);
-						}
-						if (typeof body.defaultType === "string" && body.defaultType.trim() !== "") {
-							defaultType = body.defaultType.trim();
-						}
-					} catch {}
-					return plannerJsonResponse(
-						repairPlannerMetadata({ apply, defaultPriority, defaultType }).pipe(
-							Effect.provide(ConfigRepoLive),
-						),
 					);
 				},
 			},

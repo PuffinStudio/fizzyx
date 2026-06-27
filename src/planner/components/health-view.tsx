@@ -1,26 +1,8 @@
-import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { issueBadgeClass, issueClass } from "./planner-style";
 import type { PlannerIssue } from "./planner-types";
-
-type PlannerRepairChange = {
-	action?: string;
-	cardNumber?: number;
-};
-
-const isTagCardChange = (
-	change: unknown,
-): change is PlannerRepairChange & {
-	action: "tag_card";
-	cardNumber: number;
-} => {
-	if (!change || typeof change !== "object") return false;
-	const typed = change as { action?: unknown; cardNumber?: unknown };
-	return typed.action === "tag_card" && typeof typed.cardNumber === "number";
-};
 
 export function HealthView({
 	health,
@@ -29,62 +11,7 @@ export function HealthView({
 	health: PlannerIssue[];
 	onRepair?: () => void;
 }) {
-	const [repairing, setRepairing] = useState(false);
-	const [items, setItems] = useState(health);
-
-	useEffect(() => {
-		setItems(health);
-	}, [health]);
-
-	const repairableCount = items.filter((issue: PlannerIssue) =>
-		isRepairableMetadataIssue(issue.code),
-	).length;
-
-	const handleRepair = async () => {
-		setRepairing(true);
-		try {
-			const res = await fetch("/api/planner/repair-metadata", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({
-					apply: true,
-					defaultPriority: "p2",
-					defaultType: "chore",
-				}),
-			});
-			const data = await res.json();
-			if (!res.ok) throw new Error(data.error || "Repair failed");
-			const changes = (
-				Array.isArray(data?.changes) ? data.changes : []
-			) as readonly PlannerRepairChange[];
-			const repairedNumbers = new Set(
-				changes
-					.filter((change): change is PlannerRepairChange & { cardNumber: number } =>
-						isTagCardChange(change),
-					)
-					.map((change) => change.cardNumber),
-			);
-			const repairedCount = repairedNumbers.size;
-			if (repairedCount > 0) {
-				setItems((previous) => previous.filter((issue) => !repairedNumbers.has(issue.cardNumber)));
-				toast.success(`已修复 ${repairedCount} 张卡并从列表移除`);
-				return;
-			}
-
-			const count = (
-				data.changes?.filter?.((change: { action?: string }) => change.action === "tag_card") ?? []
-			).length;
-			if (data.applied) {
-				toast.info(`没有可修复的卡片。`);
-			} else {
-				toast.info(`检测到 ${count} 张卡需要修复`);
-			}
-		} catch (cause) {
-			toast.error(cause instanceof Error ? cause.message : "Repair failed");
-		} finally {
-			setRepairing(false);
-		}
-	};
+	const items = health;
 
 	return (
 		<motion.div
@@ -97,16 +24,12 @@ export function HealthView({
 					<div>
 						<h2 className="text-base font-semibold">Card Health</h2>
 						<p className="mt-1 text-sm text-muted-foreground">
-							Cards missing metadata or violating workflow expectations.
+							Cards missing metadata or violating workflow expectations. Metadata repair is executed from
+							`fizzyx flow repair`.
 						</p>
 					</div>
-					{repairableCount > 0 ? (
-						<Button variant="outline" size="sm" onClick={handleRepair} disabled={repairing}>
-							{repairing ? "Repairing…" : `Repair All (${repairableCount})`}
-						</Button>
-					) : null}
 					{onRepair ? (
-						<Button variant="secondary" size="sm" onClick={() => onRepair()} disabled={repairing}>
+						<Button variant="secondary" size="sm" onClick={() => onRepair()}>
 							刷新
 						</Button>
 					) : null}
@@ -139,10 +62,3 @@ export function HealthView({
 		</motion.div>
 	);
 }
-
-const isRepairableMetadataIssue = (code: string): boolean =>
-	code === "missing_priority" ||
-	code === "invalid_priority" ||
-	code === "missing_type" ||
-	code === "missing_owner" ||
-	code === "multiple_priority";
