@@ -10,8 +10,8 @@ import type {
 } from "../domain/openapi-models";
 import {
 	collectUsedTypeNames,
+	convertPathToTemplate,
 	generateTypes,
-	renderPropertyAccess,
 	renderPropertyKey,
 } from "./codegen-shared";
 
@@ -329,17 +329,4 @@ function renderEffectEndpoint(endpoint: ParsedEndpoint): string {
 
 	const resultLines = typeLines.length > 0 ? [...typeLines, ...fnLines] : fnLines;
 	return resultLines.join("\n");
-}
-
-function convertPathToTemplate(
-	path: string,
-	paramNames: string[],
-	useParamsPrefix = false,
-): string {
-	let result = path;
-	for (const name of paramNames) {
-		const access = useParamsPrefix ? renderPropertyAccess("params", name) : name;
-		result = result.replace(`{${name}}`, `\${${access}}`);
-	}
-	return result;
 }

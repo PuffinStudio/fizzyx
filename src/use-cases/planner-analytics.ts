@@ -4,7 +4,7 @@ import type {
 	PlannerLane,
 	PlannerRecommendation,
 	PlannerSnapshot,
-} from "./planner-service";
+} from "../domain/planner-model";
 import type { PlannerPriority } from "./planner-metadata";
 import { normalizePriority } from "./planner-transform";
 

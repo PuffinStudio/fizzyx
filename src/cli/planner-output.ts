@@ -1,4 +1,4 @@
-import type { PlannerRepairMetadataResult, PlannerSnapshot } from "../use-cases/planner-service";
+import type { PlannerRepairMetadataResult, PlannerSnapshot } from "../domain/planner-model";
 
 export const formatPlannerSnapshotJson = (snapshot: PlannerSnapshot): string =>
 	JSON.stringify(snapshot, null, 2);

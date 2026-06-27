@@ -364,3 +364,60 @@ function resolveConfigs(cli: GenerateCliInput) {
 		});
 	});
 }
+
+const resolveShellCommand = (command: string): string[] =>
+	process.platform === "win32" ? ["cmd", "/c", command] : ["sh", "-lc", command];
+
+export const runPostGenScript = (script: string): Effect.Effect<void, Error> =>
+	Effect.tryPromise({
+		try: async () => {
+			const pkgPath = `${process.cwd()}/package.json`;
+			const pkgFile = Bun.file(pkgPath);
+			const exists = await pkgFile.exists();
+
+			let cmd = script;
+			if (exists) {
+				const pkg = await pkgFile.json();
+				if (pkg.scripts?.[script]) {
+					cmd = `bun run ${script}`;
+				}
+			}
+
+			await Bun.write(Bun.stderr, `running: ${cmd}\n`);
+			const shell = resolveShellCommand(cmd);
+			const proc = Bun.spawnSync(shell, {
+				stdio: ["inherit", "inherit", "inherit"],
+			});
+			if (proc.exitCode !== 0) {
+				throw new Error(`"${cmd}" exited with code ${proc.exitCode}`);
+			}
+		},
+		catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+	}).pipe(
+		Effect.catch((cause) =>
+			Effect.fail(
+				new Error(
+					`post-gen script failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+				),
+			),
+		),
+	);
+
+export const runOpenApiGenerateLifecycle = (
+	cli: GenerateCliInput,
+): Effect.Effect<
+	GenerateManyResult,
+	SpecLoadError | SpecParseError | CodegenError | ConfigValidationError | Error,
+	ConfigRepository
+> =>
+	Effect.gen(function* () {
+		const result = yield* generateFromCli(cli);
+		yield* writeManyFiles(result.results);
+		const hooks = Array.from(new Set(result.results.map((r) => r.posthook).filter(Boolean)));
+		for (const hook of hooks) {
+			if (hook) {
+				yield* runPostGenScript(hook);
+			}
+		}
+		return result;
+	});

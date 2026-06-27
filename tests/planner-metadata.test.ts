@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { analyzePlannerHealth } from "../src/use-cases/planner-service";
-import type { PlannerCard } from "../src/use-cases/planner-service";
+import type { PlannerCard } from "../src/domain/planner-model";
 import { parsePlannerDescription, parsePlannerTags } from "../src/use-cases/planner-metadata";
 import { toPlannerCard } from "../src/use-cases/planner-transform";
 

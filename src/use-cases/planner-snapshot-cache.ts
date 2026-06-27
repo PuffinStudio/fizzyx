@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 import { Effect } from "effect";
 import { FileError } from "../domain/errors";
-import type { PlannerSnapshot } from "./planner-service";
+import type { PlannerSnapshot } from "../domain/planner-model";
 import { resolvePlannerSnapshotCachePath } from "../adapters/app-paths";
 
 const readPlannerSnapshotCacheByPath = (

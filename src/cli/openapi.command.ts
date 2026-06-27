@@ -1,10 +1,9 @@
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import {
-	generateFromCli,
 	initOpenApiConfig,
 	listGenerators,
-	writeManyFiles,
+	runOpenApiGenerateLifecycle,
 } from "../use-cases/openapi-service";
 import {
 	formatGeneratedDetails,
@@ -15,7 +14,6 @@ import {
 	formatGeneratorItem,
 	formatGeneratorsHeader,
 	formatNoGenerators,
-	formatPostGenCommand,
 	formatGeneratingClientMessage,
 } from "./openapi-output";
 import { withSpinner, logSuccess, logInfo } from "./ui";
@@ -39,7 +37,7 @@ const handleGenerate = (config: {
 
 		const manyResult = yield* withSpinner(
 			formatGeneratingClientMessage(),
-			generateFromCli({
+			runOpenApiGenerateLifecycle({
 				inputs: allInputs,
 				outputs: allOutputs,
 				client: Option.getOrElse(config.client, () => undefined),
@@ -55,21 +53,11 @@ const handleGenerate = (config: {
 			}),
 		);
 
-		yield* writeManyFiles(manyResult.results);
 		for (const result of manyResult.results) {
 			yield* logSuccess(formatGeneratedOutput(result.files.length, result.outputDir));
 			yield* logInfo(
 				formatGeneratedDetails(result.spec.endpoints.length, Object.keys(result.spec.types).length),
 			);
-		}
-
-		const hooks = Array.from(
-			new Set(manyResult.results.map((result) => result.posthook).filter(Boolean)),
-		);
-		for (const hook of hooks) {
-			if (hook) {
-				yield* runPostGenScript(hook);
-			}
 		}
 	});
 
@@ -242,44 +230,6 @@ const openapiInitCmd = Command.make(
 const openapiListCmd = Command.make("list", {}, handleList).pipe(
 	Command.withDescription("List available client generators"),
 );
-
-const resolveShellCommand = (command: string): string[] =>
-	process.platform === "win32" ? ["cmd", "/c", command] : ["sh", "-lc", command];
-
-const runPostGenScript = (script: string): Effect.Effect<void, any, any> =>
-	Effect.tryPromise({
-		try: async () => {
-			const pkgPath = `${process.cwd()}/package.json`;
-			const pkgFile = Bun.file(pkgPath);
-			const exists = await pkgFile.exists();
-
-			let cmd = script;
-			if (exists) {
-				const pkg = await pkgFile.json();
-				if (pkg.scripts?.[script]) {
-					cmd = `bun run ${script}`;
-				}
-			}
-
-			await Bun.write(Bun.stderr, `${formatPostGenCommand(cmd)}\n`);
-			const shell = resolveShellCommand(cmd);
-			const proc = Bun.spawnSync(shell, {
-				stdio: ["inherit", "inherit", "inherit"],
-			});
-			if (proc.exitCode !== 0) {
-				throw new Error(`"${cmd}" exited with code ${proc.exitCode}`);
-			}
-		},
-		catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
-	}).pipe(
-		Effect.catch((cause) =>
-			Effect.fail(
-				new Error(
-					`post-gen script failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-				),
-			),
-		),
-	);
 
 export const openapiCmd = Command.make("openapi").pipe(
 	Command.withDescription("Generate API client code from OpenAPI specs"),

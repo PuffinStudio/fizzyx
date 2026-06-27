@@ -9,7 +9,7 @@ import type {
 	PlannerRepairMetadataChange,
 	PlannerRepairMetadataOptions,
 	PlannerUser,
-} from "./planner-service";
+} from "../domain/planner-model";
 import type { PlannerMetadata, PlannerPriority } from "./planner-metadata";
 import { parsePlannerDescription, parsePlannerTags } from "./planner-metadata";
 import { convertDescription } from "./flow-card-content";

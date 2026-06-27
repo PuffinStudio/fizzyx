@@ -76,7 +76,7 @@ function renderTypeDef(name: string, def: ParsedTypeDef): string {
 	}
 }
 
-function convertPathToTemplate(
+export function convertPathToTemplate(
 	path: string,
 	paramNames: string[],
 	useParamsPrefix = false,
