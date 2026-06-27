@@ -159,7 +159,8 @@ const analyzeWorkHealth = (
 		}
 
 		const type = tags.find((tag) => tag.startsWith("type:"))?.slice("type:".length);
-		if (type && skills?.defaults[type]) suggestedSkills.push(...skills.defaults[type]);
+		if (type)
+			suggestedSkills.push(...(skills?.defaults[type] ?? DEFAULT_SKILLS_BY_TYPE[type] ?? []));
 		for (const areaTag of tags.filter((tag) => tag.startsWith("area:"))) {
 			const area = areaTag.slice("area:".length);
 			if (skills?.areas[area]) suggestedSkills.push(...skills.areas[area]);
@@ -171,6 +172,13 @@ const analyzeWorkHealth = (
 		inputsNeeded: unique(inputsNeeded).slice(0, 8),
 		suggestedSkills: unique(suggestedSkills).slice(0, 8),
 	};
+};
+
+const DEFAULT_SKILLS_BY_TYPE: Record<string, ReadonlyArray<string>> = {
+	bug: ["diagnose", "tdd"],
+	blocker: ["diagnose"],
+	feature: ["to-prd", "tdd"],
+	chore: ["tdd"],
 };
 
 const extractSectionItems = (description: string, heading: string): string[] => {
@@ -271,7 +279,11 @@ const handleCreate = (config: {
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		if (config.draft) {
-			const draft = yield* createFlowDraft();
+			const draft = yield* createFlowDraft({
+				user: Option.getOrElse(config.user, () => undefined),
+				title: Option.getOrElse(config.title, () => undefined),
+				suggestedSkills: config.skill,
+			});
 			yield* Console.log(draft.path);
 			return;
 		}

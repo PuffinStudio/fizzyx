@@ -114,12 +114,14 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 				}
 
 				const descriptionHtml = readString(obj.description_html);
+				const tags = decodeTags(obj.tags);
 				return {
 					id: readString(obj.id),
 					number,
 					title,
 					description: readString(obj.description),
 					...(descriptionHtml ? { descriptionHtml } : {}),
+					...(tags.length > 0 ? { tags } : {}),
 					column: decodeColumnRef(obj.column),
 					assignees: decodeAssignees(obj.assignees),
 					closed: readBoolean(obj.closed),
@@ -267,6 +269,22 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 			const name = readString(obj.name);
 			if (!name) continue;
 			result.push({ id, name });
+		}
+		return result;
+	};
+
+	const decodeTags = (value: JsonValue): ReadonlyArray<string> => {
+		if (!Array.isArray(value)) return [];
+
+		const result: string[] = [];
+		for (const item of value) {
+			if (typeof item === "string") {
+				result.push(item);
+				continue;
+			}
+			const obj = toRecord(item);
+			const title = readString(obj?.title) || readString(obj?.name);
+			if (title) result.push(title);
 		}
 		return result;
 	};

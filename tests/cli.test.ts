@@ -466,10 +466,130 @@ test("flow create --draft writes a local card draft", async () => {
 			cwd: projectDir,
 		});
 		const draftPath = stdout.trim();
+		const draft = readFileSync(join(projectDir, draftPath), "utf8");
 
 		expect(exitCode).toBe(0);
 		expect(draftPath).toMatch(/^\.fizzyx\/card-.+\.md$/);
-		expect(readFileSync(join(projectDir, draftPath), "utf8")).toContain("## Suggested Skills");
+		expect(draft).toContain("## Suggested Skills");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow create --draft pre-fills title, assignee, and requested skills", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(join(projectDir, ".fizzyx.yaml"), `api_url: https://example.com\n`);
+
+		const { stdout, exitCode } = await runCli(
+			["flow", "create", "Ellen", "测试卡-勿动", "--draft", "--skill", "diagnose"],
+			{
+				cwd: projectDir,
+			},
+		);
+		const draftPath = stdout.trim();
+		const draft = readFileSync(join(projectDir, draftPath), "utf8");
+
+		expect(exitCode).toBe(0);
+		expect(draftPath).toMatch(/^\.fizzyx\/card-.+\.md$/);
+		expect(draft).toContain("# 测试卡-勿动");
+		expect(draft).toContain("## Assignee\n- Ellen");
+		expect(draft).toContain("## Suggested Skills\n- diagnose");
+		expect(draft).not.toContain("- tdd\n\n## Plan");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow work suggests default skills from card type without skill config", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const homeDir = join(root, "home");
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		mkdirSync(homeDir, { recursive: true });
+		const credentialsDir = join(homeDir, ".config", "fizzyx", "credentials");
+		mkdirSync(credentialsDir, { recursive: true });
+		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
+
+		const port = await getFreePort();
+		if (port === null) return;
+
+		const api = Bun.serve({
+			port,
+			hostname: "127.0.0.1",
+			async fetch(req) {
+				const url = new URL(req.url);
+
+				if (url.pathname === "/my/identity.json" && req.method === "GET") {
+					return Response.json({
+						user: {
+							id: "identity-id",
+							name: "Identity User",
+							email: "identity@example.com",
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "GET") {
+					if (url.searchParams.get("indexed_by") === "not_now") {
+						return Response.json({ data: [] });
+					}
+					return Response.json({
+						data: [
+							{
+								number: 42,
+								title: "Fix crash",
+								tags: ["priority:p1", "type:bug"],
+								column: { id: "todo-id", name: "READY" },
+								assignees: [{ id: "identity-id", name: "Identity User" }],
+							},
+						],
+					});
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
+					return Response.json({
+						data: [
+							{ id: "todo-id", name: "READY" },
+							{ id: "inprogress-id", name: "IN PROGRESS" },
+						],
+					});
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "POST") {
+					const body =
+						req.body === null ? {} : ((await new Response(req.body).json()) as { name?: string });
+					return Response.json({
+						data: {
+							id: `${body.name ?? "column"}-id`,
+							name: body.name,
+						},
+					});
+				}
+
+				return new Response("not found", { status: 404 });
+			},
+		});
+
+		writeFileSync(
+			join(projectDir, ".fizzyx.yaml"),
+			`api_url: http://127.0.0.1:${api.port}\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n`,
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "work", "--fresh"], {
+			cwd: projectDir,
+			env: { HOME: homeDir },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("suggested skills: diagnose, tdd");
+
+		api.stop();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

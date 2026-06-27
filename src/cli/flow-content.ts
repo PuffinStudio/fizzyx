@@ -17,6 +17,12 @@ export interface FlowDraftResult {
 	readonly path: string;
 }
 
+export interface FlowDraftInput {
+	readonly user?: string;
+	readonly title?: string;
+	readonly suggestedSkills?: ReadonlyArray<string>;
+}
+
 const resolveProjectRoot = (): Effect.Effect<string, Error, ConfigRepository> =>
 	Effect.flatMap(ConfigRepo, (configRepo) =>
 		configRepo.loadProjectConfigOptional().pipe(
@@ -85,10 +91,13 @@ export const loadFlowSkillContent = (): Effect.Effect<string, Error, ConfigRepos
 export const loadFlowTemplateContent = (): Effect.Effect<string, Error, ConfigRepository> =>
 	resolveFlowFile(FLOW_TEMPLATE_FILE_PATH, () => getBuiltinTemplate());
 
-export const createFlowDraft = (): Effect.Effect<FlowDraftResult, Error, ConfigRepository> =>
+export const createFlowDraft = (
+	input: FlowDraftInput = {},
+): Effect.Effect<FlowDraftResult, Error, ConfigRepository> =>
 	Effect.gen(function* () {
 		const root = yield* resolveProjectRoot();
-		const content = yield* loadFlowTemplateContent();
+		const template = yield* loadFlowTemplateContent();
+		const content = renderFlowDraft(template, input);
 
 		for (let attempt = 0; attempt < 10; attempt += 1) {
 			const filename = `card-${crypto.randomUUID().slice(0, 8)}.md`;
@@ -107,6 +116,43 @@ export const createFlowDraft = (): Effect.Effect<FlowDraftResult, Error, ConfigR
 
 		return yield* Effect.fail(new Error("failed to create unique draft path"));
 	});
+
+const renderFlowDraft = (template: string, input: FlowDraftInput): string => {
+	const sections: string[] = [];
+	if (input.title?.trim()) sections.push(`# ${input.title.trim()}`);
+	if (input.user?.trim()) sections.push(`## Assignee\n- ${input.user.trim()}`);
+
+	const skills = uniqueList(input.suggestedSkills ?? []);
+	const body = skills.length > 0 ? replaceSuggestedSkills(template, skills) : template;
+	sections.push(body.trim());
+	return sections.filter(Boolean).join("\n\n");
+};
+
+const replaceSuggestedSkills = (template: string, skills: ReadonlyArray<string>): string => {
+	const lines = template.split(/\r?\n/);
+	const headingIndex = lines.findIndex((line) => /^##\s+Suggested Skills\s*$/i.test(line.trim()));
+	if (headingIndex === -1) {
+		return `${template.trim()}\n\n## Suggested Skills\n${skills.map((skill) => `- ${skill}`).join("\n")}`;
+	}
+
+	let nextHeadingIndex = lines.length;
+	for (let i = headingIndex + 1; i < lines.length; i += 1) {
+		if (/^##\s+/.test(lines[i]?.trim() ?? "")) {
+			nextHeadingIndex = i;
+			break;
+		}
+	}
+
+	return [
+		...lines.slice(0, headingIndex + 1),
+		...skills.map((skill) => `- ${skill}`),
+		"",
+		...lines.slice(nextHeadingIndex),
+	].join("\n");
+};
+
+const uniqueList = (values: ReadonlyArray<string>): string[] =>
+	Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 
 export const initFlowScaffold = ({
 	force,

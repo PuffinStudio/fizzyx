@@ -218,6 +218,37 @@ test("skill remove tdd removes config entry and deletes local skill folder if pr
 	}
 });
 
+test("skill remove drops empty installed field", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+
+	try {
+		writeFileSync(
+			configPath,
+			`skills:
+  version: 1
+  installed:
+    tdd:
+      source: builtin
+      version: 1.0.0
+`,
+		);
+
+		const { stdout, exitCode } = await runCli(["skill", "remove", "tdd"], { cwd: root });
+		const text = stripAnsi(stdout);
+		const yaml = readFileSync(configPath, "utf-8");
+
+		expect(exitCode).toBe(0);
+		expect(text).toContain("removed");
+		expect(yaml).toContain("skills:");
+		expect(yaml).toContain("version: 1");
+		expect(yaml).not.toContain("installed:");
+		expect(yaml).not.toContain("tdd:");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("skill info tdd prints source version and status", async () => {
 	const root = makeTempDir();
 

@@ -1,6 +1,6 @@
 # fizzyx
 
-<img src="./src/planner/logo.svg" alt="fizzyx logo" width="120" />
+<img src="./docs/images/fizzyx-logo.png" alt="fizzyx logo" width="120" />
 
 CLI tool for Fizzy board workflow, OSS/S3-compatible storage, and OpenAPI client generation.
 
@@ -31,6 +31,8 @@ fizzyx flow repair
 
 Use `fizzyx skill ...` for bundled skills and project pins. Use flow commands for repair and health checks.
 
+![Flow command lifecycle](./docs/images/flow-workflow.png)
+
 ## Skill Commands
 
 ```sh
@@ -47,7 +49,7 @@ fizzyx skill migrate --apply
 
 Built-in skills are bundled. `skill update [name]` refreshes the local copy from the current fizzyx release.
 
-![Flow command lifecycle](./docs/images/flow-workflow.svg)
+![Skill command workflow](./docs/images/skill-workflow.png)
 
 ## Planner Dashboard
 
@@ -58,7 +60,7 @@ fizzyx planner start
 fizzyx planner snapshot
 ```
 
-![Planner dashboard workflow](./docs/images/planner-workflow.svg)
+![Planner dashboard workflow](./docs/images/planner-workflow.png)
 
 `planner snapshot` prints the same JSON used by the web dashboard. Project workflow uses `BACKLOG → READY → IN PROGRESS → REVIEW → DONE`, with `DONE` coming from closed cards and `BLOCKED` from Not Now/postponed cards.
 
@@ -106,7 +108,7 @@ fizzyx oss setup --env dev
 - Credentials are stored in OS keychain via `Bun.secrets`, never in config files or shell history
 - Without `--env`, keys are stored as `default` — all environments fall back to it
 
-![OSS command workflow](./docs/images/oss-workflow.svg)
+![OSS command workflow](./docs/images/oss-workflow.png)
 
 ### Sync
 
@@ -250,7 +252,7 @@ const result = await someAction();
 fizzyx openapi list
 ```
 
-![OpenAPI generation workflow](./docs/images/openapi-workflow.svg)
+![OpenAPI generation workflow](./docs/images/openapi-workflow.png)
 
 ### Initialize OpenAPI config
 

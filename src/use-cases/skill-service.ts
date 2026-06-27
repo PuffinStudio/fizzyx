@@ -177,7 +177,11 @@ export const removeSkill = (
 		const nextInstalled = objectValue(skills.installed);
 		delete nextInstalled[name];
 		skills.version = 1;
-		skills.installed = nextInstalled;
+		if (Object.keys(nextInstalled).length > 0) {
+			skills.installed = nextInstalled;
+		} else {
+			delete skills.installed;
+		}
 		context.document.skills = skills;
 		writeYaml(context.writePath, context.document);
 	}
