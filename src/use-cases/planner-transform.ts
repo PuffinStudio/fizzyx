@@ -56,9 +56,6 @@ export const planMetadataRepair = (
 	if (phase && tags.phase.length === 0) {
 		nextTags.push(`phase:${phase.toLowerCase()}`);
 	}
-	if (parsed.metadata.api_status && tags.apiStatus.length === 0) {
-		nextTags.push(`api_status:${parsed.metadata.api_status.toLowerCase()}`);
-	}
 	for (const dependency of parsed.metadata.depends_on) {
 		nextTags.push(`depends_on:${dependency}`);
 	}
@@ -96,7 +93,6 @@ export const renderMetadata = (metadata: PlannerMetadata): string => {
 	if (metadata.depends_on.length > 0) lines.push(`depends_on: [${metadata.depends_on.join(", ")}]`);
 	if (metadata.blocks.length > 0) lines.push(`blocks: [${metadata.blocks.join(", ")}]`);
 	if (metadata.phase) lines.push(`phase: ${metadata.phase}`);
-	if (metadata.api_status) lines.push(`api_status: ${metadata.api_status}`);
 	return `${[...lines, "---"].join("\n")}\n`;
 };
 
@@ -113,7 +109,6 @@ export const toPlannerCard = (
 		...(tagPriority ? { priority: tagPriority.toUpperCase() } : {}),
 		...(parsedTags.type[0] ? { type: parsedTags.type[0] } : {}),
 		...(parsedTags.phase[0] ? { phase: parsedTags.phase[0] } : {}),
-		...(parsedTags.apiStatus[0] ? { api_status: parsedTags.apiStatus[0] } : {}),
 		depends_on:
 			parsedTags.dependsOn.length > 0
 				? parsedTags.dependsOn

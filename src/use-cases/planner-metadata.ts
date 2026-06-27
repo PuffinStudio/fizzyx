@@ -213,7 +213,7 @@ interface RawFrontmatterPair {
 
 const parseFrontmatterPairs = (frontmatterText: string): ReadonlyArray<RawFrontmatterPair> => {
 	const pattern =
-		/(?:^|\s)(priority|type|owner|deadline|impact|effort|depends_on|blocks|phase|api_status)\s*:\s*("[^"]*"|'[^']*'|\[[^\]]*\]|[^\n]+?)(?=\s+(?:priority|type|owner|deadline|impact|effort|depends_on|blocks|phase|api_status)\s*:|$)/g;
+		/(?:^|\s)(priority|type|owner|deadline|impact|effort|depends_on|blocks|phase)\s*:\s*("[^"]*"|'[^']*'|\[[^\]]*\]|[^\n]+?)(?=\s+(?:priority|type|owner|deadline|impact|effort|depends_on|blocks|phase)\s*:|$)/g;
 	const pairs: Array<RawFrontmatterPair> = [];
 	for (const match of frontmatterText.matchAll(pattern)) {
 		const key = match[1];
@@ -279,9 +279,6 @@ const assignScalarMetadata = (
 		case "phase":
 			metadata.phase = value;
 			return;
-		case "api_status":
-			metadata.api_status = value;
-			return;
 	}
 };
 
@@ -321,11 +318,6 @@ export const parsePlannerTags = (tags?: ReadonlyArray<string>): ParsedPlannerTag
 			continue;
 		}
 
-		if (normalized.startsWith("api_status:") && normalized.length > "api_status:".length) {
-			parsed.apiStatus = parsed.apiStatus.concat(normalized.slice("api_status:".length));
-			continue;
-		}
-
 		if (normalized.startsWith("depends_on:") && normalized.length > "depends_on:".length) {
 			const value = Number.parseInt(normalized.slice("depends_on:".length).replace(/^#/, ""), 10);
 			if (Number.isFinite(value)) {
@@ -356,7 +348,6 @@ const scalarKeys = new Set([
 	"impact",
 	"effort",
 	"phase",
-	"api_status",
 ]);
 
 const isPlannerMetadataScalarKey = (

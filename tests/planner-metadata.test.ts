@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { analyzePlannerHealth } from "../src/use-cases/planner-service";
 import type { PlannerCard } from "../src/domain/planner-model";
 import { parsePlannerDescription, parsePlannerTags } from "../src/use-cases/planner-metadata";
-import { toPlannerCard } from "../src/use-cases/planner-transform";
+import { normalizePriority, planMetadataRepair, toPlannerCard } from "../src/use-cases/planner-transform";
 
 test("parsePlannerDescription extracts frontmatter metadata and body", () => {
 	const parsed = parsePlannerDescription(`---
@@ -22,7 +22,7 @@ Ship it`);
 	expect(parsed.metadata.owner).toBe("ellen");
 	expect(parsed.metadata.depends_on).toEqual([123, 124]);
 	expect(parsed.metadata.blocks).toEqual([200, 201]);
-	expect(parsed.metadata.api_status).toBe("not_connected");
+	expect(parsed.metadata.api_status).toBeUndefined();
 	expect(parsed.body).toContain("## Goal");
 	expect(parsed.warnings).toEqual([]);
 });
@@ -40,7 +40,6 @@ test("parsePlannerTags classifies project management tags", () => {
 		"type:bug",
 		"area:frontend",
 		"phase:integration",
-		"api_status:not_connected",
 		"depends_on:123",
 		"blocks:#456",
 		"custom",
@@ -50,10 +49,31 @@ test("parsePlannerTags classifies project management tags", () => {
 	expect(parsed.type).toEqual(["bug"]);
 	expect(parsed.area).toEqual(["frontend"]);
 	expect(parsed.phase).toEqual(["integration"]);
-	expect(parsed.apiStatus).toEqual(["not_connected"]);
 	expect(parsed.dependsOn).toEqual([123]);
 	expect(parsed.blocks).toEqual([456]);
 	expect(parsed.other).toEqual(["custom"]);
+});
+
+test("parsePlannerTags leaves api_status and skill tags as non-standard tags", () => {
+	const parsed = parsePlannerTags([
+		"priority:p1",
+		"api_status:not_connected",
+		"skill:tdd",
+		"skill:playwright",
+	]);
+
+	expect(parsed.priority).toEqual(["p1"]);
+	expect(parsed.type).toEqual([]);
+	expect(parsed.area).toEqual([]);
+	expect(parsed.phase).toEqual([]);
+	expect(parsed.apiStatus).toEqual([]);
+	expect(parsed.dependsOn).toEqual([]);
+	expect(parsed.blocks).toEqual([]);
+	expect(parsed.other).toEqual([
+		"api_status:not_connected",
+		"skill:tdd",
+		"skill:playwright",
+	]);
 });
 
 test("toPlannerCard reads hidden metadata from html descriptions and tags", () => {
@@ -74,7 +94,9 @@ owner: Ellen
 				"priority:p2",
 				"type:chore",
 				"phase:integration",
+				"area:frontend",
 				"api_status:not_connected",
+				"skill:tdd",
 				"depends_on:123",
 				"blocks:456",
 			],
@@ -92,10 +114,43 @@ owner: Ellen
 	expect(card.metadata.priority).toBe("P2");
 	expect(card.metadata.type).toBe("chore");
 	expect(card.metadata.phase).toBe("integration");
-	expect(card.metadata.api_status).toBe("not_connected");
+	expect(card.metadata.api_status).toBeUndefined();
+	expect(card.parsedTags.area).toEqual(["frontend"]);
+	expect(card.parsedTags.other).toEqual(["api_status:not_connected", "skill:tdd"]);
 	expect(card.metadata.depends_on).toEqual([123]);
 	expect(card.metadata.blocks).toEqual([456]);
 	expect(card.body).toContain("<h2>Goal</h2>");
+});
+
+test("planMetadataRepair does not repair api_status or skill tags into standard tags", () => {
+	const card = {
+		id: "card-2",
+		number: 105,
+		title: "Legacy tag cleanup",
+		status: "open",
+		description: `---
+priority: P1
+type: feature
+phase: integration
+api_status: not_connected
+---
+
+## Goal
+Keep legacy execution notes in the body.`,
+		description_html: undefined,
+		has_attachments: false,
+		tags: ["skill:tdd"],
+		closed: false,
+		postponed: false,
+		golden: false,
+		created_at: "2026-06-27T00:00:00.000Z",
+		url: "https://example.com/cards/105",
+	};
+
+	const result = planMetadataRepair(card, { apply: false }, normalizePriority);
+
+	expect(result.action).toBe("tag_card");
+	expect(result.tags).toEqual(["priority:p1", "type:feature", "phase:integration"]);
 });
 
 test("analyzePlannerHealth reports missing metadata and workflow risks", () => {
