@@ -207,6 +207,27 @@ test("prints flow help", async () => {
 	expect(stdout).toContain("skill");
 });
 
+test("planner --help lists start and snapshot only", async () => {
+	const { stdout, exitCode } = await runCli(["planner", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("start");
+	expect(stdout).toContain("snapshot");
+	expect(stdout).not.toContain("health");
+	expect(stdout).not.toContain("repair-metadata");
+	expect(stdout).not.toContain("auto-fix");
+});
+
+test("planner snapshot --help has no auto-fix metadata options", async () => {
+	const { stdout, exitCode } = await runCli(["planner", "snapshot", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("snapshot");
+	expect(stdout).not.toContain("--auto-fix");
+	expect(stdout).not.toContain("--default-priority");
+	expect(stdout).not.toContain("--default-type");
+});
+
 test("flow comment-template requires kind", async () => {
 	const { stdout, exitCode } = await runCli(["flow", "comment-template", "--help"]);
 
