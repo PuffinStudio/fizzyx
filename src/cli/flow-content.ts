@@ -386,7 +386,15 @@ const getBuiltinTemplate = (): string => {
 	const labels = getTemplateLabels();
 	const text = getTemplateText();
 
-	return `## ${labels.goal}
+	return `<!--
+priority: P2
+type: chore
+owner: Ellen
+depends_on: []
+blocks: []
+-->
+
+## ${labels.goal}
 ${text.goal}
 
 ## ${labels.scope}

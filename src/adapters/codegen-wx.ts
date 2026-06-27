@@ -22,13 +22,13 @@ export interface Logger {
  * Custom token persistence.
  * Default uses wx.getStorageSync / wx.setStorageSync with configurable key.
  */
-export type TokenStorage = {
+export interface TokenStorage {
   get: () => string | null | Promise<string | null>
   set: (token: string | null) => void | Promise<void>
 }
 
 /** Context passed to every hook callback. */
-export type HookContext = {
+export interface HookContext {
   method: string
   url: string
   status?: number
@@ -44,13 +44,13 @@ export type HookContext = {
  * - onSuccess: HTTP 2xx responses
  * - onError: HTTP 4xx/5xx or network failures
  */
-export type RequestHook = {
+export interface RequestHook {
   onRequest?: (ctx: HookContext) => void
   onSuccess?: (ctx: HookContext) => void
   onError?: (ctx: HookContext) => void
 }
 
-export type WxRequestConfig = {
+export interface WxRequestConfig {
   /** API base URL (prepended to relative paths). */
   baseUrl?: string
   /** Default headers sent with every request. */
@@ -73,7 +73,7 @@ export type WxRequestConfig = {
   responseExtractor?: (raw: unknown) => unknown
 }
 
-export type RequestOptions<B = unknown> = {
+export interface RequestOptions<B = unknown> {
   query?: Record<string, unknown>
   body?: B
   headers?: Record<string, string>
@@ -279,7 +279,7 @@ export async function requestRaw<T>(
   return new Promise<T>((resolve, reject) => {
     wx.request({
       url: finalUrl,
-      method,
+      method: method as NonNullable<WechatMiniprogram.RequestOption["method"]>,
       data: options.body as Record<string, unknown>,
       timeout: _config.timeout ?? DEFAULT_TIMEOUT_MS,
       header,

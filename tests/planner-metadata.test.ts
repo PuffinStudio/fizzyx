@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { analyzePlannerHealth } from "../src/use-cases/planner-service";
 import type { PlannerCard } from "../src/use-cases/planner-service";
 import { parsePlannerDescription, parsePlannerTags } from "../src/use-cases/planner-metadata";
+import { toPlannerCard } from "../src/use-cases/planner-transform";
 
 test("parsePlannerDescription extracts frontmatter metadata and body", () => {
 	const parsed = parsePlannerDescription(`---
@@ -47,6 +48,37 @@ test("parsePlannerTags classifies project management tags", () => {
 	expect(parsed.area).toEqual(["frontend"]);
 	expect(parsed.phase).toEqual(["integration"]);
 	expect(parsed.other).toEqual(["custom"]);
+});
+
+test("toPlannerCard reads hidden metadata from html descriptions and tags", () => {
+	const card = toPlannerCard(
+		{
+			id: "card-1",
+			number: 382,
+			title: "HTML metadata",
+			status: "open",
+			description: "GoalPlain text without metadata.",
+			description_html: `<!--
+owner: Ellen
+-->
+<h2>Goal</h2>
+<p>HTML body.</p>`,
+			has_attachments: false,
+			tags: ["priority:p2", "type:chore"],
+			closed: false,
+			postponed: false,
+			golden: false,
+			created_at: "2026-06-27T00:00:00.000Z",
+			url: "https://example.com/cards/382",
+		},
+		[],
+		"1",
+	);
+
+	expect(card.metadata.owner).toBe("Ellen");
+	expect(card.metadata.priority).toBe("P2");
+	expect(card.metadata.type).toBe("chore");
+	expect(card.body).toContain("<h2>Goal</h2>");
 });
 
 test("analyzePlannerHealth reports missing metadata and workflow risks", () => {

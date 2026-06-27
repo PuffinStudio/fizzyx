@@ -319,7 +319,11 @@ function PlannerViewRenderer({
 	if (view === "roadmap") return <RoadmapView metrics={metrics} onSelect={onSelect} />;
 	if (view === "calendar")
 		return (
-			<CalendarView metrics={metrics} onSelect={onSelect} onNavigateToMyCards={navigateToMyCards} />
+			<CalendarView
+				cards={snapshot.cards}
+				onSelect={onSelect}
+				onNavigateToMyCards={navigateToMyCards}
+			/>
 		);
 	if (view === "my") return <MyCardsView snapshot={snapshot} onSelect={onSelect} />;
 	if (view === "board") return <BoardView cards={snapshot.cards} onSelect={onSelect} />;

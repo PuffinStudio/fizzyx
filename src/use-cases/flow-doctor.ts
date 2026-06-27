@@ -31,16 +31,11 @@ const expectedColumns: ReadonlyArray<{ name: string; aliases: ReadonlyArray<stri
 
 export const analyzeDoctor = (env: Env): Effect.Effect<DoctorResult, unknown> =>
 	Effect.gen(function* () {
-		const cache = yield* env.cacheRepo.read().pipe(Effect.catch(() => Effect.succeed(null)));
 		const config = env.config;
 		const info: string[] = [];
 		const fixes: string[] = [];
-		let columnsData = cache?.columns;
-
-		if (!columnsData || columnsData.length === 0) {
-			info.push("Fetched columns from API (not cached)");
-			columnsData = yield* env.api.listColumns();
-		}
+		info.push("Fetched columns from API");
+		const columnsData = yield* env.api.listColumns();
 
 		const columns: DoctorResult["columns"] = [];
 

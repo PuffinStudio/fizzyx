@@ -35,10 +35,11 @@ export function MyCardsView({
 			transition={{ duration: 0.3 }}
 			className="space-y-4"
 		>
-			<section className="grid grid-cols-6 gap-3">
+			<section className="grid min-w-0 grid-cols-6 gap-3 overflow-hidden">
 				{lanes.map((lane, i) => (
 					<motion.div
 						key={lane.key}
+						className="min-w-0"
 						initial={{ opacity: 0, y: 12 }}
 						animate={{ opacity: 1, y: 0 }}
 						transition={{ delay: i * 0.05, duration: 0.3 }}
@@ -66,7 +67,7 @@ function LaneColumn({
 }) {
 	return (
 		<section
-			className={`flex h-[calc(100vh-12rem)] flex-col rounded-xl bg-muted/20 p-3 ${laneCardClass(title)}`}
+			className={`flex h-[calc(100vh-12rem)] min-w-0 flex-col overflow-hidden rounded-xl bg-muted/20 p-3 ${laneCardClass(title)}`}
 		>
 			<div className={`h-1 shrink-0 rounded-full ${laneBarClass(title)}`} />
 			<div className="mb-3 flex shrink-0 items-center justify-between gap-2">
@@ -75,7 +76,7 @@ function LaneColumn({
 					{cards.length}
 				</Badge>
 			</div>
-			<div className="flex-1 space-y-2 overflow-y-auto">
+			<div className="no-scrollbar scroll-fade min-w-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden">
 				{cards.map((card) => (
 					<PlannerCardItem key={card.number} card={card} compact onSelect={onSelect} />
 				))}

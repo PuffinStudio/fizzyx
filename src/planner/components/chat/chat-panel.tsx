@@ -21,6 +21,13 @@ import { ChatMessageBubble } from "./chat-message-bubble";
 import { useChatContext } from "./chat-provider";
 import { IndexedDBChatStorage } from "../../../adapters/chat-indexeddb";
 import type { MessageReplyRef } from "../../../domain/chat";
+import {
+	MessageScroller,
+	MessageScrollerContent,
+	MessageScrollerItem,
+	MessageScrollerProvider,
+	MessageScrollerViewport,
+} from "../ui/message-scroller";
 
 const panelStore = new IndexedDBChatStorage();
 const PANEL_KEY = "chat-panel-state";
@@ -39,7 +46,7 @@ export interface ChatPanelProps {
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-export const ChatPanel = ({ onClose }: ChatPanelProps) => {
+export const ChatPanel = ({ onClose: _onClose }: ChatPanelProps) => {
 	const {
 		currentUserId,
 		messages,
@@ -54,7 +61,7 @@ export const ChatPanel = ({ onClose }: ChatPanelProps) => {
 	const [text, setText] = useState("");
 	const [imagePreview, setImagePreview] = useState<string | null>(null);
 	const [sending, setSending] = useState(false);
-	const scrollRef = useRef<HTMLDivElement>(null);
+	const messageViewportRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const pastedFileRef = useRef<File | null>(null);
 	const panelRef = useRef<HTMLDivElement>(null);
@@ -110,11 +117,11 @@ export const ChatPanel = ({ onClose }: ChatPanelProps) => {
 	}, [maximized]);
 
 	const scrollToBottom = useCallback(() => {
-		setTimeout(() => {
-			if (scrollRef.current) {
-				scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-			}
-		}, 10);
+		const viewport = messageViewportRef.current;
+		if (!viewport) return;
+		requestAnimationFrame(() => {
+			viewport.scrollTop = viewport.scrollHeight;
+		});
 	}, []);
 
 	useEffect(() => {
@@ -360,57 +367,59 @@ export const ChatPanel = ({ onClose }: ChatPanelProps) => {
 						</span>
 					</div>
 
-					<div
-						ref={scrollRef}
-						className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/10 [&::-webkit-scrollbar-track]:bg-transparent"
-					>
-						<div className="flex flex-col gap-0.5 px-3 py-3">
-							{messages.length === 0 ? (
-								<p className="py-8 text-center text-xs text-muted-foreground">
-									No messages yet. Say hello!
-								</p>
-							) : (
-								messages.map((msg, i) => {
-									const prev = messages[i - 1];
-									const compact = prev !== undefined && prev.sender.id === msg.sender.id;
-									return (
-										<div
-											key={msg.id}
-											ref={(el) => {
-												if (el) messageRefs.current.set(msg.id, el);
-												else messageRefs.current.delete(msg.id);
-											}}
-										>
-											<ContextMenu>
-												<ContextMenuTrigger>
-													<ChatMessageBubble
-														message={msg}
-														isOwn={msg.sender.id === currentUserId}
-														compact={compact}
-														onReplyClick={scrollToMessage}
-													/>
-												</ContextMenuTrigger>
-												<ContextMenuContent>
-													<ContextMenuItem
-														onClick={() => {
-															setReplyingTo({
-																id: msg.id,
-																content: msg.content.slice(0, 120),
-																sender: { id: msg.sender.id, name: msg.sender.name },
-															});
-															inputRef.current?.focus();
-														}}
-													>
-														Reply
-													</ContextMenuItem>
-												</ContextMenuContent>
-											</ContextMenu>
-										</div>
-									);
-								})
-							)}
-						</div>
-					</div>
+					<MessageScrollerProvider>
+						<MessageScroller className="min-h-0 flex-1">
+							<MessageScrollerViewport ref={messageViewportRef} className="px-1">
+								<MessageScrollerContent className="gap-0.5 px-2 py-3">
+									{messages.length === 0 ? (
+										<p className="py-8 text-center text-xs text-muted-foreground">
+											No messages yet. Say hello!
+										</p>
+									) : (
+										messages.map((msg, i) => {
+											const prev = messages[i - 1];
+											const compact = prev !== undefined && prev.sender.id === msg.sender.id;
+											return (
+												<MessageScrollerItem
+													key={msg.id}
+													scrollAnchor={i === messages.length - 1}
+													ref={(el) => {
+														if (el) messageRefs.current.set(msg.id, el);
+														else messageRefs.current.delete(msg.id);
+													}}
+												>
+													<ContextMenu>
+														<ContextMenuTrigger>
+															<ChatMessageBubble
+																message={msg}
+																isOwn={msg.sender.id === currentUserId}
+																compact={compact}
+																onReplyClick={scrollToMessage}
+															/>
+														</ContextMenuTrigger>
+														<ContextMenuContent>
+															<ContextMenuItem
+																onClick={() => {
+																	setReplyingTo({
+																		id: msg.id,
+																		content: msg.content.slice(0, 120),
+																		sender: { id: msg.sender.id, name: msg.sender.name },
+																	});
+																	inputRef.current?.focus();
+																}}
+															>
+																Reply
+															</ContextMenuItem>
+														</ContextMenuContent>
+													</ContextMenu>
+												</MessageScrollerItem>
+											);
+										})
+									)}
+								</MessageScrollerContent>
+							</MessageScrollerViewport>
+						</MessageScroller>
+					</MessageScrollerProvider>
 
 					{replyingTo ? (
 						<div className="mx-2 flex items-stretch gap-2 rounded-t-xl bg-primary/[0.04] px-2.5 py-1.5">

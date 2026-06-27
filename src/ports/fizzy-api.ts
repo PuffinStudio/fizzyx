@@ -17,9 +17,13 @@ export interface FizzyApi {
 		title: string;
 		description: string;
 		board: string;
+		columnId?: string;
 	}) => Effect.Effect<Card, ApiError>;
 	assignCard: (number: CardNumber, userId: string) => Effect.Effect<void, ApiError>;
+	tagCard: (number: CardNumber, tag: string) => Effect.Effect<void, ApiError>;
 	moveCard: (number: CardNumber, columnId: string) => Effect.Effect<void, ApiError>;
+	triageCard: (number: CardNumber, columnId: string) => Effect.Effect<void, ApiError>;
+	untriageCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	comment: (number: CardNumber, body: string) => Effect.Effect<void, ApiError>;
 	closeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	postponeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;

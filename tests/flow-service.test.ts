@@ -77,7 +77,10 @@ const defaultApi = () =>
 		createColumn: () => Effect.fail(new ApiError({ message: "createColumn not mocked" })),
 		createCard: () => Effect.fail(new ApiError({ message: "createCard not mocked" })),
 		assignCard: () => Effect.fail(new ApiError({ message: "assignCard not mocked" })),
+		tagCard: () => Effect.fail(new ApiError({ message: "tagCard not mocked" })),
 		moveCard: () => Effect.fail(new ApiError({ message: "moveCard not mocked" })),
+		triageCard: () => Effect.fail(new ApiError({ message: "triageCard not mocked" })),
+		untriageCard: () => Effect.fail(new ApiError({ message: "untriageCard not mocked" })),
 		comment: () => Effect.fail(new ApiError({ message: "comment not mocked" })),
 		closeCard: () => Effect.fail(new ApiError({ message: "closeCard not mocked" })),
 		postponeCard: () => Effect.fail(new ApiError({ message: "postponeCard not mocked" })),
@@ -201,6 +204,12 @@ test("start moves to IN PROGRESS instead of READY", async () => {
 		moveCalls.push({ number, columnId });
 		return Effect.succeed(undefined);
 	};
+	api.showCard = () =>
+		Effect.succeed({
+			number: 5,
+			title: "Card in backlog",
+			column: { id: "inprogress-id", name: "IN PROGRESS" },
+		});
 	api.assignCard = (_number, userId) => {
 		assignCalls.push(userId);
 		return Effect.succeed(undefined);
@@ -465,7 +474,12 @@ test("stepsFromDescription parses markdown and html task lists", async () => {
 });
 
 test("add with template extracts markdown step list into fizzy steps", async () => {
-	const createCardInputs: Array<{ board: string; title: string; description: string }> = [];
+	const createCardInputs: Array<{
+		board: string;
+		title: string;
+		description: string;
+		columnId?: string;
+	}> = [];
 	const templateSteps: Array<{ content: string; completed: boolean }> = [];
 	const actionLog: string[] = [];
 	let listCardsCalls = 0;
@@ -492,10 +506,16 @@ test("add with template extracts markdown step list into fizzy steps", async () 
 		actionLog.push(`assign:${number}:${userId}`);
 		return Effect.succeed(undefined);
 	};
-	api.moveCard = (number, columnId) => {
-		actionLog.push(`move:${number}:${columnId}`);
+	api.triageCard = (number, columnId) => {
+		actionLog.push(`triage:${number}:${columnId}`);
 		return Effect.succeed(undefined);
 	};
+	api.showCard = () =>
+		Effect.succeed({
+			number: 101,
+			title: "Add template steps",
+			column: { id: "todo-id", name: "TODO" },
+		});
 	api.createStep = (_number, content, completed) => {
 		templateSteps.push({ content, completed: Boolean(completed) });
 		return Effect.succeed(undefined);
@@ -538,10 +558,10 @@ Add parser support for template-based step extraction.
 		{
 			board: "board-1",
 			title: "Add template steps",
-			description: Bun.markdown.html(expectedCardDescription),
+			description: expectedCardDescription,
 		},
 	]);
-	expect(actionLog).toEqual(["assign:101:identity-id", "move:101:todo-id"]);
+	expect(actionLog).toEqual(["triage:101:todo-id", "assign:101:identity-id"]);
 	expect(templateSteps).toEqual([
 		{ content: "Parse template section", completed: true },
 		{ content: "--radius-sm 降至 4rpx", completed: false },
@@ -555,7 +575,12 @@ Add parser support for template-based step extraction.
 });
 
 test("add without template steps section preserves card body conversion and skips step creation", async () => {
-	const createCardInputs: Array<{ board: string; title: string; description: string }> = [];
+	const createCardInputs: Array<{
+		board: string;
+		title: string;
+		description: string;
+		columnId?: string;
+	}> = [];
 	const templateSteps: Array<{ content: string; completed: boolean }> = [];
 
 	const api = defaultApi();
@@ -569,8 +594,14 @@ test("add without template steps section preserves card body conversion and skip
 			description: input.description,
 		});
 	};
+	api.triageCard = () => Effect.succeed(undefined);
 	api.assignCard = () => Effect.succeed(undefined);
-	api.moveCard = () => Effect.succeed(undefined);
+	api.showCard = () =>
+		Effect.succeed({
+			number: 102,
+			title: "No template steps",
+			column: { id: "todo-id", name: "TODO" },
+		});
 	api.createStep = (_number, content, completed) => {
 		templateSteps.push({ content, completed: Boolean(completed) });
 		return Effect.succeed(undefined);
@@ -596,12 +627,70 @@ test("add without template steps section preserves card body conversion and skip
 	);
 
 	expect(number).toBe(102);
-	expect(createCardInputs[0]!.description).toBe(Bun.markdown.html(description));
+	expect(createCardInputs[0]!.description).toBe(description);
 	expect(templateSteps).toEqual([]);
 });
 
+test("add applies planner metadata as tags when rendering html description", async () => {
+	const tags: string[] = [];
+	const createCardInputs: Array<{
+		board: string;
+		title: string;
+		description: string;
+		columnId?: string;
+	}> = [];
+
+	const api = defaultApi();
+	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
+	api.listCards = () => Effect.succeed([]);
+	api.createCard = (input) => {
+		createCardInputs.push(input);
+		return Effect.succeed({
+			number: 103,
+			title: input.title,
+			description: input.description,
+		});
+	};
+	api.triageCard = () => Effect.succeed(undefined);
+	api.assignCard = () => Effect.succeed(undefined);
+	api.tagCard = (_number, tag) => {
+		tags.push(tag);
+		return Effect.succeed(undefined);
+	};
+	api.showCard = () =>
+		Effect.succeed({
+			number: 103,
+			title: "Metadata tags",
+			column: { id: "todo-id", name: "TODO" },
+		});
+
+	const env = makeEnv(api);
+	const description = `<!--
+priority: P2
+type: chore
+owner: Ellen
+-->
+
+## Goal
+Keep Fizzy UI readable.`;
+
+	const number = await Effect.runPromise(
+		add(env, { user: "me", title: "Metadata tags", description }),
+	);
+
+	expect(number).toBe(103);
+	expect(createCardInputs[0]!.description).toBe(`<!--
+priority: P2
+type: chore
+owner: Ellen
+-->
+<h2>Goal</h2>
+<p>Keep Fizzy UI readable.</p>`);
+	expect(tags).toEqual(["priority:p2", "type:chore"]);
+});
+
 test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
-	const moveCalls: Array<{ number: number; columnId: string }> = [];
+	const triageCalls: Array<{ number: number; columnId: string }> = [];
 	const api = defaultApi();
 	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
 	api.listColumns = () =>
@@ -617,11 +706,17 @@ test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
 			description: input.description,
 		});
 	};
-	api.assignCard = () => Effect.succeed(undefined);
-	api.moveCard = (number, columnId) => {
-		moveCalls.push({ number, columnId });
+	api.triageCard = (number, columnId) => {
+		triageCalls.push({ number, columnId });
 		return Effect.succeed(undefined);
 	};
+	api.assignCard = () => Effect.succeed(undefined);
+	api.showCard = () =>
+		Effect.succeed({
+			number: 103,
+			title: "Alias target",
+			column: { id: "backlog-id", name: "BACKLOG" },
+		});
 	api.createStep = (_number, content, completed) => {
 		// No template steps expected for this flow.
 		void content;
@@ -651,7 +746,100 @@ test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
 	);
 
 	expect(number).toBe(103);
-	expect(moveCalls).toEqual([{ number: 103, columnId: "backlog-id" }]);
+	expect(triageCalls).toEqual([{ number: 103, columnId: "backlog-id" }]);
+});
+
+test("add ignores configured MAYBE column when resolving backlog", async () => {
+	const triageCalls: Array<{ number: number; columnId: string }> = [];
+	const api = defaultApi();
+	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
+	api.listColumns = () =>
+		Effect.succeed([
+			{ id: "maybe-id", name: "MAYBE" },
+			{ id: "backlog-id", name: "BACKLOG" },
+		]);
+	api.listCards = () => Effect.succeed([]);
+	api.createCard = (input) => {
+		return Effect.succeed({
+			number: 104,
+			title: input.title,
+			description: input.description,
+		});
+	};
+	api.triageCard = (number, columnId) => {
+		triageCalls.push({ number, columnId });
+		return Effect.succeed(undefined);
+	};
+	api.assignCard = () => Effect.succeed(undefined);
+	api.showCard = () =>
+		Effect.succeed({
+			number: 104,
+			title: "Do not use maybe",
+			column: { id: "backlog-id", name: "BACKLOG" },
+		});
+
+	const env = {
+		...makeEnv(api),
+		config: {
+			...baseConfig,
+			flow: {
+				...baseConfig.flow,
+				columns: {
+					...baseConfig.flow.columns,
+					todo: "maybe-id",
+				},
+				users: {
+					me: "user-id",
+				},
+			},
+		},
+	};
+
+	const number = await Effect.runPromise(
+		add(env, { user: "me", title: "Do not use maybe", description: "body" }),
+	);
+
+	expect(number).toBe(104);
+	expect(triageCalls).toEqual([{ number: 104, columnId: "backlog-id" }]);
+});
+
+test("add fails when Fizzy keeps the card outside workflow columns", async () => {
+	const api = defaultApi();
+	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
+	api.listColumns = () => Effect.succeed([{ id: "todo-id", name: "TODO" }]);
+	api.listCards = () => Effect.succeed([]);
+	api.createCard = (input) =>
+		Effect.succeed({
+			number: 105,
+			title: input.title,
+			description: input.description,
+		});
+	api.triageCard = () => Effect.succeed(undefined);
+	api.assignCard = () => Effect.succeed(undefined);
+	api.showCard = () => Effect.succeed({ number: 105, title: "Stuck", assignees: [] });
+
+	const env = {
+		...makeEnv(api),
+		config: {
+			...baseConfig,
+			flow: {
+				...baseConfig.flow,
+				users: {
+					me: "user-id",
+				},
+			},
+		},
+	};
+
+	let error: unknown;
+	try {
+		await Effect.runPromise(add(env, { user: "me", title: "Stuck", description: "body" }));
+	} catch (cause) {
+		error = cause;
+	}
+
+	expect(error).toBeInstanceOf(ValidationError);
+	expect((error as Error).message).toContain("not in TODO");
 });
 
 test("assign supports current-user aliases and skips already assigned users", async () => {
@@ -866,10 +1054,10 @@ Ray`,
 		stepsUpdated: 1,
 		stepsCompleted: 0,
 	});
-	expect(descriptions[0]).toContain("<h2>Goal</h2>");
+	expect(descriptions[0]).toContain("## Goal");
 	expect(descriptions[0]).toContain("Shrink radius tokens.");
-	expect(descriptions[0]).toContain("<h2>Files</h2>");
-	expect(descriptions[0]).toContain("<h2>Verification</h2>");
+	expect(descriptions[0]).toContain("## Files");
+	expect(descriptions[0]).toContain("## Verification");
 	expect(descriptions[0]).not.toContain("References");
 	expect(descriptions[0]).not.toContain("Backup");
 	expect(created).toEqual([]);
@@ -966,18 +1154,10 @@ test("standardizeBoard standardizes unique open and closed cards", async () => {
 	expect(standardized.sort()).toEqual([40, 41, 42]);
 });
 
-test("convertDescription converts rich text to HTML", () => {
-	const html = convertDescription("<div>html</div>");
-	expect(html).toInclude("html");
-
-	const bold = convertDescription("**bold**");
-	expect(bold).toInclude("<strong>bold</strong>");
-
-	const task = convertDescription("- [x] done");
-	expect(task).toInclude('type="checkbox"');
-});
-
-test("convertDescription passes through plain text unchanged", () => {
+test("convertDescription passes through input unchanged", () => {
+	expect(convertDescription("<div>html</div>")).toBe("<div>html</div>");
+	expect(convertDescription("**bold**")).toBe("**bold**");
+	expect(convertDescription("- [x] done")).toBe("- [x] done");
 	expect(convertDescription("hello world")).toBe("hello world");
 	expect(convertDescription("")).toBe("");
 });

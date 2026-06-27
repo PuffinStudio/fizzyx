@@ -366,6 +366,7 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 					title: input.title,
 					description: input.description,
 					board_id: input.board,
+					column_id: input.columnId,
 				}),
 			).pipe(Effect.flatMap(decodeCard)),
 		updateCardDescription: (number, description) =>
@@ -380,15 +381,26 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 					FizzyEffect.assignCard({ ...accountParams, cardNumber: number }, { assignee_id: userId }),
 				),
 			),
+		tagCard: (number, tag) =>
+			asVoid(
+				runGenerated(
+					FizzyEffect.tagCard({ ...accountParams, cardNumber: number }, { tag_title: tag }),
+				),
+			),
 		moveCard: (number, columnId) =>
 			asVoid(
 				runGenerated(
-					FizzyEffect.moveCard(
-						{ ...accountParams, cardNumber: number },
-						{ board_id: config.board ?? "", column_id: columnId },
-					),
+					FizzyEffect.triageCard({ ...accountParams, cardNumber: number }, { column_id: columnId }),
 				),
 			),
+		triageCard: (number, columnId) =>
+			asVoid(
+				runGenerated(
+					FizzyEffect.triageCard({ ...accountParams, cardNumber: number }, { column_id: columnId }),
+				),
+			),
+		untriageCard: (number) =>
+			asVoid(runGenerated(FizzyEffect.unTriageCard({ ...accountParams, cardNumber: number }))),
 		comment: (number, body) =>
 			asVoid(
 				runGenerated(FizzyEffect.createComment({ ...accountParams, cardNumber: number }, { body })),

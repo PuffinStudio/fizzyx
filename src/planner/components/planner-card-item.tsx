@@ -19,10 +19,10 @@ export function PlannerCardItem({
 		<button
 			type="button"
 			onClick={() => onSelect(card)}
-			className="group/item w-full rounded-lg bg-background px-3 py-2.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			className="group/item w-full overflow-hidden rounded-lg bg-background px-3 py-2.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 		>
-			<div className="flex items-start justify-between gap-2">
-				<p className={`${compact ? "text-xs" : "text-sm"} font-medium leading-snug`}>
+			<div className="flex min-w-0 items-start justify-between gap-2">
+				<p className={`${compact ? "text-xs" : "text-sm"} min-w-0 font-medium leading-snug`}>
 					#{card.number} {card.title}
 				</p>
 				<div className="flex shrink-0 items-center gap-1">

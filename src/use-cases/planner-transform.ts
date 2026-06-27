@@ -12,6 +12,7 @@ import type {
 } from "./planner-service";
 import type { PlannerMetadata, PlannerPriority } from "./planner-metadata";
 import { parsePlannerDescription, parsePlannerTags } from "./planner-metadata";
+import { convertDescription } from "./flow-card-content";
 
 export const normalizePriority = (priority?: string): PlannerPriority | undefined => {
 	const value = priority?.trim().toLowerCase();
@@ -35,7 +36,7 @@ export const planMetadataRepair = (
 	options: PlannerRepairMetadataOptions,
 	normalizePriority: (value?: string) => PlannerPriority | undefined,
 ): PlannerRepairMetadataChange => {
-	const description = card.description || "";
+	const description = card.description_html || card.description || "";
 	const parsed = parsePlannerDescription(description);
 	const tags = parsePlannerTags(card.tags);
 	const owner = parsed.metadata.owner || card.assignees?.[0]?.name;
@@ -63,12 +64,14 @@ export const planMetadataRepair = (
 		api_status: parsed.metadata.api_status || "",
 	};
 
-	const renderedDescription =
-		`${renderMetadata(metadata)}${parsed.body ? `\n${parsed.body}` : ""}`.trimEnd();
+	const renderedDescription = convertDescription(
+		`${renderMetadata(metadata)}${parsed.body ? `\n${parsed.body}` : ""}`.trimEnd(),
+	);
 	const needsSingleLineFrontmatterNormalization = parsed.warnings.includes(
 		"normalized single-line frontmatter format",
 	);
-	const hasFrontmatter = description.startsWith("---") || description.startsWith("<!--");
+	const hasFrontmatter =
+		description.trimStart().startsWith("---") || description.trimStart().startsWith("<!--");
 	const reason = needsSingleLineFrontmatterNormalization
 		? "normalize metadata frontmatter format"
 		: hasFrontmatter
@@ -119,8 +122,15 @@ export const toPlannerCard = (
 	columns: ReadonlyArray<Column>,
 	account: string,
 ): PlannerCard => {
-	const parsedDescription = parsePlannerDescription(card.description);
+	const parsedDescription = parsePlannerDescription(card.description_html || card.description);
 	const parsedTags = parsePlannerTags(card.tags);
+	const tagPriority = normalizePriority(parsedTags.priority[0]);
+	const metadata: PlannerMetadata = {
+		...parsedDescription.metadata,
+		...(tagPriority ? { priority: tagPriority.toUpperCase() } : {}),
+		...(parsedTags.type[0] ? { type: parsedTags.type[0] } : {}),
+		...(parsedTags.phase[0] ? { phase: parsedTags.phase[0] } : {}),
+	};
 	const completed = (card.steps || []).filter((step) => step.completed).length;
 	const total = (card.steps || []).length;
 
@@ -133,7 +143,7 @@ export const toPlannerCard = (
 		postponed: card.postponed,
 		tags: card.tags || [],
 		parsedTags,
-		metadata: parsedDescription.metadata,
+		metadata,
 		metadataWarnings: parsedDescription.warnings,
 		body: parsedDescription.body,
 		assignees: (card.assignees || []).map((u) => toPlannerUser(u, account)),
@@ -213,7 +223,7 @@ export const resolveLane = (card: Card, _columns: ReadonlyArray<Column>): Planne
 	if (card.postponed) return "blocked";
 	const name = normalizeColumnName(card.column?.name || "");
 	if (name === "notnow" || name === "blocked") return "blocked";
-	if (name === "backlog" || name === "todo" || name === "maybe") return "todo";
+	if (name === "backlog" || name === "todo") return "todo";
 	if (name === "ready") return "ready";
 	if (name === "inprogress") return "in_progress";
 	if (name === "review") return "review";

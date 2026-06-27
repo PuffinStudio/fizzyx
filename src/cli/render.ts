@@ -1,4 +1,5 @@
 import type { Card, Comment, Step } from "../domain/models";
+import { markdownishText } from "../use-cases/flow-card-content";
 import { parsePlannerDescription } from "../use-cases/planner-metadata";
 
 export type RenderColumn<T> = {
@@ -108,13 +109,16 @@ export const renderKv = (
 		.join("\n");
 };
 
-export const printCards = (cards: ReadonlyArray<Card>): string => {
+export const printCards = (
+	cards: ReadonlyArray<Card>,
+	options: { systemColumn?: string } = {},
+): string => {
 	if (cards.length === 0) return "(none)";
 
 	const table = renderTable(
 		cards,
 		[
-			{ header: "column", value: columnName, align: "left" },
+			{ header: "column", value: (card) => columnName(card, options.systemColumn), align: "left" },
 			{ header: "id", value: (card) => colorize(`#${card.number}`, "cyan") },
 			{ header: "assignees", value: assignees },
 			{ header: "title", value: (card) => card.title },
@@ -129,7 +133,8 @@ export const printCards = (cards: ReadonlyArray<Card>): string => {
 
 export const printCardDetail = (card: Card, comments: ReadonlyArray<Comment>): string => {
 	const steps = card.steps ?? [];
-	const parsedDescription = parsePlannerDescription(card.description || "");
+	const sourceDescription = card.descriptionHtml || card.description || "";
+	const parsedDescription = parsePlannerDescription(sourceDescription);
 	const lines: string[] = [
 		`# #${card.number} ${card.title}`,
 		"",
@@ -140,7 +145,7 @@ export const printCardDetail = (card: Card, comments: ReadonlyArray<Comment>): s
 		]),
 		"",
 		"## Description",
-		...(parsedDescription.body || card.description
+		...(parsedDescription.body || sourceDescription
 			? renderMarkdownText(parsedDescription.body)
 			: ["(no description)"]),
 	];
@@ -213,7 +218,13 @@ export const buildKeyTree = (objects: { key: string; size?: number }[]): string[
 	return lines;
 };
 
-const columnName = (card: Card): string => card.column?.name || "TRIAGE";
+const columnName = (card: Card, systemColumn?: string): string => {
+	if (systemColumn) return systemColumn;
+	if (!card.column?.name) {
+		throw new Error(`Card #${card.number} is missing a workflow column`);
+	}
+	return card.column.name;
+};
 
 const assignees = (card: Card): string => {
 	const names = (card.assignees || []).map((assignee) => assignee.name).filter(Boolean);
@@ -223,7 +234,7 @@ const assignees = (card: Card): string => {
 const date = (value: string | undefined): string => (value ? value.replace(/T.*/, "") : "?");
 
 const renderMarkdownText = (text: string): string[] => {
-	const normalized = text.trim();
+	const normalized = markdownishText(text).trim();
 	if (!normalized) {
 		return ["(no description)"];
 	}

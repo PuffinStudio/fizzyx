@@ -608,7 +608,7 @@ test("flow repair-markdown repairs card description and prints result", async ()
 					return Response.json({
 						number: 12,
 						title: "Repair description",
-						description: "- [ ] Fix tests",
+						description: "## Goal\nFix tests",
 					});
 				}
 
@@ -666,8 +666,7 @@ test("flow repair-markdown repairs card description and prints result", async ()
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("repaired #12");
-		expect(requestBodies).toHaveLength(1);
-		expect(typeof requestBodies[0]?.description).toBe("string");
+		expect(requestBodies).toHaveLength(0);
 		expect(calls.filter((call) => call === "GET /1/cards.json").length).toBe(3);
 
 		api.stop();

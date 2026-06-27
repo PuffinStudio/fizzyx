@@ -93,14 +93,14 @@ export const parseTemplateDescription = (description: string): ParsedTemplateDes
 	}
 
 	return {
-		cardDescription: cardLines.join("\n"),
+		cardDescription: cardLines.join("\n").replace(/\n+$/, "").trimEnd(),
 		templateSteps: parseDoneWhen(templateLines.join("\n")),
 	};
 };
 
 type DescriptionSections = Record<string, string[]>;
 
-const markdownishText = (value: string): string =>
+export const markdownishText = (value: string): string =>
 	decodeTextEntities(
 		value
 			.replace(
@@ -291,17 +291,70 @@ const decodeTextEntities = (value: string): string =>
 			return String.fromCodePoint(code);
 		});
 
-const richTextSignature =
-	/(<[^>]+>|`|^#{1,6}\s+.+|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|~~[^~]+~~|\b_[^_]+_\b|^\s{0,3}[-+*]\s+\[[ xX]\]|^\s{0,3}\d+\.\s+|^\s{0,3}>\s+|^```)/m;
+export const convertDescription = (input: string): string => {
+	const standard = extractStandardFrontmatter(input);
+	if (standard) {
+		return renderFizzyDescription(standard.frontmatter, standard.body);
+	}
 
-export const convertDescription = (input: string): string =>
-	richTextSignature.test(input) ? Bun.markdown.html(input) : input;
+	const hidden = extractHiddenFrontmatter(input);
+	if (hidden) {
+		return renderFizzyDescription(hidden.frontmatter, hidden.body);
+	}
+
+	return input;
+};
+
+const extractStandardFrontmatter = (
+	input: string,
+): { frontmatter: string; body: string } | undefined => {
+	if (!input.startsWith("---\n") && !input.startsWith("---\r\n")) {
+		return undefined;
+	}
+
+	const closeMatch = input.slice(4).match(/\r?\n---(?:\r?\n|$)/);
+	if (!closeMatch || closeMatch.index === undefined) {
+		return undefined;
+	}
+
+	const closeIndex = closeMatch.index + 4;
+	const frontmatter = input.slice(4, closeIndex).trim();
+	const body = input.slice(closeIndex + closeMatch[0].length).replace(/^\r?\n/, "");
+	return { frontmatter, body };
+};
+
+const extractHiddenFrontmatter = (
+	input: string,
+): { frontmatter: string; body: string } | undefined => {
+	const trimmed = input.trimStart();
+	if (!trimmed.startsWith("<!--")) {
+		return undefined;
+	}
+
+	const end = trimmed.indexOf("-->");
+	if (end === -1) {
+		return undefined;
+	}
+
+	const frontmatter = trimmed.slice(4, end).trim();
+	const body = trimmed.slice(end + 3).replace(/^\r?\n/, "");
+	return { frontmatter, body };
+};
+
+const renderFizzyDescription = (frontmatter: string, body: string): string => {
+	const html = Bun.markdown.html(body).trim();
+	if (!frontmatter) {
+		return html;
+	}
+
+	return `<!--\n${frontmatter}\n-->\n${html}`;
+};
 
 export const planStepsFromDescription = (
-	card: Pick<Card, "description" | "steps">,
+	card: Pick<Card, "description" | "descriptionHtml" | "steps">,
 ): FlowContentStep[] => {
 	const existing = new Set((card.steps || []).map((step) => step.content));
-	const parsed = parseDoneWhen(card.description || "");
+	const parsed = parseDoneWhen(card.descriptionHtml || card.description || "");
 	const unique = new Set<string>();
 	return parsed.filter((step) => {
 		if (existing.has(step.content) || unique.has(step.content)) {

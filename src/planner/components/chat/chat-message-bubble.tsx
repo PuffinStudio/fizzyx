@@ -1,7 +1,23 @@
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import Markdown from "react-markdown";
 import type { ChatMessage } from "../../../domain/chat";
 import { cn } from "@/lib/utils";
-import Markdown from "react-markdown";
-import { Dialog, DialogTrigger, DialogContent, DialogClose } from "@/components/ui/dialog";
+import {
+	Attachment,
+	AttachmentContent,
+	AttachmentDescription,
+	AttachmentMedia,
+	AttachmentTitle,
+} from "../ui/attachment";
+import { Marker, MarkerContent } from "../ui/marker";
+import { Bubble, BubbleContent } from "../ui/bubble";
+import {
+	Message,
+	MessageAvatar,
+	MessageContent,
+	MessageFooter,
+	MessageHeader,
+} from "../ui/message";
 
 export interface ChatMessageBubbleProps {
 	readonly message: ChatMessage;
@@ -42,6 +58,12 @@ const initials = (name: string): string =>
 		.toUpperCase()
 		.slice(0, 2) || "?";
 
+const shortenReply = (text: string): string => {
+	const cleaned = text.trim();
+	if (cleaned.length <= 100) return cleaned;
+	return `${cleaned.slice(0, 100)}…`;
+};
+
 export const ChatMessageBubble = ({
 	message,
 	isOwn,
@@ -49,131 +71,137 @@ export const ChatMessageBubble = ({
 	onReplyClick,
 }: ChatMessageBubbleProps) => {
 	const timeStr = formatTime(message.createdAt);
+	const isImageMessage = message.type === "image";
+	const bubbleAlign = isOwn ? "end" : "start";
+	const bubbleVariant = isOwn ? "default" : "muted";
+	const showName = !isOwn && !compact;
 
 	return (
-		<div className={cn("flex gap-2", isOwn ? "flex-row-reverse" : "flex-row")}>
-			{compact ? (
-				<div className="mt-1 size-6 shrink-0" />
-			) : message.sender.avatarUrl ? (
-				<img
-					src={message.sender.avatarUrl}
-					alt={message.sender.name}
-					className="mt-1 size-6 shrink-0 rounded-full object-cover"
-				/>
-			) : (
-				<div
-					className={cn(
-						"mt-1 flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white",
-						avatarColor(message.sender.id),
-					)}
-				>
-					{initials(message.sender.name)}
-				</div>
-			)}
-			<div className={cn("flex max-w-[80%] flex-col", isOwn ? "items-end" : "items-start")}>
-				{!isOwn && !compact ? (
-					<span className="mb-0.5 px-1 text-[10px] text-muted-foreground/70 font-medium">
-						{message.sender.name}
-					</span>
-				) : null}
-				{message.replyTo ? (
-					<div
-						className="mb-0.5 flex cursor-pointer items-stretch gap-2 px-2"
-						onClick={(e) => {
-							e.stopPropagation();
-							onReplyClick?.(message.replyTo!.id);
-						}}
-					>
-						<div className="w-[3px] shrink-0 rounded-full bg-primary" />
-						<div className="min-w-0 flex-1">
-							<span className="text-[11px] font-semibold text-primary">
-								Replying to {message.replyTo.sender.name}
-							</span>
-							<p className="line-clamp-1 text-xs text-muted-foreground/60">
-								{message.replyTo.content}
-							</p>
-						</div>
-					</div>
-				) : null}
-				{message.type === "image" ? (
-					<Dialog>
-						<DialogTrigger className="block cursor-pointer overflow-hidden rounded-2xl border border-sidebar-border/40">
-							<img
-								src={message.content}
-								alt="Shared image"
-								className="max-h-64 max-w-full object-contain"
-								loading="lazy"
-							/>
-						</DialogTrigger>
-						<DialogContent className="w-max max-w-[90vw] border-0 bg-transparent p-0 shadow-none">
-							<img
-								src={message.content}
-								alt="Shared image"
-								className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain"
-							/>
-							<DialogClose />
-						</DialogContent>
-					</Dialog>
+		<Message align={bubbleAlign}>
+			<MessageAvatar className={cn("size-8", compact ? "invisible" : "")}>
+				{message.sender.avatarUrl ? (
+					<img
+						src={message.sender.avatarUrl}
+						alt={message.sender.name}
+						className="size-full object-cover"
+					/>
 				) : (
-					<div
+					<span
 						className={cn(
-							"rounded-2xl px-3 py-1.5 text-sm leading-relaxed",
-							isOwn
-								? "bg-primary text-primary-foreground rounded-br-md"
-								: "bg-muted text-foreground rounded-bl-md",
+							"grid size-full place-items-center text-[10px] font-medium text-white",
+							avatarColor(message.sender.id),
 						)}
 					>
-						<div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-							<Markdown
-								components={{
-									a: ({ href, children }) => (
-										<a
-											href={href}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="underline underline-offset-2 decoration-1"
-										>
-											{children}
-										</a>
-									),
-									code: ({ className, children, ...props }) => {
-										const isInline = !className;
-										if (isInline) {
-											return (
-												<code
-													className="rounded bg-black/10 px-1 py-0.5 text-[13px] dark:bg-white/10"
-													{...props}
-												>
-													{children}
-												</code>
-											);
-										}
-										return (
-											<pre className="overflow-x-auto rounded-lg bg-black/10 p-2 text-[13px] dark:bg-white/10">
-												<code className={className} {...props}>
-													{children}
-												</code>
-											</pre>
-										);
-									},
-									img: ({ src, alt }) => (
-										<img
-											src={src}
-											alt={alt ?? ""}
-											className="max-w-full rounded-lg"
-											loading="lazy"
-										/>
-									),
-								}}
-							>
-								{message.content}
-							</Markdown>
-						</div>
-					</div>
+						{initials(message.sender.name)}
+					</span>
 				)}
-				<span className="px-1 text-[10px] text-muted-foreground/50">{timeStr}</span>
-			</div>
-		</div>
+			</MessageAvatar>
+			<MessageContent>
+				{showName ? <MessageHeader>{message.sender.name}</MessageHeader> : null}
+				{message.replyTo ? (
+					<button
+						type="button"
+						className="text-left"
+						onClick={() => onReplyClick?.(message.replyTo!.id)}
+					>
+						<Marker variant="separator" className="px-1 text-[11px]">
+							<MarkerContent className="font-semibold text-primary">
+								Replying to {message.replyTo.sender.name}
+							</MarkerContent>
+							<MarkerContent className="text-muted-foreground">
+								{shortenReply(message.replyTo.content)}
+							</MarkerContent>
+						</Marker>
+					</button>
+				) : null}
+
+				<Bubble variant={bubbleVariant} align={bubbleAlign}>
+					{isImageMessage ? (
+						<Dialog>
+							<DialogTrigger>
+								<button type="button" className="text-left" aria-label="Open image preview">
+									<Attachment size="sm" orientation="vertical">
+										<AttachmentMedia variant="image">
+											<img
+												src={message.content}
+												alt="Shared image"
+												className="w-full rounded"
+												loading="lazy"
+											/>
+										</AttachmentMedia>
+										<AttachmentContent>
+											<AttachmentTitle>Image attachment</AttachmentTitle>
+											<AttachmentDescription>Click to view full size</AttachmentDescription>
+										</AttachmentContent>
+									</Attachment>
+								</button>
+							</DialogTrigger>
+							<DialogContent className="w-max max-w-[92vw] border-0 bg-transparent p-0 shadow-none">
+								<img
+									src={message.content}
+									alt="Shared image"
+									className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain"
+								/>
+								<DialogClose />
+							</DialogContent>
+						</Dialog>
+					) : (
+						<BubbleContent className="min-w-0">
+							<div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+								<Markdown
+									components={{
+										a: ({ href, children }) => (
+											<a
+												href={href}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="underline underline-offset-2 decoration-1"
+											>
+												{children}
+											</a>
+										),
+										code: ({ className, children, ...props }) => {
+											const isInline = !className;
+											if (isInline) {
+												return (
+													<code
+														className="rounded bg-black/10 px-1 py-0.5 text-[13px] dark:bg-white/10"
+														{...props}
+													>
+														{children}
+													</code>
+												);
+											}
+											return (
+												<pre className="overflow-x-auto rounded-lg bg-black/10 p-2 text-[13px] dark:bg-white/10">
+													<code className={className} {...props}>
+														{children}
+													</code>
+												</pre>
+											);
+										},
+										img: ({ src, alt }) => (
+											<img
+												src={src}
+												alt={alt ?? ""}
+												className="max-w-full rounded-lg"
+												loading="lazy"
+											/>
+										),
+									}}
+								>
+									{message.content}
+								</Markdown>
+							</div>
+						</BubbleContent>
+					)}
+				</Bubble>
+
+				<MessageFooter className="px-1 text-[10px] text-muted-foreground/50">
+					{timeStr}
+				</MessageFooter>
+			</MessageContent>
+		</Message>
 	);
 };
 

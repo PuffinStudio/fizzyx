@@ -13,6 +13,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { NuqsAdapter } from "nuqs/adapters/react";
 const elem = document.getElementById("root")!;
+
+const RESIZE_OBSERVER_LOOP_ERROR = "ResizeObserver loop completed with undelivered notifications.";
+
+window.addEventListener("error", (event) => {
+	if (event.message === RESIZE_OBSERVER_LOOP_ERROR) {
+		event.stopImmediatePropagation();
+	}
+});
+
 const app = (
 	<StrictMode>
 		<ThemeProvider>

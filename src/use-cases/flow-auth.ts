@@ -76,7 +76,10 @@ export const makeFlowApiWithAuthRetry = ({
 		updateCardDescription: (number, description) =>
 			withAuthRetry((api) => api.updateCardDescription(number, description)),
 		assignCard: (number, userId) => withAuthRetry((api) => api.assignCard(number, userId)),
+		tagCard: (number, tag) => withAuthRetry((api) => api.tagCard(number, tag)),
 		moveCard: (number, columnId) => withAuthRetry((api) => api.moveCard(number, columnId)),
+		triageCard: (number, columnId) => withAuthRetry((api) => api.triageCard(number, columnId)),
+		untriageCard: (number) => withAuthRetry((api) => api.untriageCard(number)),
 		comment: (number, body) => withAuthRetry((api) => api.comment(number, body)),
 		closeCard: (number) => withAuthRetry((api) => api.closeCard(number)),
 		postponeCard: (number) => withAuthRetry((api) => api.postponeCard(number)),

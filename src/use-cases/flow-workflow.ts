@@ -15,6 +15,7 @@ const BACKLOG_COLUMN_NAME_SET = new Set(
 );
 const IN_PROGRESS_COLUMN_NAME_SET = new Set(IN_PROGRESS_COLUMN_ALIASES.map(normalizeColumnName));
 const READY_COLUMN_NAME_SET = new Set(READY_COLUMN_ALIASES.map(normalizeColumnName));
+const REVIEW_COLUMN_NAME_SET = new Set(REVIEW_COLUMN_ALIASES.map(normalizeColumnName));
 
 export const resolveTodoColumnId = (
 	cards: ReadonlyArray<BoardColumn> | undefined,
@@ -25,7 +26,7 @@ export const resolveTodoColumnId = (
 	}
 
 	const byId = cards.find((column) => column.id === configuredColumnId);
-	if (byId) {
+	if (byId && isTodoColumn(byId.name)) {
 		return byId.id;
 	}
 
@@ -92,6 +93,14 @@ export const isReadyColumn = (name?: string): boolean => {
 	}
 
 	return READY_COLUMN_NAME_SET.has(normalizeColumnName(name));
+};
+
+export const isReviewColumn = (name?: string): boolean => {
+	if (!name) {
+		return false;
+	}
+
+	return REVIEW_COLUMN_NAME_SET.has(normalizeColumnName(name));
 };
 
 export interface WorkflowMoveContext {

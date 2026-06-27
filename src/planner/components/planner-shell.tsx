@@ -47,7 +47,7 @@ export function PlannerShell({
 		"h-10 w-full rounded-full border border-sidebar-border/70 bg-background px-3 text-xs text-sidebar-foreground/75 flex items-center gap-2 transition-all hover:bg-sidebar-accent hover:text-sidebar-foreground";
 
 	return (
-		<SidebarProvider>
+		<SidebarProvider className="h-svh min-h-0 overflow-hidden">
 			<Sidebar
 				variant="sidebar"
 				collapsible="offcanvas"
@@ -71,7 +71,7 @@ export function PlannerShell({
 						</div>
 					</div>
 				</SidebarHeader>
-				<SidebarContent className="overflow-auto">
+				<SidebarContent className="scroll-fade no-scrollbar overflow-auto">
 					<SidebarGroup>
 						<SidebarGroupLabel className="rounded-md">Workspace</SidebarGroupLabel>
 						<SidebarGroupContent className="space-y-1 px-2">
@@ -158,8 +158,8 @@ export function PlannerShell({
 					</Button>
 				</SidebarFooter>
 			</Sidebar>
-			<SidebarInset className="min-w-0">
-				<div className="min-w-0 min-h-screen bg-background px-4 py-4 text-foreground lg:px-6">
+			<SidebarInset className="h-svh min-w-0 min-h-0 flex-1 overflow-hidden">
+				<div className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-fade no-scrollbar px-4 py-4 text-foreground lg:px-6">
 					<div className="mb-4 flex items-center gap-2 md:hidden">
 						<SidebarTrigger />
 					</div>

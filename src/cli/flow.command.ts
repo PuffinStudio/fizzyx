@@ -142,7 +142,7 @@ const handleFlowStatus = (config: { fresh: boolean }): Effect.Effect<void, any, 
 		);
 		if (result.result.cache.notNow.length > 0) {
 			yield* Console.log(formatNotNowSection(result.result.cache.notNow.length));
-			yield* Console.log(printCards(result.result.cache.notNow));
+			yield* Console.log(printCards(result.result.cache.notNow, { systemColumn: "NOT_NOW" }));
 		}
 	});
 

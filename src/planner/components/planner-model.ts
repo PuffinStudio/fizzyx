@@ -39,8 +39,10 @@ export type TimelineCard = PlannerCard & {
 export type CalendarDay = {
 	date: Date;
 	label: string;
+	short: string;
 	cards: PlannerCard[];
 	isToday: boolean;
+	isCurrentMonth: boolean;
 };
 
 const laneOrder: Array<{ lane: PlannerLane; label: string }> = [
@@ -205,22 +207,44 @@ export const buildTimelineDays = (reference: Date): TimelineDay[] => {
 	return out;
 };
 
-const buildCalendarDays = (cards: PlannerCard[], now: Date): CalendarDay[] => {
-	const start = new Date(now);
-	start.setDate(now.getDate() - 3);
+const buildCalendarDays = (cards: PlannerCard[], reference: Date): CalendarDay[] => {
+	const firstOfMonth = new Date(reference.getFullYear(), reference.getMonth(), 1);
+	const firstCell = new Date(firstOfMonth);
+	firstCell.setDate(firstCell.getDate() - firstOfMonth.getDay());
+	const cardsByDay = new Map<string, PlannerCard[]>();
+
+	for (const card of cards) {
+		const key = (cardDate(card) || "").slice(0, 10);
+		if (!key) continue;
+		const current = cardsByDay.get(key);
+		if (current) current.push(card);
+		else cardsByDay.set(key, [card]);
+	}
+
+	const out: CalendarDay[] = [];
 	const today = new Date();
-	return Array.from({ length: 14 }, (_, index) => {
-		const date = new Date(start);
-		date.setDate(start.getDate() + index);
-		const dayKey = dateKeyFromDate(date);
-		return {
-			date,
-			label: date.toLocaleDateString(undefined, { weekday: "short", day: "numeric" }),
-			cards: cards.filter((card) => (cardDate(card) || "").slice(0, 10) === dayKey),
-			isToday: date.toDateString() === today.toDateString(),
-		};
-	});
+	const cursor = new Date(firstCell);
+
+	for (let i = 0; i < 42; i += 1) {
+		const key = dateKeyFromDate(cursor);
+		out.push({
+			date: new Date(cursor),
+			label: cursor.getDate().toString(),
+			short: cursor.toLocaleDateString(undefined, { weekday: "short" }),
+			cards: cardsByDay.get(key) ?? [],
+			isToday: cursor.toDateString() === today.toDateString(),
+			isCurrentMonth:
+				cursor.getMonth() === firstOfMonth.getMonth() &&
+				cursor.getFullYear() === firstOfMonth.getFullYear(),
+		});
+		cursor.setDate(cursor.getDate() + 1);
+	}
+
+	return out;
 };
+
+export const buildMonthCalendarDays = (cards: PlannerCard[], reference: Date): CalendarDay[] =>
+	buildCalendarDays(cards, reference);
 
 const laneWeight = (lane: PlannerLane): number => {
 	if (lane === "todo") return 0;

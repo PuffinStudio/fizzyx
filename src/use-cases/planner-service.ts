@@ -21,6 +21,7 @@ import {
 } from "./planner-transform";
 import type { ParsedPlannerTags, PlannerMetadata, PlannerPriority } from "./planner-metadata";
 import { parsePlannerDescription } from "./planner-metadata";
+import { convertDescription } from "./flow-card-content";
 
 export { analyzePlannerHealth } from "./planner-analytics";
 
@@ -377,7 +378,7 @@ export const setPlannerCardDeadline = (
 					Effect.fail(new Error(`Could not load planner card #${input.cardNumber}`)),
 				),
 			);
-		const parsed = parsePlannerDescription(rawCard.description);
+		const parsed = parsePlannerDescription(rawCard.description_html || rawCard.description);
 		const deadline = normalizeDeadlineInput(input.deadline);
 
 		const metadata = {
@@ -388,8 +389,9 @@ export const setPlannerCardDeadline = (
 			delete metadata.deadline;
 		}
 
-		const nextDescription =
-			`${renderMetadata(metadata)}${parsed.body ? `\n${parsed.body}` : ""}`.trimEnd();
+		const nextDescription = convertDescription(
+			`${renderMetadata(metadata)}${parsed.body ? `\n${parsed.body}` : ""}`.trimEnd(),
+		);
 		yield* runtime.updateCard(accountId, input.cardNumber, nextDescription);
 
 		return { cardNumber: input.cardNumber, deadline } satisfies PlannerUpdateDeadlineResult;

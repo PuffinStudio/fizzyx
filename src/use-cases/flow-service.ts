@@ -35,6 +35,7 @@ import {
 	REVIEW_COLUMN_ALIASES,
 	isInProgressColumn,
 	isReadyColumn,
+	isReviewColumn,
 	isTodoColumn,
 	moveToWorkflowColumn,
 	resolveInProgressColumnId,
@@ -42,6 +43,8 @@ import {
 	resolveTodoColumnId,
 } from "./flow-workflow";
 import { analyzeDoctor, repairDoctor, type DoctorResult } from "./flow-doctor";
+import { parsePlannerDescription } from "./planner-metadata";
+import { normalizePriority } from "./planner-transform";
 export { convertDescription } from "./flow-card-content";
 export { resolveUser } from "./flow-user-resolution";
 
@@ -233,6 +236,11 @@ export const status = (env: InitializedEnv, options: { fresh: boolean }) =>
 export const show = (env: Env, number: number) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);
+		if (!card.column?.name) {
+			return yield* new ValidationError({
+				message: `Card #${number} is not in a workflow column. It is probably still in Fizzy system MAYBE/triage.`,
+			});
+		}
 		const comments = yield* env.api
 			.listComments(number)
 			.pipe(Effect.catch(() => Effect.succeed([])));
@@ -315,6 +323,7 @@ export const start = (env: InitializedEnv, number: number) =>
 		}
 		const startColumnId = inProgressColumnId;
 		yield* env.api.moveCard(number, startColumnId);
+		yield* verifyCardColumn(env, number, startColumnId, isInProgressColumn, "IN PROGRESS");
 		if (!target.assignees?.some((assignee) => assignee.id === userId)) {
 			yield* env.api.assignCard(number, userId);
 		}
@@ -323,28 +332,36 @@ export const start = (env: InitializedEnv, number: number) =>
 	});
 
 export const ready = (env: InitializedEnv, number: number) =>
-	moveToWorkflowColumn(
-		{
-			listColumns: env.api.listColumns,
-			moveCard: env.api.moveCard,
-		},
-		number,
-		READY_COLUMN_ALIASES,
-		"READY",
-		() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
-	);
+	Effect.gen(function* () {
+		const result = yield* moveToWorkflowColumn(
+			{
+				listColumns: env.api.listColumns,
+				moveCard: env.api.moveCard,
+			},
+			number,
+			READY_COLUMN_ALIASES,
+			"READY",
+			() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
+		);
+		yield* verifyCardColumn(env, number, undefined, isReadyColumn, "READY");
+		return result;
+	});
 
 export const review = (env: InitializedEnv, number: number) =>
-	moveToWorkflowColumn(
-		{
-			listColumns: env.api.listColumns,
-			moveCard: env.api.moveCard,
-		},
-		number,
-		REVIEW_COLUMN_ALIASES,
-		"REVIEW",
-		() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
-	);
+	Effect.gen(function* () {
+		const result = yield* moveToWorkflowColumn(
+			{
+				listColumns: env.api.listColumns,
+				moveCard: env.api.moveCard,
+			},
+			number,
+			REVIEW_COLUMN_ALIASES,
+			"REVIEW",
+			() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
+		);
+		yield* verifyCardColumn(env, number, undefined, isReviewColumn, "REVIEW");
+		return result;
+	});
 
 export const done = (env: InitializedEnv, number: number, ref?: string) =>
 	Effect.gen(function* () {
@@ -402,6 +419,7 @@ export const add = (
 		}
 
 		const parsed = parseTemplateDescription(input.description);
+		const metadata = parsePlannerDescription(parsed.cardDescription).metadata;
 		const userId = isCurrentUserAlias(input.user)
 			? resolveAssignableUser(yield* ensureCache(env, false), input.user)
 			: resolveUser(env.config, input.user);
@@ -412,8 +430,16 @@ export const add = (
 			description: convertDescription(parsed.cardDescription),
 			board: env.config.board,
 		});
+		yield* env.api.triageCard(card.number, todoColumnId);
 		yield* env.api.assignCard(card.number, userId);
-		yield* env.api.moveCard(card.number, todoColumnId);
+		const priority = normalizePriority(metadata.priority);
+		if (priority) {
+			yield* env.api.tagCard(card.number, `priority:${priority}`);
+		}
+		if (metadata.type) {
+			yield* env.api.tagCard(card.number, `type:${metadata.type.toLowerCase()}`);
+		}
+		yield* verifyCardColumn(env, card.number, todoColumnId, isTodoColumn, "TODO");
 		yield* Effect.forEach(parsed.templateSteps, (step) =>
 			env.api.createStep(card.number, step.content, step.completed),
 		);
@@ -424,8 +450,8 @@ export const add = (
 export const repairMarkdownDescription = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);
-		const description = convertDescription(card.description || "");
-		const original = card.description || "";
+		const original = card.descriptionHtml || card.description || "";
+		const description = convertDescription(original);
 		if (description !== original) {
 			yield* env.api.updateCardDescription(number, description);
 		}
@@ -537,4 +563,26 @@ export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray
 		});
 		yield* syncBoard(env);
 		return { number, userIds: toAssign };
+	});
+
+const verifyCardColumn = (
+	env: InitializedEnv,
+	number: number,
+	expectedColumnId: string | undefined,
+	matchesExpectedName: (name?: string) => boolean,
+	label: string,
+) =>
+	Effect.gen(function* () {
+		const card = yield* env.api.showCard(number);
+		const column = card.column;
+		if (
+			column &&
+			((expectedColumnId && column.id === expectedColumnId) || matchesExpectedName(column.name))
+		) {
+			return card;
+		}
+
+		return yield* new ValidationError({
+			message: `Card #${number} is not in ${label}. Fizzy returned no matching workflow column after the move.`,
+		});
 	});

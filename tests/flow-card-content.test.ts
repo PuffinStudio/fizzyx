@@ -42,6 +42,36 @@ Keep this.`);
 	]);
 });
 
+test("parseTemplateDescription preserves planner frontmatter when extracting steps", () => {
+	const description = `---
+priority: P1
+type: feature
+owner: ellen
+---
+
+## Goal
+Keep metadata on add.
+
+## Steps
+- [ ] Create card
+- [x] Preserve metadata`;
+
+	const parsed = parseTemplateDescription(description);
+
+	expect(parsed.cardDescription).toBe(`---
+priority: P1
+type: feature
+owner: ellen
+---
+
+## Goal
+Keep metadata on add.`);
+	expect(parsed.templateSteps).toEqual([
+		{ content: "Create card", completed: false },
+		{ content: "Preserve metadata", completed: true },
+	]);
+});
+
 test("parseDoneWhen extracts markdown and html task lists", () => {
 	const steps = parseDoneWhen(
 		`- [x] Add linting &amp; tests
@@ -92,10 +122,10 @@ Shrink radius tokens.
 		stepsUpdated: 1,
 		stepsCompleted: 0,
 	});
-	expect(plan.description).toContain("<h2>Goal</h2>");
+	expect(plan.description).toContain("## Goal");
 	expect(plan.description).toContain("Shrink radius tokens.");
-	expect(plan.description).toContain("<h2>Files</h2>");
-	expect(plan.description).toContain("<h2>Verification</h2>");
+	expect(plan.description).toContain("## Files");
+	expect(plan.description).toContain("## Verification");
 	expect(plan.description).not.toContain("References");
 	expect(plan.stepUpdates).toEqual([{ stepId: "s1", input: { content: "--radius-md 降至 8rpx" } }]);
 	expect(plan.stepCreates).toEqual([]);
@@ -138,10 +168,55 @@ test("planStandardizeCardContent completes closed card steps", () => {
 	]);
 });
 
-test("convertDescription converts rich text and passes through plain text", () => {
-	expect(convertDescription("<div>html</div>")).toInclude("html");
-	expect(convertDescription("**bold**")).toInclude("<strong>bold</strong>");
-	expect(convertDescription("- [x] done")).toInclude('type="checkbox"');
+test("convertDescription preserves normal content", () => {
+	expect(convertDescription("<div>html</div>")).toBe("<div>html</div>");
+	expect(convertDescription("**bold**")).toBe("**bold**");
+	expect(convertDescription("- [x] done")).toBe("- [x] done");
 	expect(convertDescription("hello world")).toBe("hello world");
 	expect(convertDescription("")).toBe("");
+});
+
+test("convertDescription hides planner frontmatter from Fizzy UI", () => {
+	expect(
+		convertDescription(`---
+priority: P2
+type: chore
+owner: Ellen
+---
+
+## Goal
+Keep UI clean.`),
+	).toBe(`<!--
+priority: P2
+type: chore
+owner: Ellen
+-->
+<h2>Goal</h2>
+<p>Keep UI clean.</p>`);
+});
+
+test("convertDescription renders hidden-metadata templates as html", () => {
+	expect(
+		convertDescription(`<!--
+priority: P2
+type: chore
+-->
+
+## Goal
+Keep UI clean.
+
+## Scope
+- First
+- Second`),
+	).toBe(`<!--
+priority: P2
+type: chore
+-->
+<h2>Goal</h2>
+<p>Keep UI clean.</p>
+<h2>Scope</h2>
+<ul>
+<li>First</li>
+<li>Second</li>
+</ul>`);
 });

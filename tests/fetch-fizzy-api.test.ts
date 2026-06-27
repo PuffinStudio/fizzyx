@@ -157,6 +157,7 @@ test("createCard sends generated Fizzy body", async () => {
 		Effect.runPromise(
 			makeFetchFizzyApi(config, "token").createCard({
 				board: "board-1",
+				columnId: "todo-id",
 				title: "Implement",
 				description: "Task details",
 			}),
@@ -173,6 +174,7 @@ test("createCard sends generated Fizzy body", async () => {
 		title: "Implement",
 		description: "Task details",
 		board_id: "board-1",
+		column_id: "todo-id",
 	});
 });
 
