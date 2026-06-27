@@ -50,7 +50,7 @@ export const resolvePlannerSnapshotCachePath = (account: string, board: string):
 /** ~/.config/fizzy/config.yaml */
 export const resolveOfficialConfigPath = (): string => `${resolveHome()}/${OFFICIAL_CONFIG_FILE}`;
 
-/** Current-directory .fizzy.yaml */
+/** Current-directory .fizzyx.yaml */
 export const resolveProjectConfigPath = (cwd?: string): string =>
 	`${cwd ?? process.cwd()}/${CONFIG_FILE}`;
 

@@ -12,8 +12,6 @@ export const formatPlannerHealthResult = (snapshot: Pick<PlannerSnapshot, "healt
 	return lines.join("\n");
 };
 
-export const formatCheckingPlannerHealthMessage = (): string => "Checking planner health...";
-
 export const formatRepairMetadataSummary = (result: PlannerRepairMetadataResult): string =>
 	`${result.applied ? "applied" : "dry-run"}: ${result.changes.length} cards inspected`;
 

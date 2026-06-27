@@ -180,7 +180,7 @@ Options:
 | `--runtime-name <name>`    | Runtime filename (default: `wx-request.ts`)             |
 | `--run <script\|cmd>`      | npm script or shell command after generation            |
 
-If `--input`/`--output`/`--client` are omitted, values from `.fizzy.yaml` `openapi[0]` are used.
+If `--input`/`--output`/`--client` are omitted, values from `.fizzyx.yaml` `openapi[0]` are used.
 
 Output is 3 files — runtime, types, and tree-shakeable endpoint functions:
 
@@ -258,7 +258,7 @@ fizzyx openapi list
 fizzyx openapi init
 ```
 
-### Config (`.fizzy.yaml`)
+### Config (`.fizzyx.yaml`)
 
 ```yaml
 openapi:
@@ -271,7 +271,7 @@ openapi:
     run: check
 ```
 
-## Config File (`.fizzy.yaml`)
+## Config File (`.fizzyx.yaml`)
 
 Minimal OSS-only config:
 
@@ -304,6 +304,6 @@ Credentials are resolved in this priority order:
 
 1. OS keychain (`Bun.secrets` — set via `fizzyx oss setup`)
 2. Environment variables: `OSS_<ENV>_ACCESS_KEY_ID` / `OSS_<ENV>_SECRET_ACCESS_KEY`
-3. `.fizzy.yaml` `access_key_id` / `secret_access_key` fields (legacy, discouraged)
+3. `.fizzyx.yaml` `access_key_id` / `secret_access_key` fields (legacy, discouraged)
 
 Credentials stored as `default` (without `--env`) are used as a fallback for all environments when no env-specific key is found. This means you only need to run `fizzyx oss setup` once — dev, prod, and any other env will reuse the same keys.

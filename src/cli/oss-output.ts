@@ -34,7 +34,7 @@ export const formatPendingDeletionItem = (file: string): string => `  - ${file}`
 
 export const formatManifestPath = (manifestPath: string): string => `manifest: ${manifestPath}`;
 
-export const formatOssScaffoldWritten = (): string => "OSS scaffold written to .fizzy.yaml";
+export const formatOssScaffoldWritten = (): string => "OSS scaffold written to .fizzyx.yaml";
 
 export const formatOssConfigHint = (): string =>
 	"Edit endpoint, region, local_dir, and optionally bucket/remote_prefix in the file";

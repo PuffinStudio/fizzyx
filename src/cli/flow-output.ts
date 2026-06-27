@@ -134,8 +134,6 @@ export const formatFlowConfigured = (todoColumnId: string, inProgressColumnId: s
 
 export const formatFlowConfigMissing = (): string => "flow config missing; initializing...";
 
-export const formatAddUsage = (): string => "usage: fizzyx flow add <user> <title> --desc <file|->";
-
 export const formatRepairedCard = (number: number): string => `repaired #${number}`;
 
 export const formatBlockedCard = (number: number, reason: string): string =>
