@@ -364,11 +364,54 @@ export const review = (env: InitializedEnv, number: number) =>
 		return result;
 	});
 
-export const done = (env: InitializedEnv, number: number, ref?: string) =>
+const completePendingStepsForCard = (
+	env: InitializedEnv,
+	number: number,
+	card: { steps?: ReadonlyArray<Step> },
+) =>
+	Effect.gen(function* () {
+		const pending = (card.steps || []).filter((step) => !step.completed);
+		const missingIds = pending.filter((step) => !step.id);
+		if (missingIds.length > 0) {
+			const steps = missingIds.map((step) => `- ${step.content || "(no content)"}`).join("\n");
+			return yield* new ValidationError({
+				message: `Cannot complete steps for #${number}: missing step id for:\n${steps}`,
+			});
+		}
+
+		const toComplete = pending.filter(
+			(step): step is Step & { id: string } => typeof step.id === "string",
+		);
+		yield* Effect.forEach(toComplete, (step) =>
+			env.api.updateStep(number, step.id, {
+				completed: true,
+			}),
+		);
+
+		return {
+			updatedCount: toComplete.length,
+			contents: toComplete.map((step) => step.content),
+		};
+	});
+
+export const done = (
+	env: InitializedEnv,
+	number: number,
+	ref?: string,
+	options?: { completeSteps?: boolean },
+) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);
 		const unfinished = (card.steps || []).filter((step) => !step.completed);
-		if (unfinished.length > 0) {
+		let completedSteps:
+			| {
+					updatedCount: number;
+					contents: ReadonlyArray<string>;
+			  }
+			| undefined;
+		if (unfinished.length > 0 && options?.completeSteps) {
+			completedSteps = yield* completePendingStepsForCard(env, number, card);
+		} else if (unfinished.length > 0) {
 			const formatted = unfinished.map((step) => `- ${step.content || "(no content)"}`).join("\n");
 			return yield* new ValidationError({
 				message: `Cannot close #${number}: unfinished steps remain\n${formatted}`,
@@ -381,7 +424,9 @@ export const done = (env: InitializedEnv, number: number, ref?: string) =>
 			.comment(number, buildStandardizedCommentBody("done", finalRef))
 			.pipe(Effect.catch(() => Effect.succeed(undefined)));
 		yield* syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined)));
-		return { number, ref: finalRef };
+		return completedSteps
+			? { number, ref: finalRef, completedSteps }
+			: { number, ref: finalRef };
 	});
 
 export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
@@ -429,7 +474,10 @@ export const add = (
 
 		const parsed = parseTemplateDescription(input.description);
 		const metadata = parsePlannerDescription(parsed.cardDescription).metadata;
-		const tags = mergeTags(parsed.templateTags, tagsFromMetadata(metadata));
+		const tags = mergeTags(
+			parsed.templateTags.filter((tag) => !tag.trim().toLowerCase().startsWith("api_status:")),
+			tagsFromMetadata(metadata),
+		);
 		const userId = isCurrentUserAlias(input.user)
 			? resolveAssignableUser(yield* ensureCache(env, false), input.user)
 			: resolveUser(env.config, input.user);
@@ -457,7 +505,6 @@ const tagsFromMetadata = (metadata: PlannerMetadata): ReadonlyArray<string> => {
 	if (priority) tags.push(`priority:${priority}`);
 	if (metadata.type) tags.push(`type:${metadata.type.toLowerCase()}`);
 	if (metadata.phase) tags.push(`phase:${metadata.phase.toLowerCase()}`);
-	if (metadata.api_status) tags.push(`api_status:${metadata.api_status.toLowerCase()}`);
 	for (const dependency of metadata.depends_on) tags.push(`depends_on:${dependency}`);
 	for (const blocked of metadata.blocks) tags.push(`blocks:${blocked}`);
 	return tags;
@@ -488,30 +535,9 @@ export const repairMarkdownDescription = (env: InitializedEnv, number: number) =
 export const completeSteps = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);
-		const pending = (card.steps || []).filter((step) => !step.completed);
-		const missingIds = pending.filter((step) => !step.id);
-		if (missingIds.length > 0) {
-			const steps = missingIds.map((step) => `- ${step.content || "(no content)"}`).join("\n");
-			return yield* new ValidationError({
-				message: `Cannot complete steps for #${number}: missing step id for:\n${steps}`,
-			});
-		}
-
-		const toComplete = pending.filter(
-			(step): step is Step & { id: string } => typeof step.id === "string",
-		);
-		yield* Effect.forEach(toComplete, (step) =>
-			env.api.updateStep(number, step.id, {
-				completed: true,
-			}),
-		);
-
+		const completedSteps = yield* completePendingStepsForCard(env, number, card);
 		yield* syncBoard(env);
-		return {
-			number,
-			updatedCount: toComplete.length,
-			contents: toComplete.map((step) => step.content),
-		};
+		return { number, ...completedSteps };
 	});
 
 export const stepsFromDescription = (env: InitializedEnv, number: number) =>

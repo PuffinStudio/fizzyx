@@ -66,6 +66,27 @@ export const formatNotNowHeader = (count: number): string => `# not_now (${count
 
 export const formatNoTodoCard = (name: string): string => `no TODO card for ${name}`;
 
+export const formatWorkHeader = (name: string, userId: string): string =>
+	`# work: ${name} (${userId})`;
+
+export const formatWorkBoardSummary = (
+	age: number,
+	cardCount: number,
+	notNowCount: number,
+): string => `board age=${age}s cards=${cardCount} not_now=${notNowCount}`;
+
+export const formatWorkSection = (title: string): string => `\n## ${title}`;
+
+export const formatNoCurrentWork = (): string => "no active cards assigned in workflow columns";
+
+export const formatImproveGuidance = (): string =>
+	[
+		"# flow improve",
+		"default skills: improve-codebase, codebase-design",
+		"start by reviewing current work with `fizzyx flow work`.",
+		"capture improvement candidates, then create a card with `fizzyx flow create` when one is actionable.",
+	].join("\n");
+
 export const formatNotNowSection = (count: number): string => `\n# not_now (${count})`;
 
 export const formatNextSummary = (number: number, title: string): string => `#${number} ${title}`;
@@ -145,6 +166,8 @@ export const formatLoadingBoardStatusMessage = (): string => "Loading board stat
 export const formatLoadingNextTaskMessage = (): string => "Loading next task...";
 
 export const formatLoadingCardDetailsMessage = (): string => "Loading card details...";
+
+export const formatLoadingWorkSummaryMessage = (): string => "Loading work summary...";
 
 export const formatStartingCardMessage = (): string => "Starting card...";
 

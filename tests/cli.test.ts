@@ -194,17 +194,27 @@ test("prints flow help", async () => {
 
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("flow");
-	expect(stdout).toContain("add");
+	expect(stdout).toContain("work");
 	expect(stdout).toContain("create");
-	expect(stdout).toContain("repair-markdown");
-	expect(stdout).toContain("repair-metadata");
-	expect(stdout).toContain("complete-steps");
-	expect(stdout).toContain("standardize");
-	expect(stdout).toContain("standardize-all");
-	expect(stdout).toContain("template");
-	expect(stdout).toContain("comment-template");
-	expect(stdout).toContain("workflow");
-	expect(stdout).toContain("skill");
+	expect(stdout).toContain("show");
+	expect(stdout).toContain("start");
+	expect(stdout).toContain("review");
+	expect(stdout).toContain("done");
+	expect(stdout).toContain("block");
+	expect(stdout).toContain("improve");
+	expect(stdout).toContain("doctor");
+	expect(stdout).toContain("repair");
+	expect(stdout).not.toContain("mine");
+	expect(stdout).not.toContain("status");
+	expect(stdout).not.toContain("ready");
+	expect(stdout).not.toContain("complete-steps");
+	expect(stdout).not.toContain("repair-markdown");
+	expect(stdout).not.toContain("repair-metadata");
+	expect(stdout).not.toContain("standardize, std");
+	expect(stdout).not.toContain("standardize-all");
+	expect(stdout).not.toContain("\n  workflow");
+	expect(stdout).not.toContain("\n  template");
+	expect(stdout).not.toContain("\n  skill");
 });
 
 test("planner --help lists start and snapshot only", async () => {
@@ -279,323 +289,23 @@ test("flow comment-template ignores deprecated language settings and prints Engl
 	}
 });
 
-test("flow workflow prints process checklist", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
+test("flow repair supports kind-based help surface", async () => {
+	const steps = await runCli(["flow", "repair", "--kind", "steps", "--help"]);
+	const metadata = await runCli(["flow", "repair", "--kind", "metadata", "--help"]);
+	const all = await runCli(["flow", "repair", "--all", "--help"]);
 
-	try {
-		mkdirSync(projectDir, { recursive: true });
-		writeFileSync(
-			join(projectDir, ".fizzy.yaml"),
-			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n  card:\n    language: mixed\n`,
-		);
+	expect(steps.exitCode).toBe(0);
+	expect(steps.stdout).toContain("fizzyx flow repair");
+	expect(steps.stdout).toContain("--kind");
+	expect(steps.stdout).toContain("steps");
 
-		const { stdout, exitCode } = await runCli(["flow", "workflow"], {
-			cwd: projectDir,
-		});
+	expect(metadata.exitCode).toBe(0);
+	expect(metadata.stdout).toContain("metadata");
+	expect(metadata.stdout).toContain("--apply");
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("## Workflow");
-		expect(stdout).toContain("fizzyx flow work");
-		expect(stdout).toContain("fizzyx flow repair");
-		expect(stdout).toContain("fizzyx skill");
-		expect(stdout).toContain("fizzyx planner start");
-		expect(stdout).toContain("fizzyx planner snapshot");
-		expect(stdout).not.toContain("fizzyx flow mine");
-		expect(stdout).not.toContain("fizzyx flow add");
-		expect(stdout).not.toContain("fizzyx flow ready");
-		expect(stdout).not.toContain("fizzyx flow repair-metadata");
-		expect(stdout).not.toContain("api_status");
-		expect(stdout).not.toContain("skill:*");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow skill prints english skill template", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "skill"]);
-
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("name: fizzyx");
-	expect(stdout).toContain("# fizzyx");
-	expect(stdout).toContain("fizzyx flow work");
-	expect(stdout).toContain("fizzyx flow repair");
-	expect(stdout).toContain("fizzyx skill list");
-	expect(stdout).toContain("fizzyx planner start");
-	expect(stdout).toContain("fizzyx planner snapshot");
-	expect(stdout).toContain("## Context Loading");
-	expect(stdout).toContain("Treat this skill as generic");
-	expect(stdout).toContain("Do not infer identity from git user");
-	expect(stdout).toContain("Suggested Skills");
-	expect(stdout).not.toContain("api_status");
-	expect(stdout).not.toContain("skill:");
-	expect(stdout).not.toContain("Youda-mini");
-	expect(stdout).not.toContain("03gaf3a10zn8g6flsloi7swvi");
-	expect(stdout).not.toContain("AGENTS.md 片段");
-	expect(stdout).not.toContain("fizzyx flow add");
-	expect(stdout).not.toContain("fizzyx flow mine");
-	expect(stdout).not.toContain("fizzyx flow ready");
-	expect(stdout).not.toContain("fizzyx flow repair-metadata");
-	expect(stdout).not.toContain("fizzyx flow standardize");
-});
-
-test("flow workflow prefers local override content", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-	const overridePath = join(projectDir, ".agents", "skills", "fizzyx", "WORKFLOW.md");
-
-	try {
-		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
-		writeFileSync(overridePath, "## Local Workflow\n- custom workflow\n");
-
-		const { stdout, exitCode } = await runCli(["flow", "workflow"], {
-			cwd: projectDir,
-		});
-
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("## Local Workflow");
-		expect(stdout).toContain("custom workflow");
-		expect(stdout).not.toContain("## Workflow / 工作流");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow template prefers local override content", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-	const overridePath = join(projectDir, ".agents", "skills", "fizzyx", "CARD_TEMPLATE.md");
-
-	try {
-		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
-		writeFileSync(
-			overridePath,
-			"## Goal\n- custom goal\n\n## Steps\n- [ ] verify local template\n",
-		);
-
-		const { stdout, exitCode } = await runCli(["flow", "template"], {
-			cwd: projectDir,
-		});
-
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("## Goal");
-		expect(stdout).toContain("custom goal");
-		expect(stdout).toContain("- [ ] verify local template");
-		expect(stdout).not.toContain("## 目标");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow skill prints local override content", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-	const overridePath = join(projectDir, ".agents", "skills", "fizzyx", "SKILL.md");
-
-	try {
-		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
-		writeFileSync(overridePath, "---\nname: local-fizzyx\n---\n# local\n");
-
-		const { stdout, exitCode } = await runCli(["flow", "skill"], {
-			cwd: projectDir,
-		});
-
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("name: local-fizzyx");
-		expect(stdout).not.toContain("name: fizzyx");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow skill init skips existing files and overwrites with --force", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-	const skillPath = join(projectDir, ".agents", "skills", "fizzyx", "SKILL.md");
-	const workflowPath = join(projectDir, ".agents", "skills", "fizzyx", "WORKFLOW.md");
-	const templatePath = join(projectDir, ".agents", "skills", "fizzyx", "CARD_TEMPLATE.md");
-
-	try {
-		mkdirSync(join(projectDir, ".agents", "skills", "fizzyx"), { recursive: true });
-		writeFileSync(skillPath, "old skill\n");
-		writeFileSync(workflowPath, "old workflow\n");
-		writeFileSync(templatePath, "old template\n");
-
-		const skip = await runCli(["flow", "skill", "init"], {
-			cwd: projectDir,
-			env: { HOME: join(root, "home") },
-		});
-
-		expect(skip.exitCode).toBe(0);
-		expect(skip.stdout).toContain("skipped: .agents/skills/fizzyx/SKILL.md");
-		expect(skip.stdout).toContain("skipped: .agents/skills/fizzyx/WORKFLOW.md");
-		expect(skip.stdout).toContain("skipped: .agents/skills/fizzyx/CARD_TEMPLATE.md");
-		expect(readFileSync(skillPath, "utf8")).toBe("old skill\n");
-		expect(readFileSync(workflowPath, "utf8")).toBe("old workflow\n");
-		expect(readFileSync(templatePath, "utf8")).toBe("old template\n");
-
-		const overwritten = await runCli(["flow", "skill", "init", "--force"], {
-			cwd: projectDir,
-			env: { HOME: join(root, "home") },
-		});
-
-		expect(overwritten.exitCode).toBe(0);
-		expect(overwritten.stdout).toContain("overwritten: .agents/skills/fizzyx/SKILL.md");
-		expect(overwritten.stdout).toContain("overwritten: .agents/skills/fizzyx/WORKFLOW.md");
-		expect(overwritten.stdout).toContain("overwritten: .agents/skills/fizzyx/CARD_TEMPLATE.md");
-		expect(readFileSync(skillPath, "utf8")).toContain("name: fizzyx");
-		expect(readFileSync(workflowPath, "utf8")).toContain("## Workflow");
-		expect(readFileSync(templatePath, "utf8")).toContain("## Goal");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow template command prints card template sections", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-
-	try {
-		mkdirSync(projectDir, { recursive: true });
-		writeFileSync(
-			join(projectDir, ".fizzy.yaml"),
-			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n`,
-		);
-
-		const { stdout, exitCode } = await runCli(["flow", "template"], {
-			cwd: projectDir,
-		});
-
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("## Goal");
-		expect(stdout).toContain("## Context");
-		expect(stdout).toContain("## Acceptance Criteria");
-		expect(stdout).toContain("## Inputs Needed");
-		expect(stdout).toContain("## Constraints");
-		expect(stdout).toContain("## Suggested Skills");
-		expect(stdout).toContain("## Plan");
-		expect(stdout).toContain("## Steps");
-		expect(stdout).not.toContain("## Scope");
-		expect(stdout).not.toContain("### In");
-		expect(stdout).not.toContain("### Out");
-		expect(stdout).not.toContain("## References");
-		expect(stdout).not.toContain("## Backup");
-		expect(stdout).not.toContain("## Depends On");
-		expect(stdout).toContain("What outcome this card should deliver.");
-		expect(stdout).toContain("Architectural/security/performance constraints.");
-		expect(stdout).toContain("- [ ] Confirm goal, context, and constraints");
-		expect(stdout).not.toContain("## Verification");
-		expect(stdout).not.toContain("- [ ] `");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow template --draft creates a unique project-local draft", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-
-	try {
-		mkdirSync(projectDir, { recursive: true });
-		writeFileSync(
-			join(projectDir, ".fizzy.yaml"),
-			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n`,
-		);
-
-		const first = await runCli(["flow", "template", "--draft"], { cwd: projectDir });
-		const second = await runCli(["flow", "template", "--draft"], { cwd: projectDir });
-
-		expect(first.exitCode).toBe(0);
-		expect(second.exitCode).toBe(0);
-		const firstPath = first.stdout.trim();
-		const secondPath = second.stdout.trim();
-		expect(firstPath).toMatch(/^\.fizzyx\/card-[a-f0-9-]+\.md$/);
-		expect(secondPath).toMatch(/^\.fizzyx\/card-[a-f0-9-]+\.md$/);
-		expect(firstPath).not.toBe(secondPath);
-		expect(readFileSync(join(projectDir, firstPath), "utf8")).toContain("## Goal");
-		expect(readFileSync(join(projectDir, secondPath), "utf8")).toContain("## Steps");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow template uses English defaults when config has legacy language", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-
-	try {
-		mkdirSync(projectDir, { recursive: true });
-
-		writeFileSync(
-			join(projectDir, ".fizzy.yaml"),
-			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n  card:\n    language: en\n`,
-		);
-
-		const { stdout, exitCode } = await runCli(["flow", "template"], { cwd: projectDir });
-
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("## Goal");
-		expect(stdout).toContain("## Context");
-		expect(stdout).toContain("## Acceptance Criteria");
-		expect(stdout).toContain("## Inputs Needed");
-		expect(stdout).toContain("## Constraints");
-		expect(stdout).toContain("## Suggested Skills");
-		expect(stdout).toContain("## Plan");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow template help is available", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "template", "--help"]);
-
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("fizzyx flow template");
-});
-
-test("flow repair-markdown help is available", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "repair-markdown", "--help"]);
-
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("repair-markdown");
-	expect(stdout).toContain("card");
-});
-
-test("flow repair-metadata help is available", async () => {
-	const help = await runCli(["flow", "repair-metadata", "--help"]);
-	const alias = await runCli(["flow", "repair-tags", "--help"]);
-
-	expect(help.exitCode).toBe(0);
-	expect(help.stdout).toContain("repair-metadata");
-	expect(help.stdout).toContain("--apply");
-	expect(alias.exitCode).toBe(0);
-	expect(alias.stdout).toContain("repair-metadata");
-});
-
-test("flow complete-steps help is available", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "complete-steps", "--help"]);
-
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("complete-steps");
-	expect(stdout).toContain("card");
-});
-
-test("flow standardize help is available", async () => {
-	const card = await runCli(["flow", "std", "--help"]);
-	const board = await runCli(["flow", "std-all", "--help"]);
-	const longCard = await runCli(["flow", "standardize", "--help"]);
-	const longBoard = await runCli(["flow", "standardize-all", "--help"]);
-
-	expect(card.exitCode).toBe(0);
-	expect(card.stdout).toContain("Standardize a single card");
-	expect(card.stdout).toContain("card");
-	expect(board.exitCode).toBe(0);
-	expect(board.stdout).toContain("Standardize all board cards");
-	expect(board.stdout).toContain("card");
-	expect(longCard.exitCode).toBe(0);
-	expect(longCard.stdout).toContain("Standardize a single card");
-	expect(longBoard.exitCode).toBe(0);
-	expect(longBoard.stdout).toContain("Standardize all board cards");
+	expect(all.exitCode).toBe(0);
+	expect(all.stdout).toContain("--all");
+	expect(all.stdout).toContain("repair");
 });
 
 test("top-level flow command shows top-level help", async () => {
@@ -624,126 +334,20 @@ test("top-level workflow exits non-zero", async () => {
 });
 
 test("top-level skill shows top-level help", async () => {
-	const { stderr, exitCode } = await runCli(["skill"]);
+	const { stdout, stderr, exitCode } = await runCli(["skill"]);
 
 	expect(exitCode).toBe(1);
-	expect(stderr).toContain("Unknown subcommand");
-	expect(stderr).toContain("skill");
+	expect(`${stdout}${stderr}`).toContain("skill");
 });
 
-test("flow repair-markdown repairs card description and prints result", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-	const homeDir = join(root, "home");
-
-	const calls: string[] = [];
-	const requestBodies: Array<{ [key: string]: unknown }> = [];
-
-	try {
-		mkdirSync(projectDir, { recursive: true });
-		mkdirSync(homeDir, { recursive: true });
-
-		const credentialsDir = join(homeDir, ".config", "fizzyx", "credentials");
-		mkdirSync(credentialsDir, { recursive: true });
-		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
-
-		const port = await getFreePort();
-		if (port === null) return;
-
-		const api = Bun.serve({
-			port,
-			hostname: "127.0.0.1",
-			async fetch(req) {
-				const url = new URL(req.url);
-				calls.push(`${req.method} ${url.pathname}`);
-
-				if (url.pathname === "/my/identity.json" && req.method === "GET") {
-					return Response.json({
-						user: {
-							id: "identity-id",
-							name: "Identity User",
-							email: "identity@example.com",
-						},
-					});
-				}
-
-				if (url.pathname === "/1/cards/12" && req.method === "GET") {
-					return Response.json({
-						number: 12,
-						title: "Repair description",
-						description: "## Goal\nFix tests",
-					});
-				}
-
-				if (url.pathname === "/1/cards/12" && req.method === "PATCH") {
-					requestBodies.push((await new Response(req.body).json()) as { [key: string]: unknown });
-					return Response.json({});
-				}
-
-				if (url.pathname === "/1/cards.json" && req.method === "GET") {
-					return Response.json([]);
-				}
-
-				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
-					return Response.json([]);
-				}
-
-				if (
-					(url.pathname === "/1/boards/board-1/columns" ||
-						url.pathname === "/1/boards/board-1/columns.json") &&
-					req.method === "POST"
-				) {
-					const body =
-						req.body === null ? {} : ((await new Response(req.body).json()) as { name?: string });
-					const name = typeof body?.name === "string" ? body.name : "";
-					return Response.json({
-						data: {
-							id:
-								name === "TODO"
-									? "todo-id"
-									: name === "READY"
-										? "ready-id"
-										: name === "INPROGRESS"
-											? "inprogress-id"
-											: name === "REVIEW"
-												? "review-id"
-												: "column-id",
-							name,
-						},
-					});
-				}
-
-				return new Response("not found", { status: 404 });
-			},
-		});
-
-		writeFileSync(
-			join(projectDir, ".fizzy.yaml"),
-			`api_url: http://127.0.0.1:${api.port}\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n`,
-		);
-
-		const result = await runCli(["flow", "repair-markdown", "12"], {
-			cwd: projectDir,
-			env: { HOME: homeDir },
-		});
-
-		expect(result.exitCode).toBe(0);
-		expect(result.stdout).toContain("repaired #12");
-		expect(requestBodies).toEqual([{ description: "<h2>Goal</h2>\n<p>Fix tests</p>" }]);
-		expect(calls.filter((call) => call === "GET /1/cards.json").length).toBe(3);
-
-		api.stop();
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow complete-steps completes open steps and prints count/list", async () => {
+test("flow done --complete-steps completes open steps before closing card", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 	const homeDir = join(root, "home");
 
 	const updated: string[] = [];
+	const comments: Array<{ card: string; body: string }> = [];
+	const closed: string[] = [];
 
 	try {
 		mkdirSync(projectDir, { recursive: true });
@@ -788,6 +392,19 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 					return Response.json({});
 				}
 
+				if (url.pathname === "/1/cards/77/comments.json" && req.method === "POST") {
+					comments.push({
+						card: "77",
+						body: String((await req.json()).body ?? ""),
+					});
+					return Response.json({});
+				}
+
+				if (url.pathname === "/1/cards/77/closure.json" && req.method === "POST") {
+					closed.push(url.pathname);
+					return Response.json({});
+				}
+
 				if (url.pathname === "/1/cards.json" && req.method === "GET") {
 					return Response.json([]);
 				}
@@ -830,7 +447,7 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 			`api_url: http://127.0.0.1:${api.port}\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n`,
 		);
 
-		const result = await runCli(["flow", "complete-steps", "77"], {
+		const result = await runCli(["flow", "done", "77", "--complete-steps", "commit abc: done"], {
 			cwd: projectDir,
 			env: { HOME: homeDir },
 		});
@@ -838,7 +455,10 @@ test("flow complete-steps completes open steps and prints count/list", async () 
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("completed 1 step for #77");
 		expect(result.stdout).toContain("- Implement");
+		expect(result.stdout).toContain("closed #77 (commit abc: done)");
 		expect(updated).toEqual(["/1/cards/77/steps/step-2"]);
+		expect(closed).toEqual(["/1/cards/77/closure.json"]);
+		expect(comments).toEqual([{ card: "77", body: "<p>done: commit abc: done</p>" }]);
 
 		api.stop();
 	} finally {
@@ -862,20 +482,11 @@ test("flow done requires a card number", async () => {
 	expect(stdout).toContain("card");
 });
 
-test("flow add requires description input", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "add", "me", "Title"]);
+test("flow create requires description input", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "create", "me", "Title"]);
 
 	expect(exitCode).toBe(1);
 	expect(stdout).toContain("Create a new card");
-});
-
-test("flow next help documents the --start option", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "next", "--help"]);
-
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("next");
-	expect(stdout).toContain("--start");
-	expect(stdout).toContain("Start the recommended card immediately");
 });
 
 test("flow init bootstraps missing flow in legacy config", async () => {

@@ -829,7 +829,6 @@ Keep Fizzy UI readable.`;
 		"priority:p2",
 		"type:chore",
 		"phase:integration",
-		"api_status:not_connected",
 		"depends_on:123",
 		"blocks:456",
 	]);
