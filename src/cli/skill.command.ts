@@ -107,7 +107,9 @@ const skillDoctorCmd = Command.make("doctor", {}, () =>
 const skillMigrateCmd = Command.make(
 	"migrate",
 	{
-		check: Flag.boolean("check").pipe(Flag.withDescription("Check whether skill migration is needed")),
+		check: Flag.boolean("check").pipe(
+			Flag.withDescription("Check whether skill migration is needed"),
+		),
 		apply: Flag.boolean("apply").pipe(Flag.withDescription("Apply the minimal skill migration")),
 	},
 	({ apply }) =>

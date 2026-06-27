@@ -424,9 +424,7 @@ export const done = (
 			.comment(number, buildStandardizedCommentBody("done", finalRef))
 			.pipe(Effect.catch(() => Effect.succeed(undefined)));
 		yield* syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined)));
-		return completedSteps
-			? { number, ref: finalRef, completedSteps }
-			: { number, ref: finalRef };
+		return completedSteps ? { number, ref: finalRef, completedSteps } : { number, ref: finalRef };
 	});
 
 export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>

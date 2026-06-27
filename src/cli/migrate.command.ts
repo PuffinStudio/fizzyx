@@ -30,8 +30,12 @@ const handleMigrate = ({
 export const migrateCmd = Command.make(
 	"migrate",
 	{
-		check: Flag.boolean("check").pipe(Flag.withDescription("Check whether skills config migration is needed")),
-		apply: Flag.boolean("apply").pipe(Flag.withDescription("Apply the minimal skills config migration")),
+		check: Flag.boolean("check").pipe(
+			Flag.withDescription("Check whether skills config migration is needed"),
+		),
+		apply: Flag.boolean("apply").pipe(
+			Flag.withDescription("Apply the minimal skills config migration"),
+		),
 	},
 	handleMigrate,
 ).pipe(Command.withDescription("Check or apply the minimal 1.0 skills migration"));

@@ -5,7 +5,6 @@ import { runWithFlowEnv, runWithFlowRuntimeEnv } from "./flow-workflow";
 import {
 	formatAssignedCard,
 	formatAssigningCardMessage,
-	formatBlankLine,
 	formatBlockingCardMessage,
 	formatBlockedCard,
 	formatCheckingFlowHealthMessage,
@@ -115,9 +114,7 @@ const handleWork = (config: {
 
 		if (result.statusResult.cache.notNow.length > 0) {
 			yield* Console.log(formatNotNowSection(result.statusResult.cache.notNow.length));
-			yield* Console.log(
-				printCards(result.statusResult.cache.notNow, { systemColumn: "NOT_NOW" }),
-			);
+			yield* Console.log(printCards(result.statusResult.cache.notNow, { systemColumn: "NOT_NOW" }));
 		}
 	});
 
@@ -157,10 +154,7 @@ const handleDone = (config: {
 
 		if (result.completedSteps && result.completedSteps.updatedCount > 0) {
 			yield* logSuccess(
-				formatCompleteStepsSummary(
-					result.completedSteps.updatedCount,
-					result.number,
-				),
+				formatCompleteStepsSummary(result.completedSteps.updatedCount, result.number),
 			);
 			if (result.completedSteps.contents.length > 0) {
 				yield* Console.log(formatCompletedSteps(result.completedSteps.contents));

@@ -70,15 +70,6 @@ export const analyzePlannerHealth = (
 				);
 			}
 		}
-		if (isFrontendCard(card) && card.metadata.api_status === "not_connected") {
-			addIssue(
-				issues,
-				card,
-				card.lane === "done" ? "critical" : "info",
-				"frontend_api_not_connected",
-				"Frontend card API is not connected",
-			);
-		}
 	}
 
 	return issues;
@@ -136,9 +127,6 @@ const recommendationReason = (card: PlannerCard, priority: PlannerPriority | und
 	const parts = [priority ? priority.toUpperCase() : undefined, card.lane.replace("_", " ")].filter(
 		Boolean,
 	);
-	if (isFrontendCard(card) && card.metadata.api_status === "not_connected") {
-		parts.push("API not connected");
-	}
 	return parts.join(" · ");
 };
 
@@ -165,6 +153,3 @@ const ageDays = (card: PlannerCard, now: Date): number => {
 	if (Number.isNaN(date.getTime())) return 0;
 	return (now.getTime() - date.getTime()) / 86_400_000;
 };
-
-const isFrontendCard = (card: PlannerCard): boolean =>
-	card.parsedTags.area.includes("frontend") || card.metadata.phase === "frontend";

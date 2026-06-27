@@ -24,8 +24,8 @@ export function HealthView({
 					<div>
 						<h2 className="text-base font-semibold">Card Health</h2>
 						<p className="mt-1 text-sm text-muted-foreground">
-							Cards missing metadata or violating workflow expectations. Metadata repair is executed from
-							`fizzyx flow repair`.
+							Cards missing metadata or violating workflow expectations. Metadata repair is executed
+							from `fizzyx flow repair`.
 						</p>
 					</div>
 					{onRepair ? (

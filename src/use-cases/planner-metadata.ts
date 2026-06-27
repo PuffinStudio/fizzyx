@@ -11,7 +11,6 @@ export interface PlannerMetadata {
 	depends_on: ReadonlyArray<number>;
 	blocks: ReadonlyArray<number>;
 	phase?: string;
-	api_status?: string;
 }
 
 export interface ParsedPlannerDescription {
@@ -25,7 +24,6 @@ export interface ParsedPlannerTags {
 	type: ReadonlyArray<PlannerCardType>;
 	area: ReadonlyArray<string>;
 	phase: ReadonlyArray<string>;
-	apiStatus: ReadonlyArray<string>;
 	dependsOn: ReadonlyArray<number>;
 	blocks: ReadonlyArray<number>;
 	other: ReadonlyArray<string>;
@@ -288,7 +286,6 @@ export const parsePlannerTags = (tags?: ReadonlyArray<string>): ParsedPlannerTag
 		type: [],
 		area: [],
 		phase: [],
-		apiStatus: [],
 		dependsOn: [],
 		blocks: [],
 		other: [],
@@ -340,15 +337,7 @@ export const parsePlannerTags = (tags?: ReadonlyArray<string>): ParsedPlannerTag
 	return parsed;
 };
 
-const scalarKeys = new Set([
-	"priority",
-	"type",
-	"owner",
-	"deadline",
-	"impact",
-	"effort",
-	"phase",
-]);
+const scalarKeys = new Set(["priority", "type", "owner", "deadline", "impact", "effort", "phase"]);
 
 const isPlannerMetadataScalarKey = (
 	key: string,

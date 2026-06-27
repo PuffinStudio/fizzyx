@@ -46,20 +46,14 @@ const plannerStartCommand = Command.make(
 	handlePlannerStart,
 ).pipe(Command.withDescription("Start the planner web service"));
 
-const plannerSnapshotCommand = Command.make(
-	"snapshot",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const snapshot = yield* loadPlannerSnapshot();
-			yield* Console.log(formatPlannerSnapshotJson(snapshot));
-		}),
+const plannerSnapshotCommand = Command.make("snapshot", {}, () =>
+	Effect.gen(function* () {
+		const snapshot = yield* loadPlannerSnapshot();
+		yield* Console.log(formatPlannerSnapshotJson(snapshot));
+	}),
 ).pipe(Command.withDescription("Print planner snapshot JSON"));
 
 export const plannerCmd = Command.make("planner").pipe(
 	Command.withDescription("Planner dashboard and maintenance tools"),
-	Command.withSubcommands([
-		plannerStartCommand,
-		plannerSnapshotCommand,
-	]),
+	Command.withSubcommands([plannerStartCommand, plannerSnapshotCommand]),
 );

@@ -149,6 +149,7 @@ Use one of these instead:
 
 ```md
 ## Steps
+
 - [ ] Get final design
 - [ ] Confirm API contract
 - [ ] Implement
@@ -158,6 +159,7 @@ Use one of these instead:
 
 ```md
 ## Inputs Needed
+
 - Final Figma design
 - API response shape
 ```
@@ -308,35 +310,44 @@ security-review
 
 ```md
 ## Tags
+
 - priority:p2
 - type:feature
 - area:<project-area>
 - phase:<project-phase>
 
 ## Goal
+
 What outcome this card should deliver.
 
 ## Context
+
 Important background.
 
 ## Acceptance Criteria
+
 - [ ] User-visible behavior
 - [ ] Error/empty/loading state
 - [ ] Regression case covered
 
 ## Inputs Needed
+
 - Design/API/product inputs, if any
 
 ## Constraints
+
 Architecture/security/performance constraints.
 
 ## Suggested Skills
+
 - tdd
 
 ## Plan
+
 - Implementation approach
 
 ## Steps
+
 - [ ] First vertical slice
 - [ ] Tests/checks
 - [ ] Review and close

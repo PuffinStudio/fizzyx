@@ -31,7 +31,8 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 	{
 		name: "codebase-design",
 		description: "Map the current architecture before changing it.",
-		runHint: "Run `codebase-design` by reading the skill instructions before changing architecture.",
+		runHint:
+			"Run `codebase-design` by reading the skill instructions before changing architecture.",
 	},
 	{
 		name: "diagnose",
