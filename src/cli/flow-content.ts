@@ -178,7 +178,8 @@ const getBuiltinWorkflow = (): string =>
 		"## Create",
 		"- fizzyx flow template --draft",
 		"- edit card content and steps in .fizzyx/card-<random>.md",
-		'- fizzyx flow add <user> "<title>" --desc .fizzyx/card-<random>.md',
+		'- fizzyx flow create <user> "<title>" --desc .fizzyx/card-<random>.md',
+		"- fizzyx flow add is kept as a compatibility alias for create",
 		"- delete .fizzyx/card-<random>.md after the card is created",
 		"- Use a unique random suffix so multiple agents do not collide.",
 		"",
@@ -193,7 +194,7 @@ const getBuiltinWorkflow = (): string =>
 		"",
 		"## Daily",
 		"- fizzyx flow mine --fresh",
-		"- fizzyx planner health",
+		"- fizzyx flow health",
 		"- fizzyx flow next --fresh --start",
 		"- fizzyx flow start <card>",
 		"- fizzyx flow show <card>",
@@ -215,10 +216,13 @@ const getBuiltinWorkflow = (): string =>
 		"- Use fizzyx flow comment-template <kind> for manual comments, and keep comments concise.",
 		"",
 		"## Card structure",
-		"- Description stores planner frontmatter plus context",
-		"- Use tags like priority:p0, type:feature, area:frontend, phase:integration",
+		"- flow add renders template markdown to Fizzy HTML so card bodies stay readable",
+		"- flow add converts priority/type metadata into tags such as priority:p0 and type:feature",
+		"- Use tags for stable planner facets: priority, type, area, phase, api_status",
+		"- Do not rely on hidden description metadata for mutable fields until the project documents it",
 		"- Steps become Fizzy checklist items",
-		"- Legacy projects: run `fizzyx planner snapshot --auto-fix` once after migration",
+		"- Legacy projects: run `fizzyx flow repair-metadata` first, then `fizzyx flow repair-metadata --apply` after reviewing planned tag changes",
+		"- `fizzyx planner snapshot --auto-fix` remains available for planner-specific automation",
 		"",
 		"## Close discipline",
 		"- Never close cards through the web UI.",
@@ -291,7 +295,8 @@ Minimum sections:
 - Install/auth/setup commands.
 - Board/account/API/cache context.
 - Column meanings and IDs.
-- Metadata/tag conventions such as priority:p0, type:feature, owner, depends_on.
+- Metadata/tag conventions such as priority:p0, type:feature, area:frontend, phase:integration.
+- Which metadata is tag-backed versus body-only. Tags are safest for stable facets; mutable fields need explicit project rules.
 - Card title formats and allowed scopes.
 - Assignment rules and user IDs.
 - Local delivery rules that differ from fizzyx flow workflow.
@@ -319,16 +324,19 @@ fizzyx flow next --fresh --start
 fizzyx flow show <card>
 fizzyx flow start <card>
 fizzyx flow template
-fizzyx flow add <user> "<title>" --desc <file|->
+fizzyx flow create <user> "<title>" --desc <file|->
+fizzyx flow add <user> "<title>" --desc <file|->  # compatibility alias
 fizzyx flow comment-template <done|blocked|unblocked|handoff|note>
 fizzyx flow complete-steps <card>
 fizzyx flow done <card> "commit <sha>: <subject>"
 fizzyx flow block <card> "<reason>"
 fizzyx flow standardize <card>  # alias: std
 fizzyx flow standardize-all    # alias: std-all
-fizzyx planner repair-metadata
+fizzyx flow health
+fizzyx flow doctor
+fizzyx flow repair-metadata     # alias: repair-tags
+fizzyx planner repair-metadata  # compatibility / planner-specific entry
 fizzyx planner snapshot
-fizzyx planner health
 fizzyx planner start
 
 ## Cards
@@ -336,10 +344,12 @@ fizzyx planner start
 - Generate new card bodies with fizzyx flow template.
 - Prefer fizzyx flow template --draft for temporary card drafts; it creates .fizzyx/card-<random>.md with a unique suffix.
 - Delete the matching temporary draft after fizzyx flow add succeeds.
-- Description is context only. Card titles and fields are standardized in English.
+- Description is context only. flow add renders it to Fizzy HTML and applies stable metadata tags.
+- Put machine-readable metadata in ## Tags; do not add hidden metadata to new cards.
 - Put work checklist under ## Steps; flow add converts it to card steps.
 - Step labels must be plain text: no Markdown links, code ticks, or bold.
 - Normalize existing cards with fizzyx flow standardize <card> (alias: std).
+- Repair missing tag-backed metadata with fizzyx flow repair-metadata, then rerun with --apply after reviewing the dry-run.
 
 ## Delivery
 
@@ -351,6 +361,7 @@ fizzyx planner start
    2. fizzyx flow done <card>             — close into Done and comment (ref auto-detected from git)
    3. fizzyx flow done <card> "message"   — with explicit ref (optional)
 - flow done requires all steps to be complete; it will fail with an error if any step is unfinished.
+- flow done auto-ref requires a clean git worktree; commit first or pass an explicit ref.
  - Keep comments concise; use fizzyx flow comment-template <kind> for format.
 
 ## OpenAPI Client
@@ -386,13 +397,9 @@ const getBuiltinTemplate = (): string => {
 	const labels = getTemplateLabels();
 	const text = getTemplateText();
 
-	return `<!--
-priority: P2
-type: chore
-owner: Ellen
-depends_on: []
-blocks: []
--->
+	return `## Tags
+- priority:p2
+- type:chore
 
 ## ${labels.goal}
 ${text.goal}

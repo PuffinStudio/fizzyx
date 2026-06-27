@@ -16,7 +16,15 @@ export type PlannerCard = {
 	lastActiveAt: string;
 	url: string;
 	column?: { id: string; name: string };
-	parsedTags: { priority: string[]; type: string[]; area: string[]; phase: string[] };
+	parsedTags: {
+		priority: string[];
+		type: string[];
+		area: string[];
+		phase: string[];
+		apiStatus: string[];
+		dependsOn: number[];
+		blocks: number[];
+	};
 	metadata: {
 		priority?: string;
 		type?: string;

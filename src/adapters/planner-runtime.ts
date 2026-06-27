@@ -55,6 +55,7 @@ export interface PlannerRuntimeApi {
 		cardNumber: number,
 		description: string,
 	) => Effect.Effect<void, Error>;
+	tagCard: (accountId: string, cardNumber: number, tag: string) => Effect.Effect<void, Error>;
 }
 
 export const makePlannerRuntime = (
@@ -88,6 +89,10 @@ export const makePlannerRuntime = (
 			runArray(Fizzy.listComments({ accountId, cardNumber })),
 		updateCard: (accountId, cardNumber, description) =>
 			runSingle(Fizzy.updateCard({ accountId, cardNumber }, { description })).pipe(
+				Effect.map(() => undefined),
+			),
+		tagCard: (accountId, cardNumber, tag) =>
+			runSingle(Fizzy.tagCard({ accountId, cardNumber }, { tag_title: tag })).pipe(
 				Effect.map(() => undefined),
 			),
 	};

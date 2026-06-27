@@ -25,6 +25,9 @@ export interface ParsedPlannerTags {
 	type: ReadonlyArray<PlannerCardType>;
 	area: ReadonlyArray<string>;
 	phase: ReadonlyArray<string>;
+	apiStatus: ReadonlyArray<string>;
+	dependsOn: ReadonlyArray<number>;
+	blocks: ReadonlyArray<number>;
 	other: ReadonlyArray<string>;
 }
 
@@ -288,6 +291,9 @@ export const parsePlannerTags = (tags?: ReadonlyArray<string>): ParsedPlannerTag
 		type: [],
 		area: [],
 		phase: [],
+		apiStatus: [],
+		dependsOn: [],
+		blocks: [],
 		other: [],
 	};
 
@@ -313,6 +319,27 @@ export const parsePlannerTags = (tags?: ReadonlyArray<string>): ParsedPlannerTag
 		if (normalized.startsWith("phase:") && normalized.length > "phase:".length) {
 			parsed.phase = parsed.phase.concat(normalized.slice("phase:".length));
 			continue;
+		}
+
+		if (normalized.startsWith("api_status:") && normalized.length > "api_status:".length) {
+			parsed.apiStatus = parsed.apiStatus.concat(normalized.slice("api_status:".length));
+			continue;
+		}
+
+		if (normalized.startsWith("depends_on:") && normalized.length > "depends_on:".length) {
+			const value = Number.parseInt(normalized.slice("depends_on:".length).replace(/^#/, ""), 10);
+			if (Number.isFinite(value)) {
+				parsed.dependsOn = parsed.dependsOn.concat(value);
+				continue;
+			}
+		}
+
+		if (normalized.startsWith("blocks:") && normalized.length > "blocks:".length) {
+			const value = Number.parseInt(normalized.slice("blocks:".length).replace(/^#/, ""), 10);
+			if (Number.isFinite(value)) {
+				parsed.blocks = parsed.blocks.concat(value);
+				continue;
+			}
 		}
 
 		parsed.other = parsed.other.concat(tag);

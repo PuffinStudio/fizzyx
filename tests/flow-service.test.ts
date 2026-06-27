@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
@@ -11,6 +11,8 @@ import {
 	add,
 	assign,
 	next,
+	nextOrStart,
+	mine,
 	completeSteps,
 	buildStandardizedCommentBody,
 	convertDescription,
@@ -105,6 +107,13 @@ const makeCacheRepoFrom = (cache: BoardCache, age = 0) => ({
 
 const makeTempDir = (): string => mkdtempSync(join(tmpdir(), "fizzyx-cli-"));
 
+const runGit = (cwd: string, args: ReadonlyArray<string>): void => {
+	const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "ignore", stderr: "ignore" });
+	if (proc.exitCode !== 0) {
+		throw new Error(`git ${args.join(" ")} failed`);
+	}
+};
+
 test("resolveDoneRefFromGit requires git metadata", async () => {
 	const dir = makeTempDir();
 
@@ -121,6 +130,41 @@ test("resolveDoneRefFromGit requires git metadata", async () => {
 		expect(error).toBeInstanceOf(ValidationError);
 		if (error instanceof ValidationError) {
 			expect(String(error.message)).toContain("Pass an explicit ref");
+		}
+	} finally {
+		rmSync(dir, { force: true, recursive: true });
+	}
+});
+
+test("resolveDoneRefFromGit rejects dirty worktrees", async () => {
+	const dir = makeTempDir();
+
+	try {
+		runGit(dir, ["init"]);
+		writeFileSync(join(dir, "file.txt"), "initial\n");
+		runGit(dir, ["add", "file.txt"]);
+		runGit(dir, [
+			"-c",
+			"user.email=test@example.com",
+			"-c",
+			"user.name=Test",
+			"commit",
+			"-m",
+			"initial",
+		]);
+		writeFileSync(join(dir, "file.txt"), "changed\n");
+
+		let error: unknown;
+		try {
+			await Effect.runPromise(resolveDoneRefFromGit({ cwd: dir }));
+			error = undefined;
+		} catch (cause) {
+			error = cause;
+		}
+
+		expect(error).toBeInstanceOf(ValidationError);
+		if (error instanceof ValidationError) {
+			expect(error.message).toContain("uncommitted changes");
 		}
 	} finally {
 		rmSync(dir, { force: true, recursive: true });
@@ -292,6 +336,38 @@ test("start ignores READY/REVIEW cards when enforcing WIP limit", async () => {
 	expect(moveCalls).toEqual([]);
 });
 
+test("mine ignores assigned cards outside workflow columns", async () => {
+	const api = defaultApi();
+	const cache: BoardCache = {
+		identity: { userId: "identity-id", name: "Identity User" },
+		cards: [
+			{
+				number: 76,
+				title: "Workflow card",
+				column: { id: "todo-id", name: "TODO" },
+				assignees: [{ id: "identity-id", name: "me" }],
+			},
+			{
+				number: 77,
+				title: "Outside workflow",
+				assignees: [{ id: "identity-id", name: "me" }],
+			},
+		],
+		notNow: [],
+		columns: [{ id: "todo-id", name: "TODO" }],
+		users: { me: "identity-id" },
+		syncedAt: "2026-01-01T00:00:00.000Z",
+	};
+	const env = {
+		...makeEnv(api),
+		cacheRepo: makeCacheRepoFrom(cache, 0),
+	};
+
+	const result = await Effect.runPromise(mine(env, { fresh: false }));
+
+	expect(result.cards.map((card) => card.number)).toEqual([76]);
+});
+
 test("next prefers READY cards over BACKLOG/legacy backlog", async () => {
 	const api = defaultApi();
 	const cache: BoardCache = {
@@ -378,6 +454,63 @@ test("next falls back to BACKLOG/legacy TODO when READY is missing", async () =>
 
 	expect(result.card?.number).toBe(77);
 	expect(result.user.name).toBe("me");
+});
+
+test("nextOrStart returns refreshed card detail after starting", async () => {
+	const api = defaultApi();
+	const columns = [
+		{ id: "backlog-id", name: "BACKLOG" },
+		{ id: "inprogress-id", name: "IN PROGRESS" },
+	];
+	const startedCard = {
+		number: 77,
+		title: "Ready to execute",
+		descriptionHtml: "<p>Do this next</p>",
+		column: { id: "inprogress-id", name: "IN PROGRESS" },
+		assignees: [{ id: "identity-id", name: "me" }],
+		steps: [{ id: "step-1", content: "Implement it", completed: false }],
+	};
+	const cache: BoardCache = {
+		identity: { userId: "identity-id", name: "Identity User" },
+		cards: [
+			{
+				number: 77,
+				title: "Ready to execute",
+				column: { id: "backlog-id", name: "BACKLOG" },
+				assignees: [{ id: "identity-id", name: "me" }],
+			},
+		],
+		notNow: [],
+		columns,
+		users: { me: "identity-id" },
+		syncedAt: "2026-01-01T00:00:00.000Z",
+	};
+	const moveCalls: Array<{ number: number; columnId: string }> = [];
+	let showCalls = 0;
+
+	api.identity = () => Effect.succeed(cache.identity);
+	api.listColumns = () => Effect.succeed(columns);
+	api.listCards = () => Effect.succeed([startedCard]);
+	api.moveCard = (number, columnId) => {
+		moveCalls.push({ number, columnId });
+		return Effect.succeed(undefined);
+	};
+	api.showCard = () => {
+		showCalls += 1;
+		return Effect.succeed(startedCard);
+	};
+
+	const env = {
+		...makeEnv(api),
+		cacheRepo: makeCacheRepoFrom(cache, 0),
+	};
+
+	const result = await Effect.runPromise(nextOrStart(env, { fresh: false, autoStart: true }));
+
+	expect(result.started).toBe(true);
+	expect(result.card).toEqual(startedCard);
+	expect(moveCalls).toEqual([{ number: 77, columnId: "inprogress-id" }]);
+	expect(showCalls).toBe(2);
 });
 
 test("completeSteps fails when pending steps are missing ids", async () => {
@@ -547,7 +680,12 @@ Add parser support for template-based step extraction.
 - [ ] ~~Deprecated~~
 - [ ] _Italic_
 - [x] Parse template section`;
-	const expectedCardDescription = `## Goal\nAdd parser support for template-based step extraction.\n\n## Scope\n- Keep add flow unchanged outside step parsing.`;
+	const expectedCardDescription = `<h2>Goal</h2>
+<p>Add parser support for template-based step extraction.</p>
+<h2>Scope</h2>
+<ul>
+<li>Keep add flow unchanged outside step parsing.</li>
+</ul>`;
 
 	const number = await Effect.runPromise(
 		add(env, { user: "me", title: "Add template steps", description }),
@@ -627,7 +765,11 @@ test("add without template steps section preserves card body conversion and skip
 	);
 
 	expect(number).toBe(102);
-	expect(createCardInputs[0]!.description).toBe(description);
+	expect(createCardInputs[0]!.description).toBe(`<h2>Goal</h2>
+<p>Update legacy flow add behavior.</p>
+<ul>
+<li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled>Should stay in description body</li>
+</ul>`);
 	expect(templateSteps).toEqual([]);
 });
 
@@ -665,11 +807,13 @@ test("add applies planner metadata as tags when rendering html description", asy
 		});
 
 	const env = makeEnv(api);
-	const description = `<!--
-priority: P2
-type: chore
-owner: Ellen
--->
+	const description = `## Tags
+- priority:p2
+- type:chore
+- phase:integration
+- api_status:not_connected
+- depends_on:123
+- blocks:456
 
 ## Goal
 Keep Fizzy UI readable.`;
@@ -679,14 +823,16 @@ Keep Fizzy UI readable.`;
 	);
 
 	expect(number).toBe(103);
-	expect(createCardInputs[0]!.description).toBe(`<!--
-priority: P2
-type: chore
-owner: Ellen
--->
-<h2>Goal</h2>
+	expect(createCardInputs[0]!.description).toBe(`<h2>Goal</h2>
 <p>Keep Fizzy UI readable.</p>`);
-	expect(tags).toEqual(["priority:p2", "type:chore"]);
+	expect(tags).toEqual([
+		"priority:p2",
+		"type:chore",
+		"phase:integration",
+		"api_status:not_connected",
+		"depends_on:123",
+		"blocks:456",
+	]);
 });
 
 test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
@@ -1054,10 +1200,10 @@ Ray`,
 		stepsUpdated: 1,
 		stepsCompleted: 0,
 	});
-	expect(descriptions[0]).toContain("## Goal");
+	expect(descriptions[0]).toContain("Goal");
 	expect(descriptions[0]).toContain("Shrink radius tokens.");
-	expect(descriptions[0]).toContain("## Files");
-	expect(descriptions[0]).toContain("## Verification");
+	expect(descriptions[0]).toContain("Files");
+	expect(descriptions[0]).toContain("Verification");
 	expect(descriptions[0]).not.toContain("References");
 	expect(descriptions[0]).not.toContain("Backup");
 	expect(created).toEqual([]);
@@ -1157,7 +1303,6 @@ test("standardizeBoard standardizes unique open and closed cards", async () => {
 test("convertDescription passes through input unchanged", () => {
 	expect(convertDescription("<div>html</div>")).toBe("<div>html</div>");
 	expect(convertDescription("**bold**")).toBe("**bold**");
-	expect(convertDescription("- [x] done")).toBe("- [x] done");
 	expect(convertDescription("hello world")).toBe("hello world");
 	expect(convertDescription("")).toBe("");
 });

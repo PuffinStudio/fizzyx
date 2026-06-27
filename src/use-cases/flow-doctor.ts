@@ -35,6 +35,7 @@ export const analyzeDoctor = (env: Env): Effect.Effect<DoctorResult, unknown> =>
 		const info: string[] = [];
 		const fixes: string[] = [];
 		info.push("Fetched columns from API");
+		info.push("Planner tag metadata health is checked by `fizzyx planner health`");
 		const columnsData = yield* env.api.listColumns();
 
 		const columns: DoctorResult["columns"] = [];

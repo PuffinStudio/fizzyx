@@ -12,7 +12,6 @@ import type {
 } from "../domain/planner-model";
 import type { PlannerMetadata, PlannerPriority } from "./planner-metadata";
 import { parsePlannerDescription, parsePlannerTags } from "./planner-metadata";
-import { convertDescription } from "./flow-card-content";
 
 export const normalizePriority = (priority?: string): PlannerPriority | undefined => {
 	const value = priority?.trim().toLowerCase();
@@ -39,7 +38,6 @@ export const planMetadataRepair = (
 	const description = card.description_html || card.description || "";
 	const parsed = parsePlannerDescription(description);
 	const tags = parsePlannerTags(card.tags);
-	const owner = parsed.metadata.owner || card.assignees?.[0]?.name;
 	const existingPriority = normalizePriority(parsed.metadata.priority);
 	const tagPriority = normalizePriority(tags.priority[0]);
 	const priority =
@@ -47,58 +45,43 @@ export const planMetadataRepair = (
 	const normalizedPriority = normalizePriority(priority);
 	const type = parsed.metadata.type || tags.type[0] || options.defaultType;
 	const phase = parsed.metadata.phase || tags.phase[0];
-	const metadata: PlannerMetadata = {
-		priority: normalizedPriority
-			? normalizedPriority.toUpperCase()
-			: priority
-				? priority.toUpperCase()
-				: "",
-		type: type || "",
-		owner: owner || "",
-		deadline: parsed.metadata.deadline || "",
-		impact: parsed.metadata.impact || "",
-		effort: parsed.metadata.effort || "",
-		depends_on: parsed.metadata.depends_on,
-		blocks: parsed.metadata.blocks,
-		phase: phase || "",
-		api_status: parsed.metadata.api_status || "",
-	};
+	const existingTags = new Set((card.tags || []).map((tag) => tag.toLowerCase()));
+	const nextTags: string[] = [];
+	if (normalizedPriority && !tags.priority.includes(normalizedPriority)) {
+		nextTags.push(`priority:${normalizedPriority}`);
+	}
+	if (type && tags.type.length === 0) {
+		nextTags.push(`type:${type.toLowerCase()}`);
+	}
+	if (phase && tags.phase.length === 0) {
+		nextTags.push(`phase:${phase.toLowerCase()}`);
+	}
+	if (parsed.metadata.api_status && tags.apiStatus.length === 0) {
+		nextTags.push(`api_status:${parsed.metadata.api_status.toLowerCase()}`);
+	}
+	for (const dependency of parsed.metadata.depends_on) {
+		nextTags.push(`depends_on:${dependency}`);
+	}
+	for (const blocked of parsed.metadata.blocks) {
+		nextTags.push(`blocks:${blocked}`);
+	}
+	const tagsToAdd = Array.from(new Set(nextTags)).filter((tag) => !existingTags.has(tag));
 
-	const renderedDescription = convertDescription(
-		`${renderMetadata(metadata)}${parsed.body ? `\n${parsed.body}` : ""}`.trimEnd(),
-	);
-	const needsSingleLineFrontmatterNormalization = parsed.warnings.includes(
-		"normalized single-line frontmatter format",
-	);
-	const hasFrontmatter =
-		description.trimStart().startsWith("---") || description.trimStart().startsWith("<!--");
-	const reason = needsSingleLineFrontmatterNormalization
-		? "normalize metadata frontmatter format"
-		: hasFrontmatter
-			? "sync metadata from tags/assignee"
-			: "insert metadata frontmatter";
-
-	if (
-		renderedDescription === description &&
-		parsed.metadata.owner === owner &&
-		existingPriority === normalizedPriority &&
-		parsed.metadata.type === type &&
-		parsed.metadata.phase === phase
-	) {
+	if (tagsToAdd.length === 0) {
 		return {
 			cardNumber: card.number,
 			title: card.title,
 			action: "skip",
-			reason: "metadata already present",
+			reason: "metadata tags already present",
 		};
 	}
 
 	return {
 		cardNumber: card.number,
 		title: card.title,
-		action: "update_description",
-		reason,
-		description: renderedDescription,
+		action: "tag_card",
+		reason: "sync planner metadata tags",
+		tags: tagsToAdd,
 	};
 };
 
@@ -130,6 +113,12 @@ export const toPlannerCard = (
 		...(tagPriority ? { priority: tagPriority.toUpperCase() } : {}),
 		...(parsedTags.type[0] ? { type: parsedTags.type[0] } : {}),
 		...(parsedTags.phase[0] ? { phase: parsedTags.phase[0] } : {}),
+		...(parsedTags.apiStatus[0] ? { api_status: parsedTags.apiStatus[0] } : {}),
+		depends_on:
+			parsedTags.dependsOn.length > 0
+				? parsedTags.dependsOn
+				: parsedDescription.metadata.depends_on,
+		blocks: parsedTags.blocks.length > 0 ? parsedTags.blocks : parsedDescription.metadata.blocks,
 	};
 	const completed = (card.steps || []).filter((step) => step.completed).length;
 	const total = (card.steps || []).length;

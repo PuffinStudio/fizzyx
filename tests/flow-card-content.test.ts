@@ -31,6 +31,7 @@ Add parser support.
 
 ## Notes
 Keep this.`);
+	expect(parsed.templateTags).toEqual([]);
 	expect(parsed.templateSteps).toEqual([
 		{ content: "Parse template section", completed: true },
 		{ content: "--radius-sm 降至 4rpx", completed: false },
@@ -66,6 +67,7 @@ owner: ellen
 
 ## Goal
 Keep metadata on add.`);
+	expect(parsed.templateTags).toEqual([]);
 	expect(parsed.templateSteps).toEqual([
 		{ content: "Create card", completed: false },
 		{ content: "Preserve metadata", completed: true },
@@ -122,10 +124,10 @@ Shrink radius tokens.
 		stepsUpdated: 1,
 		stepsCompleted: 0,
 	});
-	expect(plan.description).toContain("## Goal");
+	expect(plan.description).toContain("Goal");
 	expect(plan.description).toContain("Shrink radius tokens.");
-	expect(plan.description).toContain("## Files");
-	expect(plan.description).toContain("## Verification");
+	expect(plan.description).toContain("Files");
+	expect(plan.description).toContain("Verification");
 	expect(plan.description).not.toContain("References");
 	expect(plan.stepUpdates).toEqual([{ stepId: "s1", input: { content: "--radius-md 降至 8rpx" } }]);
 	expect(plan.stepCreates).toEqual([]);
@@ -171,9 +173,35 @@ test("planStandardizeCardContent completes closed card steps", () => {
 test("convertDescription preserves normal content", () => {
 	expect(convertDescription("<div>html</div>")).toBe("<div>html</div>");
 	expect(convertDescription("**bold**")).toBe("**bold**");
-	expect(convertDescription("- [x] done")).toBe("- [x] done");
 	expect(convertDescription("hello world")).toBe("hello world");
 	expect(convertDescription("")).toBe("");
+});
+
+test("convertDescription renders normal markdown descriptions as html", () => {
+	expect(convertDescription("## Goal\nKeep UI clean.")).toBe(`<h2>Goal</h2>
+<p>Keep UI clean.</p>`);
+	expect(convertDescription("- First\n- Second")).toBe(`<ul>
+<li>First</li>
+<li>Second</li>
+</ul>`);
+});
+
+test("parseTemplateDescription extracts Tags section", () => {
+	const parsed = parseTemplateDescription(`## Tags
+- priority:p1
+- type:feature
+- depends_on:123
+
+## Goal
+Ship it.
+
+## Steps
+- [ ] Finish`);
+
+	expect(parsed.templateTags).toEqual(["priority:p1", "type:feature", "depends_on:123"]);
+	expect(parsed.cardDescription).toBe(`## Goal
+Ship it.`);
+	expect(parsed.templateSteps).toEqual([{ content: "Finish", completed: false }]);
 });
 
 test("convertDescription hides planner frontmatter from Fizzy UI", () => {

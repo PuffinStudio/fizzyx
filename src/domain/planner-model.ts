@@ -85,9 +85,9 @@ export interface PlannerRepairMetadataOptions {
 export interface PlannerRepairMetadataChange {
 	cardNumber: number;
 	title: string;
-	action: "update_description" | "skip";
+	action: "tag_card" | "skip";
 	reason: string;
-	description?: string;
+	tags?: ReadonlyArray<string>;
 }
 
 export interface PlannerUpdateDeadlineResult {
@@ -100,13 +100,7 @@ export interface PlannerSetDeadlineInput {
 	deadline?: string;
 }
 
-export const REPAIRABLE_METADATA_ISSUE_CODES = new Set([
-	"missing_priority",
-	"invalid_priority",
-	"missing_type",
-	"missing_owner",
-	"multiple_priority",
-]);
+export const REPAIRABLE_METADATA_ISSUE_CODES = new Set(["missing_priority", "missing_type"]);
 
 export const isRepairableMetadataIssue = (issue: PlannerHealthIssue): boolean =>
 	REPAIRABLE_METADATA_ISSUE_CODES.has(issue.code);

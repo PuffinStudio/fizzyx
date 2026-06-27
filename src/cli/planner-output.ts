@@ -25,4 +25,4 @@ export const formatRepairMetadataChange = (
 ): string => `#${cardNumber} ${action}: ${reason} — ${title}`;
 
 export const formatRepairMetadataReminder = (): string =>
-	"Run with --apply to write these description changes.";
+	"Run with --apply to write these tag changes.";

@@ -11,15 +11,15 @@ type PlannerRepairChange = {
 	cardNumber?: number;
 };
 
-const isUpdateDescriptionChange = (
+const isTagCardChange = (
 	change: unknown,
 ): change is PlannerRepairChange & {
-	action: "update_description";
+	action: "tag_card";
 	cardNumber: number;
 } => {
 	if (!change || typeof change !== "object") return false;
 	const typed = change as { action?: unknown; cardNumber?: unknown };
-	return typed.action === "update_description" && typeof typed.cardNumber === "number";
+	return typed.action === "tag_card" && typeof typed.cardNumber === "number";
 };
 
 export function HealthView({
@@ -60,7 +60,7 @@ export function HealthView({
 			const repairedNumbers = new Set(
 				changes
 					.filter((change): change is PlannerRepairChange & { cardNumber: number } =>
-						isUpdateDescriptionChange(change),
+						isTagCardChange(change),
 					)
 					.map((change) => change.cardNumber),
 			);
@@ -72,9 +72,7 @@ export function HealthView({
 			}
 
 			const count = (
-				data.changes?.filter?.(
-					(change: { action?: string }) => change.action === "update_description",
-				) ?? []
+				data.changes?.filter?.((change: { action?: string }) => change.action === "tag_card") ?? []
 			).length;
 			if (data.applied) {
 				toast.info(`没有可修复的卡片。`);

@@ -230,14 +230,14 @@ export const repairPlannerMetadata = (
 			return planMetadataRepair(detail, options, normalizePriority);
 		});
 		const toApply = changes.filter(
-			(change): change is PlannerRepairMetadataChange & { description: string } =>
-				change.action === "update_description" && typeof change.description === "string",
+			(change): change is PlannerRepairMetadataChange & { tags: ReadonlyArray<string> } =>
+				change.action === "tag_card" && Array.isArray(change.tags),
 		);
 
 		if (options.apply) {
 			yield* Effect.all(
-				toApply.map((change) =>
-					runtime.updateCard(accountId, change.cardNumber, change.description),
+				toApply.flatMap((change) =>
+					change.tags.map((tag) => runtime.tagCard(accountId, change.cardNumber, tag)),
 				),
 				{ concurrency: 8 },
 			);

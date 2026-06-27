@@ -87,9 +87,7 @@ const plannerSnapshotCommand = Command.make(
 					defaultType: defaultType._tag === "Some" ? defaultType.value : undefined,
 				});
 				yield* Console.log(formatRepairMetadataSummary(result));
-				for (const change of result.changes.filter(
-					(item) => item.action === "update_description",
-				)) {
+				for (const change of result.changes.filter((item) => item.action === "tag_card")) {
 					yield* Console.log(
 						formatRepairMetadataChange(
 							change.cardNumber,
@@ -132,7 +130,7 @@ const plannerRepairMetadataCommand = Command.make(
 				defaultType: defaultType._tag === "Some" ? defaultType.value : undefined,
 			});
 			yield* Console.log(formatRepairMetadataSummary(result));
-			for (const change of result.changes.filter((item) => item.action === "update_description")) {
+			for (const change of result.changes.filter((item) => item.action === "tag_card")) {
 				yield* Console.log(
 					formatRepairMetadataChange(change.cardNumber, change.action, change.reason, change.title),
 				);
@@ -141,7 +139,7 @@ const plannerRepairMetadataCommand = Command.make(
 				yield* Console.log(formatRepairMetadataReminder());
 			}
 		}),
-).pipe(Command.withDescription("Insert or sync planner metadata frontmatter"));
+).pipe(Command.withDescription("Plan or apply planner metadata repairs"));
 
 export const plannerCmd = Command.make("planner").pipe(
 	Command.withDescription("Planner dashboard and maintenance tools"),

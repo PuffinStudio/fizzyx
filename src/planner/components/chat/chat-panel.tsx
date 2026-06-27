@@ -101,8 +101,11 @@ export const ChatPanel = ({ onClose: _onClose }: ChatPanelProps) => {
 	useEffect(() => {
 		const el = inputRef.current;
 		if (!el) return;
-		el.style.height = "0px";
-		el.style.height = `${el.scrollHeight}px`;
+		const frame = requestAnimationFrame(() => {
+			el.style.height = "0px";
+			el.style.height = `${el.scrollHeight}px`;
+		});
+		return () => cancelAnimationFrame(frame);
 	}, [text]);
 
 	const saveState = () => {

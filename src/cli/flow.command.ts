@@ -93,7 +93,12 @@ import {
 import { withSpinner, logSuccess } from "./ui";
 import { readDescription } from "./flow-input";
 import { formatCheckingPlannerHealthMessage, formatPlannerHealthResult } from "./planner-output";
-import { loadPlannerSnapshot } from "../use-cases/planner-service";
+import {
+	formatRepairMetadataChange,
+	formatRepairMetadataReminder,
+	formatRepairMetadataSummary,
+} from "./planner-output";
+import { loadPlannerSnapshot, repairPlannerMetadata } from "../use-cases/planner-service";
 
 const handleSync = (): Effect.Effect<void, any, any> =>
 	runWithFlowEnv(formatSyncingFizzyBoardMessage(), (env) => syncBoard(env)).pipe(
@@ -158,6 +163,8 @@ const handleNext = (config: { fresh: boolean; start: boolean }): Effect.Effect<v
 		if (config.start) {
 			yield* logSuccess(formatStartedCard(result.card.number));
 			yield* Console.log(formatNextAutoStartSummary(result.card.number));
+			yield* Console.log(formatBlankLine());
+			yield* Console.log(printCardDetail(result.card, []));
 			return;
 		}
 		yield* Console.log(formatNextSummary(result.card.number, result.card.title));
@@ -244,12 +251,34 @@ const handleWorkflow = (): Effect.Effect<void, any, any> =>
 
 const handleHealth = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		yield* Console.log("`fizzyx flow health` is deprecated. Use `fizzyx planner health` instead.");
 		const snapshot = yield* withSpinner(
 			formatCheckingPlannerHealthMessage(),
 			loadPlannerSnapshot(),
 		);
 		yield* Console.log(formatPlannerHealthResult(snapshot));
+	});
+
+const handleRepairMetadata = (config: {
+	apply: boolean;
+	defaultPriority: Option.Option<"p0" | "p1" | "p2">;
+	defaultType: Option.Option<string>;
+}): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const result = yield* repairPlannerMetadata({
+			apply: config.apply,
+			defaultPriority:
+				config.defaultPriority._tag === "Some" ? config.defaultPriority.value : undefined,
+			defaultType: config.defaultType._tag === "Some" ? config.defaultType.value : undefined,
+		});
+		yield* Console.log(formatRepairMetadataSummary(result));
+		for (const change of result.changes.filter((item) => item.action === "tag_card")) {
+			yield* Console.log(
+				formatRepairMetadataChange(change.cardNumber, change.action, change.reason, change.title),
+			);
+		}
+		if (!config.apply) {
+			yield* Console.log(formatRepairMetadataReminder());
+		}
 	});
 
 const handleSkillInit = (config: { force: boolean }): Effect.Effect<void, any, any> =>
@@ -590,7 +619,28 @@ const flowAddCmd = Command.make(
 		desc: Flag.string("desc").pipe(Flag.withDescription("Description file path ('-' for stdin)")),
 	},
 	handleAdd,
-).pipe(Command.withDescription("Create a new card (manual action)"));
+).pipe(Command.withAlias("create"), Command.withDescription("Create a new card"));
+
+const flowRepairMetadataCmd = Command.make(
+	"repair-metadata",
+	{
+		apply: Flag.boolean("apply").pipe(
+			Flag.withDescription("Apply metadata tag repairs to Fizzy cards"),
+		),
+		defaultPriority: Flag.choice("default-priority", ["p0", "p1", "p2"] as const).pipe(
+			Flag.withDescription("Default priority for cards without priority metadata"),
+			Flag.optional,
+		),
+		defaultType: Flag.string("default-type").pipe(
+			Flag.withDescription("Default type for cards without type metadata"),
+			Flag.optional,
+		),
+	},
+	handleRepairMetadata,
+).pipe(
+	Command.withAlias("repair-tags"),
+	Command.withDescription("Plan or apply workflow metadata tag repairs"),
+);
 
 const flowStepsFromDescCmd = Command.make(
 	"steps-from-desc",
@@ -620,7 +670,7 @@ const flowDoctorCmd = Command.make(
 ).pipe(Command.withDescription("Check flow health"));
 
 const flowHealthCmd = Command.make("health", {}, handleHealth).pipe(
-	Command.withDescription("Deprecated: use `fizzyx planner health`"),
+	Command.withDescription("Check workflow metadata health"),
 );
 
 const flowInitCmd = Command.make("init", {}, handleFlowInit).pipe(
@@ -651,6 +701,7 @@ export const flowCmd = Command.make("flow").pipe(
 		flowAddCmd,
 		flowStepsFromDescCmd,
 		flowTemplateCmd,
+		flowRepairMetadataCmd,
 		flowDoctorCmd,
 		flowHealthCmd,
 		flowInitCmd,

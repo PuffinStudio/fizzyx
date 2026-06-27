@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { readGitCommandOutput } from "./flow-git";
 import { AuthError, ValidationError } from "../domain/errors";
-import type { BoardCache, ProjectConfig, Step } from "../domain/models";
+import type { BoardCache, Card, ProjectConfig, Step } from "../domain/models";
 import type { SetupProjectConfigInput } from "../ports/config-repository";
 import { ConfigRepo, CONFIG_FILE } from "../ports/config-repository";
 import { ensureFlowConfig } from "./flow-bootstrap";
@@ -43,6 +43,7 @@ import {
 	resolveTodoColumnId,
 } from "./flow-workflow";
 import { analyzeDoctor, repairDoctor, type DoctorResult } from "./flow-doctor";
+import type { PlannerMetadata } from "./planner-metadata";
 import { parsePlannerDescription } from "./planner-metadata";
 import { normalizePriority } from "./planner-transform";
 export { convertDescription } from "./flow-card-content";
@@ -220,8 +221,9 @@ export const mine = (env: InitializedEnv, options: { fresh: boolean; user?: stri
 	Effect.gen(function* () {
 		const cache = yield* ensureCache(env, options.fresh);
 		const { name, userId } = resolveMineUser(env.config, cache, options.user);
-		const cards = cache.cards.filter((card) =>
-			card.assignees?.some((assignee) => assignee.id === userId),
+		const cards = cache.cards.filter(
+			(card) =>
+				Boolean(card.column?.name) && card.assignees?.some((assignee) => assignee.id === userId),
 		);
 		return { name, userId, cards };
 	});
@@ -279,10 +281,7 @@ export interface NextOrStartResult {
 		name: string;
 		userId: string;
 	};
-	card?: {
-		number: number;
-		title: string;
-	};
+	card?: Card;
 	started: boolean;
 }
 
@@ -295,8 +294,10 @@ export const nextOrStart = (env: InitializedEnv, options: { fresh: boolean; auto
 
 		const cardNumber = result.card.number;
 		yield* start(env, cardNumber);
+		const card = yield* env.api.showCard(cardNumber);
 		return {
 			...result,
+			card,
 			started: true,
 		};
 	});
@@ -386,6 +387,14 @@ export const done = (env: InitializedEnv, number: number, ref?: string) =>
 export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
 	Effect.gen(function* () {
 		const cwd = options.cwd || process.cwd();
+		const status = yield* readGitCommandOutput(cwd, ["status", "--porcelain"]);
+		if (status !== "") {
+			return yield* new ValidationError({
+				message:
+					"Cannot auto-detect done ref with uncommitted changes. Commit first or pass an explicit ref.",
+			});
+		}
+
 		const [short, subject] = yield* Effect.all([
 			readGitCommandOutput(cwd, ["rev-parse", "--short", "HEAD"]),
 			readGitCommandOutput(cwd, ["log", "-1", "--format=%s"]),
@@ -420,6 +429,7 @@ export const add = (
 
 		const parsed = parseTemplateDescription(input.description);
 		const metadata = parsePlannerDescription(parsed.cardDescription).metadata;
+		const tags = mergeTags(parsed.templateTags, tagsFromMetadata(metadata));
 		const userId = isCurrentUserAlias(input.user)
 			? resolveAssignableUser(yield* ensureCache(env, false), input.user)
 			: resolveUser(env.config, input.user);
@@ -432,13 +442,7 @@ export const add = (
 		});
 		yield* env.api.triageCard(card.number, todoColumnId);
 		yield* env.api.assignCard(card.number, userId);
-		const priority = normalizePriority(metadata.priority);
-		if (priority) {
-			yield* env.api.tagCard(card.number, `priority:${priority}`);
-		}
-		if (metadata.type) {
-			yield* env.api.tagCard(card.number, `type:${metadata.type.toLowerCase()}`);
-		}
+		yield* Effect.forEach(tags, (tag) => env.api.tagCard(card.number, tag));
 		yield* verifyCardColumn(env, card.number, todoColumnId, isTodoColumn, "TODO");
 		yield* Effect.forEach(parsed.templateSteps, (step) =>
 			env.api.createStep(card.number, step.content, step.completed),
@@ -446,6 +450,28 @@ export const add = (
 		yield* syncBoard(env);
 		return card.number;
 	});
+
+const tagsFromMetadata = (metadata: PlannerMetadata): ReadonlyArray<string> => {
+	const tags: string[] = [];
+	const priority = normalizePriority(metadata.priority);
+	if (priority) tags.push(`priority:${priority}`);
+	if (metadata.type) tags.push(`type:${metadata.type.toLowerCase()}`);
+	if (metadata.phase) tags.push(`phase:${metadata.phase.toLowerCase()}`);
+	if (metadata.api_status) tags.push(`api_status:${metadata.api_status.toLowerCase()}`);
+	for (const dependency of metadata.depends_on) tags.push(`depends_on:${dependency}`);
+	for (const blocked of metadata.blocks) tags.push(`blocks:${blocked}`);
+	return tags;
+};
+
+const mergeTags = (...groups: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<string> =>
+	Array.from(
+		new Set(
+			groups
+				.flat()
+				.map((tag) => tag.trim().toLowerCase())
+				.filter(Boolean),
+		),
+	);
 
 export const repairMarkdownDescription = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {

@@ -40,6 +40,9 @@ test("parsePlannerTags classifies project management tags", () => {
 		"type:bug",
 		"area:frontend",
 		"phase:integration",
+		"api_status:not_connected",
+		"depends_on:123",
+		"blocks:#456",
 		"custom",
 	]);
 
@@ -47,6 +50,9 @@ test("parsePlannerTags classifies project management tags", () => {
 	expect(parsed.type).toEqual(["bug"]);
 	expect(parsed.area).toEqual(["frontend"]);
 	expect(parsed.phase).toEqual(["integration"]);
+	expect(parsed.apiStatus).toEqual(["not_connected"]);
+	expect(parsed.dependsOn).toEqual([123]);
+	expect(parsed.blocks).toEqual([456]);
 	expect(parsed.other).toEqual(["custom"]);
 });
 
@@ -64,7 +70,14 @@ owner: Ellen
 <h2>Goal</h2>
 <p>HTML body.</p>`,
 			has_attachments: false,
-			tags: ["priority:p2", "type:chore"],
+			tags: [
+				"priority:p2",
+				"type:chore",
+				"phase:integration",
+				"api_status:not_connected",
+				"depends_on:123",
+				"blocks:456",
+			],
 			closed: false,
 			postponed: false,
 			golden: false,
@@ -78,6 +91,10 @@ owner: Ellen
 	expect(card.metadata.owner).toBe("Ellen");
 	expect(card.metadata.priority).toBe("P2");
 	expect(card.metadata.type).toBe("chore");
+	expect(card.metadata.phase).toBe("integration");
+	expect(card.metadata.api_status).toBe("not_connected");
+	expect(card.metadata.depends_on).toEqual([123]);
+	expect(card.metadata.blocks).toEqual([456]);
 	expect(card.body).toContain("<h2>Goal</h2>");
 });
 

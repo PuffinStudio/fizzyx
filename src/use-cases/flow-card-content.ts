@@ -2,6 +2,7 @@ import type { Card } from "../domain/models";
 
 export interface ParsedTemplateDescription {
 	cardDescription: string;
+	templateTags: ReadonlyArray<string>;
 	templateSteps: FlowContentStep[];
 }
 
@@ -63,39 +64,59 @@ const stripTaskListHtmlText = (value: string): string =>
 export const parseTemplateDescription = (description: string): ParsedTemplateDescription => {
 	const lines = description.split(/\r?\n/);
 	const cardLines: string[] = [];
+	const tagLines: string[] = [];
 	const templateLines: string[] = [];
-	let inTemplate = false;
+	let section: "card" | "tags" | "steps" = "card";
+	let sawTags = false;
 	let sawTemplate = false;
 
 	for (const line of lines) {
-		if (!inTemplate && /^##\s+Steps\s*$/i.test(line)) {
-			inTemplate = true;
+		if (/^##\s+Tags\s*$/i.test(line)) {
+			section = "tags";
+			sawTags = true;
+			continue;
+		}
+
+		if (/^##\s+Steps\s*$/i.test(line)) {
+			section = "steps";
 			sawTemplate = true;
 			continue;
 		}
 
-		if (inTemplate && /^##\s+/.test(line)) {
-			inTemplate = false;
+		if (section !== "card" && /^##\s+/.test(line)) {
+			section = "card";
 		}
 
-		if (inTemplate) {
+		if (section === "steps") {
 			templateLines.push(line);
+		} else if (section === "tags") {
+			tagLines.push(line);
 		} else {
 			cardLines.push(line);
 		}
 	}
 
-	if (!sawTemplate) {
+	if (!sawTemplate && !sawTags) {
 		return {
 			cardDescription: description,
+			templateTags: [],
 			templateSteps: [],
 		};
 	}
 
 	return {
 		cardDescription: cardLines.join("\n").replace(/\n+$/, "").trimEnd(),
+		templateTags: parseTemplateTags(tagLines.join("\n")),
 		templateSteps: parseDoneWhen(templateLines.join("\n")),
 	};
+};
+
+const parseTemplateTags = (value: string): ReadonlyArray<string> => {
+	const tags = value
+		.split(/\r?\n|,/)
+		.map((line) => line.trim().replace(/^[-*]\s+/, ""))
+		.filter((line) => /^[a-z_]+:[^\s]+$/i.test(line));
+	return Array.from(new Set(tags.map((tag) => tag.toLowerCase())));
 };
 
 type DescriptionSections = Record<string, string[]>;
@@ -302,8 +323,15 @@ export const convertDescription = (input: string): string => {
 		return renderFizzyDescription(hidden.frontmatter, hidden.body);
 	}
 
+	if (looksLikeMarkdownDescription(input)) {
+		return Bun.markdown.html(input).trim();
+	}
+
 	return input;
 };
+
+const looksLikeMarkdownDescription = (input: string): boolean =>
+	/^#{1,6}\s+\S/m.test(input) || /^\s*[-*]\s+\S/m.test(input);
 
 const extractStandardFrontmatter = (
 	input: string,

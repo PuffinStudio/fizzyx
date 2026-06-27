@@ -14,13 +14,21 @@ import { Toaster } from "@/components/ui/sonner";
 import { NuqsAdapter } from "nuqs/adapters/react";
 const elem = document.getElementById("root")!;
 
-const RESIZE_OBSERVER_LOOP_ERROR = "ResizeObserver loop completed with undelivered notifications.";
+const isResizeObserverLoopError = (message: unknown): boolean =>
+	typeof message === "string" && message.includes("ResizeObserver loop completed");
 
 window.addEventListener("error", (event) => {
-	if (event.message === RESIZE_OBSERVER_LOOP_ERROR) {
+	if (isResizeObserverLoopError(event.message)) {
+		event.preventDefault();
 		event.stopImmediatePropagation();
 	}
 });
+
+window.onerror = (message) => {
+	if (isResizeObserverLoopError(message)) {
+		return true;
+	}
+};
 
 const app = (
 	<StrictMode>

@@ -195,7 +195,9 @@ test("prints flow help", async () => {
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("flow");
 	expect(stdout).toContain("add");
+	expect(stdout).toContain("create");
 	expect(stdout).toContain("repair-markdown");
+	expect(stdout).toContain("repair-metadata");
 	expect(stdout).toContain("complete-steps");
 	expect(stdout).toContain("standardize");
 	expect(stdout).toContain("standardize-all");
@@ -274,6 +276,7 @@ test("flow workflow prints process checklist", async () => {
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("## Workflow");
 		expect(stdout).toContain("fizzyx flow comment-template <kind>");
+		expect(stdout).toContain("fizzyx flow repair-metadata");
 		expect(stdout).toContain("flow done");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -287,6 +290,7 @@ test("flow skill prints english skill template", async () => {
 	expect(stdout).toContain("name: fizzyx");
 	expect(stdout).toContain("# fizzyx");
 	expect(stdout).toContain("fizzyx flow workflow");
+	expect(stdout).toContain("fizzyx flow repair-metadata");
 	expect(stdout).toContain("## Context Loading");
 	expect(stdout).toContain("Treat this skill as generic");
 	expect(stdout).toContain("Do not infer identity from git user");
@@ -509,6 +513,17 @@ test("flow repair-markdown help is available", async () => {
 	expect(stdout).toContain("card");
 });
 
+test("flow repair-metadata help is available", async () => {
+	const help = await runCli(["flow", "repair-metadata", "--help"]);
+	const alias = await runCli(["flow", "repair-tags", "--help"]);
+
+	expect(help.exitCode).toBe(0);
+	expect(help.stdout).toContain("repair-metadata");
+	expect(help.stdout).toContain("--apply");
+	expect(alias.exitCode).toBe(0);
+	expect(alias.stdout).toContain("repair-metadata");
+});
+
 test("flow complete-steps help is available", async () => {
 	const { stdout, exitCode } = await runCli(["flow", "complete-steps", "--help"]);
 
@@ -666,7 +681,7 @@ test("flow repair-markdown repairs card description and prints result", async ()
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("repaired #12");
-		expect(requestBodies).toHaveLength(0);
+		expect(requestBodies).toEqual([{ description: "<h2>Goal</h2>\n<p>Fix tests</p>" }]);
 		expect(calls.filter((call) => call === "GET /1/cards.json").length).toBe(3);
 
 		api.stop();
