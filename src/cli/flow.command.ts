@@ -3,22 +3,16 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { printCardDetail, printCards, printSteps } from "./render";
 import { runWithFlowEnv, runWithFlowRuntimeEnv } from "./flow-workflow";
 import {
-	formatAssignedCard,
-	formatAssigningCardMessage,
 	formatBlockingCardMessage,
 	formatBlockedCard,
 	formatCheckingFlowHealthMessage,
 	formatClosedCard,
 	formatClosingCardMessage,
-	formatCommentTemplate,
 	formatCompleteStepsSummary,
 	formatCompletedSteps,
 	formatCreatingCardMessage,
 	formatDoctorResult,
-	formatFlowConfigMissing,
-	formatFlowConfigured,
 	formatImproveGuidance,
-	formatInitializingWorkflowConfigMessage,
 	formatLoadingCardDetailsMessage,
 	formatLoadingWorkSummaryMessage,
 	formatMovedCard,
@@ -45,11 +39,8 @@ import {
 import {
 	add,
 	analyzeDoctor,
-	assign,
 	block,
-	bootstrapFlowConfig,
 	done,
-	getStandardizedCommentTemplate,
 	mine,
 	nextOrStart,
 	repairDoctor,
@@ -65,6 +56,7 @@ import {
 } from "../use-cases/flow-service";
 import { logSuccess } from "./ui";
 import { readDescription } from "./flow-input";
+import { createFlowDraft } from "./flow-content";
 import {
 	formatRepairMetadataChange,
 	formatRepairMetadataReminder,
@@ -172,37 +164,36 @@ const handleBlock = (config: { card: number; reason: string }): Effect.Effect<vo
 		yield* Console.log(formatBlockedCard(result.number, result.reason));
 	});
 
-const handleAssign = (config: {
-	card: number;
-	users: ReadonlyArray<string>;
-}): Effect.Effect<void, any, any> =>
-	Effect.gen(function* () {
-		const result = yield* runWithFlowEnv(formatAssigningCardMessage(), (env) =>
-			assign(env, config.card, config.users as string[]),
-		);
-		yield* logSuccess(formatAssignedCard(result.number, result.userIds.join(", ")));
-	});
-
-const handleCommentTemplate = (config: {
-	kind: "done" | "blocked" | "unblocked" | "handoff" | "note";
-}): Effect.Effect<void, any, any> =>
-	Effect.gen(function* () {
-		yield* Console.log(formatCommentTemplate(getStandardizedCommentTemplate(config.kind)));
-	});
-
 const handleCreate = (config: {
-	user: string;
-	title: string;
-	desc: string;
+	user: Option.Option<string>;
+	title: Option.Option<string>;
+	desc: Option.Option<string>;
+	draft: boolean;
+	skill: ReadonlyArray<string>;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
+		if (config.draft) {
+			const draft = yield* createFlowDraft();
+			yield* Console.log(draft.path);
+			return;
+		}
+
+		if (Option.isNone(config.user) || Option.isNone(config.title) || Option.isNone(config.desc)) {
+			yield* Console.log("usage: fizzyx flow create <user> <title> --desc <file|->");
+			return yield* Effect.fail(new Error("description input is required"));
+		}
+
+		const user = Option.getOrElse(config.user, () => "");
+		const title = Option.getOrElse(config.title, () => "");
+		const desc = Option.getOrElse(config.desc, () => "");
 		const number = yield* runWithFlowEnv(formatCreatingCardMessage(), (env) =>
 			Effect.gen(function* () {
-				const description = yield* readDescription(config.desc);
+				const description = yield* readDescription(desc);
 				return yield* add(env, {
-					user: config.user,
-					title: config.title,
+					user,
+					title,
 					description,
+					suggestedSkills: config.skill,
 				});
 			}),
 		);
@@ -305,32 +296,6 @@ const handleDoctor = (config: { apply: boolean }): Effect.Effect<void, any, any>
 		yield* Console.log(formatDoctorResult(result, { applied: config.apply }));
 	});
 
-const handleFlowInit = (): Effect.Effect<void, any, any> =>
-	Effect.gen(function* () {
-		const { hadMissingConfig, initializedConfig } = yield* runWithFlowRuntimeEnv(
-			formatInitializingWorkflowConfigMessage(),
-			(env) =>
-				Effect.gen(function* () {
-					const hadMissingConfig = !env.config.flow;
-					return {
-						hadMissingConfig,
-						initializedConfig: yield* bootstrapFlowConfig(env, {
-							repairWorkflowColumns: hadMissingConfig,
-						}),
-					};
-				}),
-		);
-		if (hadMissingConfig) {
-			yield* Console.log(formatFlowConfigMissing());
-		}
-		yield* Console.log(
-			formatFlowConfigured(
-				initializedConfig.flow.columns.todo,
-				initializedConfig.flow.columns.inProgress,
-			),
-		);
-	});
-
 const flowWorkCmd = Command.make(
 	"work",
 	{
@@ -409,48 +374,27 @@ const flowBlockCmd = Command.make(
 	handleBlock,
 ).pipe(Command.withDescription("Block a card"));
 
-const flowAssignCmd = Command.make(
-	"assign",
-	{
-		card: Argument.integer("card").pipe(
-			Argument.withDescription("Card number"),
-			Argument.withMetavar("CARD"),
-		),
-		users: Argument.string("user").pipe(
-			Argument.withMetavar("USER"),
-			Argument.withDescription("User(s) to assign (use 'me' for self)"),
-			Argument.variadic({ min: 1 }),
-		),
-	},
-	handleAssign,
-).pipe(Command.withDescription("Assign card to user(s)"));
-
-const flowCommentTemplateCmd = Command.make(
-	"comment-template",
-	{
-		kind: Argument.choice("kind", [
-			"done",
-			"blocked",
-			"unblocked",
-			"handoff",
-			"note",
-		] as const).pipe(Argument.withDescription("Template kind")),
-	},
-	handleCommentTemplate,
-).pipe(Command.withDescription("Print standardized comment template"));
-
 const flowCreateCmd = Command.make(
 	"create",
 	{
 		user: Argument.string("user").pipe(
 			Argument.withDescription("GitHub username to assign"),
 			Argument.withMetavar("USER"),
+			Argument.optional,
 		),
-		title: Argument.string("title").pipe(Argument.withDescription("Card title")),
-		desc: Flag.string("desc").pipe(Flag.withDescription("Description file path ('-' for stdin)")),
+		title: Argument.string("title").pipe(Argument.withDescription("Card title"), Argument.optional),
+		desc: Flag.string("desc").pipe(
+			Flag.withDescription("Description file path ('-' for stdin)"),
+			Flag.optional,
+		),
+		draft: Flag.boolean("draft").pipe(Flag.withDescription("Create a local card draft")),
+		skill: Flag.string("skill").pipe(
+			Flag.withDescription("Suggested skill to add to the card body"),
+			Flag.atLeast(0),
+		),
 	},
 	handleCreate,
-).pipe(Command.withAlias("add"), Command.withDescription("Create a new card"));
+).pipe(Command.withDescription("Create a new card"));
 
 const flowImproveCmd = Command.make("improve", {}, handleImprove).pipe(
 	Command.withDescription("Review improvement candidates"),
@@ -492,10 +436,6 @@ const flowDoctorCmd = Command.make(
 	handleDoctor,
 ).pipe(Command.withDescription("Check flow health"));
 
-const flowInitCmd = Command.make("init", {}, handleFlowInit).pipe(
-	Command.withDescription("Initialize flow config"),
-);
-
 export const flowCmd = Command.make("flow").pipe(
 	Command.withDescription("Manage Fizzy workflow boards"),
 	Command.withSubcommands([
@@ -509,8 +449,5 @@ export const flowCmd = Command.make("flow").pipe(
 		flowImproveCmd,
 		flowRepairCmd,
 		flowDoctorCmd,
-		flowAssignCmd,
-		flowCommentTemplateCmd,
-		flowInitCmd,
 	]),
 );

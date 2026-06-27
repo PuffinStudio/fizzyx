@@ -1,6 +1,9 @@
 import { Console, Effect, Option } from "effect";
 import { Command, Flag, Argument } from "effect/unstable/cli";
-import { listBoards, setup } from "../use-cases/flow-service";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { bootstrapFlowConfig, listBoards, setup } from "../use-cases/flow-service";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../ports/config-repository";
 import { renderTable } from "./render";
 import {
 	formatInitializingWorkflowMessage,
@@ -9,7 +12,13 @@ import {
 	formatSetupCreatedConfig,
 	formatSetupUsage,
 } from "./setup-output";
+import {
+	formatFlowConfigMissing,
+	formatFlowConfigured,
+	formatInitializingWorkflowConfigMessage,
+} from "./flow-output";
 import { withSpinner, logSuccess } from "./ui";
+import { runWithFlowRuntimeEnv } from "./flow-workflow";
 
 const handleSetup = (config: {
 	list: boolean;
@@ -33,6 +42,38 @@ const handleSetup = (config: {
 		}
 
 		if (Option.isNone(config.boardId)) {
+			if (!hasProjectConfig()) {
+				yield* Console.log(formatSetupUsage());
+				return;
+			}
+
+			const initialized = yield* runWithFlowRuntimeEnv(
+				formatInitializingWorkflowConfigMessage(),
+				(env) =>
+					Effect.gen(function* () {
+						const hadMissingConfig = !env.config.flow;
+						return {
+							hadMissingConfig,
+							initializedConfig: yield* bootstrapFlowConfig(env, {
+								repairWorkflowColumns: hadMissingConfig,
+							}),
+						};
+					}),
+			).pipe(Effect.catch(() => Effect.succeed(undefined)));
+
+			if (initialized) {
+				if (initialized.hadMissingConfig) {
+					yield* Console.log(formatFlowConfigMissing());
+				}
+				yield* Console.log(
+					formatFlowConfigured(
+						initialized.initializedConfig.flow.columns.todo,
+						initialized.initializedConfig.flow.columns.inProgress,
+					),
+				);
+				return;
+			}
+
 			yield* Console.log(formatSetupUsage());
 			return;
 		}
@@ -44,8 +85,20 @@ const handleSetup = (config: {
 		yield* logSuccess(formatSetupCreatedConfig(configResult.configPath));
 	});
 
+const hasProjectConfig = (): boolean => {
+	let dir = process.cwd();
+	while (true) {
+		if (existsSync(join(dir, CONFIG_FILE)) || existsSync(join(dir, LEGACY_CONFIG_FILE))) {
+			return true;
+		}
+		const parent = dirname(dir);
+		if (parent === dir) return false;
+		dir = parent;
+	}
+};
+
 export const setupCmd = Command.make(
-	"setup",
+	"init",
 	{
 		list: Flag.boolean("list").pipe(Flag.withDescription("List available Fizzy boards")),
 		boardId: Argument.string("board-id").pipe(
@@ -55,4 +108,4 @@ export const setupCmd = Command.make(
 		),
 	},
 	handleSetup,
-).pipe(Command.withDescription("Initialize or list Fizzy workspace"));
+).pipe(Command.withAlias("setup"), Command.withDescription("Initialize or list Fizzy workspace"));

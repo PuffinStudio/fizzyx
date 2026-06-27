@@ -463,7 +463,12 @@ export const block = (env: InitializedEnv, number: number, reason: string) =>
 
 export const add = (
 	env: InitializedEnv,
-	input: { user: string; title: string; description: string },
+	input: {
+		user: string;
+		title: string;
+		description: string;
+		suggestedSkills?: ReadonlyArray<string>;
+	},
 ) =>
 	Effect.gen(function* () {
 		if (!env.config.board) {
@@ -472,8 +477,20 @@ export const add = (
 
 		const parsed = parseTemplateDescription(input.description);
 		const metadata = parsePlannerDescription(parsed.cardDescription).metadata;
+		const legacySkillSuggestions = parsed.templateTags
+			.map((tag) => tag.trim().toLowerCase())
+			.filter((tag) => tag.startsWith("skill:"))
+			.map((tag) => tag.slice("skill:".length))
+			.filter(Boolean);
+		const cardDescription = addSuggestedSkills(
+			parsed.cardDescription,
+			legacySkillSuggestions.concat(input.suggestedSkills ?? []),
+		);
 		const tags = mergeTags(
-			parsed.templateTags.filter((tag) => !tag.trim().toLowerCase().startsWith("api_status:")),
+			parsed.templateTags.filter((tag) => {
+				const normalized = tag.trim().toLowerCase();
+				return !normalized.startsWith("api_status:") && !normalized.startsWith("skill:");
+			}),
 			tagsFromMetadata(metadata),
 		);
 		const userId = isCurrentUserAlias(input.user)
@@ -483,7 +500,7 @@ export const add = (
 		const todoColumnId = resolveTodoColumnId(columns, env.config.flow.columns.todo);
 		const card = yield* env.api.createCard({
 			title: input.title,
-			description: convertDescription(parsed.cardDescription),
+			description: convertDescription(cardDescription),
 			board: env.config.board,
 		});
 		yield* env.api.triageCard(card.number, todoColumnId);
@@ -517,6 +534,17 @@ const mergeTags = (...groups: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArr
 				.filter(Boolean),
 		),
 	);
+
+const addSuggestedSkills = (description: string, skills: ReadonlyArray<string>): string => {
+	const unique = Array.from(
+		new Set(skills.map((skill) => skill.trim()).filter((skill) => skill.length > 0)),
+	);
+	if (unique.length === 0) return description;
+	const section = ["", "## Suggested Skills", "", ...unique.map((skill) => `- ${skill}`)].join(
+		"\n",
+	);
+	return `${description.trimEnd()}${section}`;
+};
 
 export const repairMarkdownDescription = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {

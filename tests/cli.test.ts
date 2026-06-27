@@ -71,7 +71,7 @@ test("prints top-level grouped help", async () => {
 
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("fizzyx");
-	expect(stdout).toContain("setup");
+	expect(stdout).toContain("init");
 	expect(stdout).toContain("auth");
 	expect(stdout).toContain("flow");
 	expect(stdout).toContain("--version");
@@ -97,17 +97,17 @@ test("prints version with -v flag", async () => {
 	expect(stdout).toMatch(/^fizzyx v?\d+\.\d+\.\d+/);
 });
 
-test.each(["-h", "--help"] as const)("setup %s prints setup help", async (helpArg) => {
-	const { stdout, stderr, exitCode } = await runCli(["setup", helpArg]);
+test.each(["-h", "--help"] as const)("init %s prints init help", async (helpArg) => {
+	const { stdout, stderr, exitCode } = await runCli(["init", helpArg]);
 
 	expect(exitCode).toBe(0);
-	expect(stdout).toContain("setup");
+	expect(stdout).toContain("init");
 	expect(stdout).toContain("BOARD_ID");
 	expect(stdout).toContain("--list");
 	expect(stderr).toBe("");
 });
 
-test("setup help exits without creating config", async () => {
+test("init help exits without creating config", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 	const homeDir = join(root, "home");
@@ -116,13 +116,13 @@ test("setup help exits without creating config", async () => {
 		mkdirSync(projectDir, { recursive: true });
 		mkdirSync(homeDir, { recursive: true });
 
-		const result = await runCli(["setup", "--help"], {
+		const result = await runCli(["init", "--help"], {
 			cwd: projectDir,
 			env: { HOME: homeDir },
 		});
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stdout).toContain("setup");
+		expect(result.stdout).toContain("init");
 		expect(result.stderr).toBe("");
 		expect(existsSync(join(projectDir, ".fizzyx.yaml"))).toBe(false);
 		expect(existsSync(join(projectDir, ".fizzy.yaml"))).toBe(false);
@@ -131,7 +131,7 @@ test("setup help exits without creating config", async () => {
 	}
 });
 
-test("setup --list shows board id and name", async () => {
+test("init --list shows board id and name", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 	const homeDir = join(root, "home");
@@ -165,7 +165,7 @@ test("setup --list shows board id and name", async () => {
 
 		writeFileSync(join(projectDir, ".fizzy.yaml"), `api_url: http://127.0.0.1:${api.port}\n`);
 
-		const result = await runCli(["setup", "--list"], {
+		const result = await runCli(["init", "--list"], {
 			cwd: projectDir,
 			env: { HOME: homeDir },
 		});
@@ -182,11 +182,17 @@ test("setup --list shows board id and name", async () => {
 	}
 });
 
-test("setup command requires board id", async () => {
-	const { stdout, exitCode } = await runCli(["setup"]);
+test("init command requires board id when no project config exists", async () => {
+	const root = makeTempDir();
 
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("usage: fizzyx setup");
+	try {
+		const { stdout, exitCode } = await runCli(["init"], { cwd: root });
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("usage: fizzyx init");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("prints flow help", async () => {
@@ -215,6 +221,9 @@ test("prints flow help", async () => {
 	expect(stdout).not.toContain("\n  workflow");
 	expect(stdout).not.toContain("\n  template");
 	expect(stdout).not.toContain("\n  skill");
+	expect(stdout).not.toContain("assign");
+	expect(stdout).not.toContain("comment-template");
+	expect(stdout).not.toContain("\n  init");
 });
 
 test("planner --help lists start and snapshot only", async () => {
@@ -238,55 +247,11 @@ test("planner snapshot --help has no auto-fix metadata options", async () => {
 	expect(stdout).not.toContain("--default-type");
 });
 
-test("flow comment-template requires kind", async () => {
+test("flow comment-template is removed from public flow surface", async () => {
 	const { stdout, exitCode } = await runCli(["flow", "comment-template", "--help"]);
 
 	expect(exitCode).toBe(0);
-	expect(stdout).toContain("comment-template");
-});
-
-test("flow comment-template prints standard English template", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-
-	try {
-		mkdirSync(projectDir, { recursive: true });
-		writeFileSync(
-			join(projectDir, ".fizzy.yaml"),
-			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n`,
-		);
-
-		const { stdout, exitCode } = await runCli(["flow", "comment-template", "blocked"], {
-			cwd: projectDir,
-		});
-
-		expect(exitCode).toBe(0);
-		expect(stdout).toBe("blocked: <reason; owner/decision needed>\n");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("flow comment-template ignores deprecated language settings and prints English", async () => {
-	const root = makeTempDir();
-	const projectDir = join(root, "project");
-
-	try {
-		mkdirSync(projectDir, { recursive: true });
-		writeFileSync(
-			join(projectDir, ".fizzy.yaml"),
-			`api_url: https://example.com\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users: {}\n  wip_limit: 5\n  cache_ttl: 900\n  card:\n    language: en\n`,
-		);
-
-		const { stdout, exitCode } = await runCli(["flow", "comment-template", "done"], {
-			cwd: projectDir,
-		});
-
-		expect(exitCode).toBe(0);
-		expect(stdout).toBe("done: commit <sha>: <subject>\n");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+	expect(stdout).not.toContain("comment-template");
 });
 
 test("flow repair supports kind-based help surface", async () => {
@@ -466,11 +431,11 @@ test("flow done --complete-steps completes open steps before closing card", asyn
 	}
 });
 
-test("setup does not expose advanced flags", async () => {
-	const { stdout, exitCode } = await runCli(["setup", "--todo", "id"]);
+test("init does not expose advanced flags", async () => {
+	const { stdout, exitCode } = await runCli(["init", "--todo", "id"]);
 
 	expect(exitCode).toBe(1);
-	expect(stdout).toContain("setup");
+	expect(stdout).toContain("init");
 	expect(stdout).not.toContain("--todo");
 });
 
@@ -486,10 +451,31 @@ test("flow create requires description input", async () => {
 	const { stdout, exitCode } = await runCli(["flow", "create", "me", "Title"]);
 
 	expect(exitCode).toBe(1);
-	expect(stdout).toContain("Create a new card");
+	expect(stdout).toContain("usage: fizzyx flow create");
 });
 
-test("flow init bootstraps missing flow in legacy config", async () => {
+test("flow create --draft writes a local card draft", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(join(projectDir, ".fizzyx.yaml"), `api_url: https://example.com\n`);
+
+		const { stdout, exitCode } = await runCli(["flow", "create", "--draft"], {
+			cwd: projectDir,
+		});
+		const draftPath = stdout.trim();
+
+		expect(exitCode).toBe(0);
+		expect(draftPath).toMatch(/^\.fizzyx\/card-.+\.md$/);
+		expect(readFileSync(join(projectDir, draftPath), "utf8")).toContain("## Suggested Skills");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("init bootstraps missing flow in legacy config", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 	const homeDir = join(root, "home");
@@ -548,7 +534,7 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 		const configText = readFileSync(configPath, "utf8").replace("{API_URL}", apiUrl);
 		writeFileSync(configPath, configText);
 
-		const result = await runCli(["flow", "init"], {
+		const result = await runCli(["init"], {
 			cwd: projectDir,
 			env: { HOME: homeDir },
 		});
@@ -557,7 +543,7 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 		expect(result.stdout).toContain("flow config missing; initializing...");
 		expect(result.stdout).toContain("flow configured:");
 
-		const second = await runCli(["flow", "init"], {
+		const second = await runCli(["init"], {
 			cwd: projectDir,
 			env: { HOME: homeDir },
 		});
@@ -575,7 +561,7 @@ test("flow init bootstraps missing flow in legacy config", async () => {
 	}
 });
 
-test("flow init preserves existing flow users while adding identity and assignees", async () => {
+test("init preserves existing flow users while adding identity and assignees", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 	const homeDir = join(root, "home");
@@ -630,7 +616,7 @@ test("flow init preserves existing flow users while adding identity and assignee
 			`api_url: ${apiUrl}\naccount: 1\nboard: board-1\nflow:\n  columns:\n    todo: todo-id\n    in_progress: inprogress-id\n  users:\n    existing: existing-id\n  wip_limit: 5\n  cache_ttl: 900\n`,
 		);
 
-		const result = await runCli(["flow", "init"], {
+		const result = await runCli(["init"], {
 			cwd: projectDir,
 			env: { HOME: homeDir },
 		});
@@ -651,7 +637,7 @@ test("flow init preserves existing flow users while adding identity and assignee
 	}
 });
 
-test("flow init retries when token is denied and migrates official credentials", async () => {
+test("init retries when token is denied and migrates official credentials", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");
 	const homeDir = join(root, "home");
@@ -728,7 +714,7 @@ test("flow init retries when token is denied and migrates official credentials",
 		const apiUrl = `http://127.0.0.1:${api.port}`;
 		writeFileSync(configPath, `api_url: ${apiUrl}\naccount: 1\nboard: board-1\n`);
 
-		const result = await runCli(["flow", "init"], {
+		const result = await runCli(["init"], {
 			cwd: projectDir,
 			env: { HOME: homeDir },
 		});

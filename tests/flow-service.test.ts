@@ -834,6 +834,48 @@ Keep Fizzy UI readable.`;
 	]);
 });
 
+test("add converts skill tags and --skill input into Suggested Skills", async () => {
+	const tags: string[] = [];
+	const createCardInputs: Array<{ description: string }> = [];
+	const api = defaultApi();
+	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
+	api.listCards = () => Effect.succeed([]);
+	api.createCard = (input) => {
+		createCardInputs.push({ description: input.description });
+		return Effect.succeed({ number: 103, title: input.title, description: input.description });
+	};
+	api.assignCard = () => Effect.succeed(undefined);
+	api.triageCard = () => Effect.succeed(undefined);
+	api.showCard = () =>
+		Effect.succeed({ number: 103, title: "Skill card", column: { id: "todo-id", name: "TODO" } });
+	api.tagCard = (_number, tag) => {
+		tags.push(tag);
+		return Effect.succeed(undefined);
+	};
+
+	const description = `## Tags
+- priority:p2
+- skill:tdd
+
+## Goal
+Create without legacy skill tags.`;
+
+	const number = await Effect.runPromise(
+		add(makeEnv(api), {
+			user: "me",
+			title: "Skill card",
+			description,
+			suggestedSkills: ["security-review"],
+		}),
+	);
+
+	expect(number).toBe(103);
+	expect(tags).toEqual(["priority:p2"]);
+	expect(createCardInputs[0]!.description).toContain("<h2>Suggested Skills</h2>");
+	expect(createCardInputs[0]!.description).toContain("tdd");
+	expect(createCardInputs[0]!.description).toContain("security-review");
+});
+
 test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
 	const triageCalls: Array<{ number: number; columnId: string }> = [];
 	const api = defaultApi();
