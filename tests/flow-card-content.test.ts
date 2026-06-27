@@ -153,6 +153,20 @@ Do work.
 	]);
 });
 
+test("planStandardizeCardContent migrates legacy api and skill tags into body sections", () => {
+	const plan = planStandardizeCardContent({
+		number: 12,
+		title: "Connect API",
+		description: "Legacy card",
+		tags: ["api_status:not_connected", "skill:tdd"],
+	});
+
+	expect(plan.description).toContain("<h2>Inputs Needed</h2>");
+	expect(plan.description).toContain("API status: not connected");
+	expect(plan.description).toContain("<h2>Suggested Skills</h2>");
+	expect(plan.description).toContain("tdd");
+});
+
 test("planStandardizeCardContent completes closed card steps", () => {
 	const plan = planStandardizeCardContent({
 		number: 31,

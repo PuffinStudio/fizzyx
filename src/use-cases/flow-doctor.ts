@@ -35,7 +35,10 @@ export const analyzeDoctor = (env: Env): Effect.Effect<DoctorResult, unknown> =>
 		const info: string[] = [];
 		const fixes: string[] = [];
 		info.push("Fetched columns from API");
-		info.push("Planner tag metadata health is checked by `fizzyx planner health`");
+		info.push(
+			"Tag metadata health is reported by `fizzyx flow work` and repaired by `fizzyx flow repair`",
+		);
+		info.push("Skill pins are checked by `fizzyx skill doctor`");
 		const columnsData = yield* env.api.listColumns();
 
 		const columns: DoctorResult["columns"] = [];
@@ -56,7 +59,7 @@ export const analyzeDoctor = (env: Env): Effect.Effect<DoctorResult, unknown> =>
 		const inProgressId = columns[2]!.id;
 
 		if (!config.flow) {
-			fixes.push("Flow config missing (run `fizzyx flow init` or `fizzyx flow doctor --apply`)");
+			fixes.push("Flow config missing (run `fizzyx init` or `fizzyx flow doctor --apply`)");
 		} else if (
 			config.flow.columns.todo !== todoId ||
 			config.flow.columns.inProgress !== inProgressId

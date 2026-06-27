@@ -184,6 +184,16 @@ const cleanSectionLines = (lines: ReadonlyArray<string>): string[] =>
 const buildStandardDescription = (card: Card, sections: DescriptionSections): string => {
 	const labels = { goal: "Goal", files: "Files", verification: "Verification", notes: "Notes" };
 	const goal = firstSection(sections, ["goal", "目标"]) || card.title;
+	const inputsNeeded = mergeUniqueLines(
+		firstSection(sections, ["inputs needed", "输入需求"])
+			.split(/\r?\n/)
+			.concat(legacyInputsFromTags(card.tags || [])),
+	);
+	const suggestedSkills = mergeUniqueLines(
+		firstSection(sections, ["suggested skills", "推荐技能"])
+			.split(/\r?\n/)
+			.concat(legacySkillsFromTags(card.tags || [])),
+	);
 	const files = firstSection(sections, ["files", "文件"]);
 	const verification = mergeUniqueLines(
 		firstSection(sections, ["verification", "验证"])
@@ -193,11 +203,26 @@ const buildStandardDescription = (card: Card, sections: DescriptionSections): st
 	const notes = firstSection(sections, ["notes", "备注"]);
 
 	const parts = [`## ${labels.goal}`, "", goal.trim()];
+	if (inputsNeeded.length > 0) parts.push("", "## Inputs Needed", "", ...inputsNeeded);
+	if (suggestedSkills.length > 0) parts.push("", "## Suggested Skills", "", ...suggestedSkills);
 	if (files) parts.push("", `## ${labels.files}`, "", files);
 	if (verification.length > 0) parts.push("", `## ${labels.verification}`, "", ...verification);
 	if (notes) parts.push("", `## ${labels.notes}`, "", notes);
 	return parts.join("\n").trim();
 };
+
+const legacyInputsFromTags = (tags: ReadonlyArray<string>): string[] =>
+	tags
+		.map((tag) => tag.trim().toLowerCase())
+		.filter((tag) => tag.startsWith("api_status:"))
+		.map((tag) => `- API status: ${tag.slice("api_status:".length).replace(/[-_]/g, " ")}`);
+
+const legacySkillsFromTags = (tags: ReadonlyArray<string>): string[] =>
+	tags
+		.map((tag) => tag.trim().toLowerCase())
+		.filter((tag) => tag.startsWith("skill:"))
+		.map((tag) => `- ${tag.slice("skill:".length)}`)
+		.filter((skill) => skill.length > 2);
 
 const mergeUniqueLines = (lines: ReadonlyArray<string>): string[] => {
 	const seen = new Set<string>();
