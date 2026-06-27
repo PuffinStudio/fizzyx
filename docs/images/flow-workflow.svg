@@ -25,24 +25,24 @@
     <text x="48" y="88" font-size="16" fill="#94a3b8">AI-assisted card lifecycle for one card at a time</text>
 
     <rect x="48" y="125" width="180" height="84" rx="16" fill="#22d3ee"/>
-    <text x="138" y="165" text-anchor="middle" font-size="18" fill="#0f172a" font-weight="700">flow mine</text>
-    <text x="138" y="188" text-anchor="middle" font-size="13" fill="#0f172a">Pull your queue</text>
+    <text x="138" y="165" text-anchor="middle" font-size="18" fill="#0f172a" font-weight="700">flow work</text>
+    <text x="138" y="188" text-anchor="middle" font-size="13" fill="#0f172a">Daily summary</text>
 
     <rect x="276" y="125" width="180" height="84" rx="16" fill="url(#flowCard)"/>
-    <text x="366" y="165" text-anchor="middle" font-size="18" fill="#032f46" font-weight="700">flow next</text>
-    <text x="366" y="188" text-anchor="middle" font-size="13" fill="#082f49">Choose next work</text>
+    <text x="366" y="165" text-anchor="middle" font-size="18" fill="#032f46" font-weight="700">flow create</text>
+    <text x="366" y="188" text-anchor="middle" font-size="13" fill="#082f49">Draft or add card</text>
 
     <rect x="504" y="125" width="180" height="84" rx="16" fill="url(#flowCard)"/>
     <text x="594" y="165" text-anchor="middle" font-size="18" fill="#032f46" font-weight="700">flow start</text>
     <text x="594" y="188" text-anchor="middle" font-size="13" fill="#082f49">Set In Progress</text>
 
     <rect x="732" y="125" width="220" height="84" rx="16" fill="url(#flowCardAlt)"/>
-    <text x="842" y="165" text-anchor="middle" font-size="18" fill="#2d0a30" font-weight="700">complete-steps / done</text>
+    <text x="842" y="165" text-anchor="middle" font-size="18" fill="#2d0a30" font-weight="700">flow done</text>
     <text x="842" y="188" text-anchor="middle" font-size="13" fill="#3b0a20">Finish and close</text>
 
     <rect x="984" y="125" width="148" height="84" rx="16" fill="#22d3ee"/>
-    <text x="1058" y="165" text-anchor="middle" font-size="18" fill="#082f49" font-weight="700">flow status</text>
-    <text x="1058" y="188" text-anchor="middle" font-size="13" fill="#082f49">Track progress</text>
+    <text x="1058" y="165" text-anchor="middle" font-size="18" fill="#082f49" font-weight="700">flow doctor</text>
+    <text x="1058" y="188" text-anchor="middle" font-size="13" fill="#082f49">Check health</text>
 
     <path d="M228 167 H270" stroke="#22d3ee" stroke-width="6" marker-end="url(#arrow)"/>
     <path d="M456 167 H498" stroke="#22d3ee" stroke-width="6" marker-end="url(#arrow)"/>
@@ -62,7 +62,7 @@
     <text x="610" y="348" text-anchor="middle" font-size="13" fill="#99f6e4">Less context switching</text>
 
     <path d="M488 316 H500" stroke="#14b8a6" stroke-width="6" marker-end="url(#arrow)"/>
-    <text x="54" y="386" font-size="14" fill="#94a3b8">Tip: `flow next --fresh --start` executes both selection and begin in one command.</text>
+    <text x="54" y="386" font-size="14" fill="#94a3b8">Tip: `flow create --draft` creates a reusable card draft with Suggested Skills.</text>
     <text x="54" y="408" font-size="14" fill="#94a3b8">Planner and OSS/OpenAPI commands can be run in parallel; flow is the execution core.</text>
   </g>
 </svg>
