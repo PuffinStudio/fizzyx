@@ -8,8 +8,8 @@ Fizzyx 1.0.0 is a breaking redesign around a small AI-agent development workflow
 - Make `skill` the only place that manages AI engineering skills.
 - Keep `planner` focused on visualization and snapshots.
 - Use one project config, `.fizzyx.yaml`; do not add `skills.lock.json`.
-- Support project skills, global skills, built-in skills, and remote Git skills.
-- Treat installed skills as enabled; removing a skill disables it.
+- Bundle default skills in the release and let projects pin the bundled skills they use.
+- Treat pinned skills as project preferences; bundled skills are available without install.
 - Standardize card metadata tags and move mutable execution state out of tags.
 
 ## Command Surface
@@ -18,7 +18,6 @@ Fizzyx 1.0.0 is a breaking redesign around a small AI-agent development workflow
 
 ```sh
 fizzyx init
-fizzyx migrate
 fizzyx flow <command>
 fizzyx skill <command>
 fizzyx planner <command>
@@ -54,7 +53,7 @@ fizzyx skill doctor
 fizzyx skill migrate
 ```
 
-Installed means enabled. There is no separate enable/disable state.
+Bundled skills are always available. Adding a skill records a project pin.
 
 ### Planner
 
@@ -184,11 +183,10 @@ area:design
 
 - Skills are managed only by `fizzyx skill`.
 - `flow` consumes and recommends skills, but does not manage them.
-- Installed means enabled.
-- Removing a skill disables it.
+- Bundled skills are always available.
+- Adding a skill records a project pin.
 - Do not create `skills.lock.json`.
 - Project skill config lives in `.fizzyx.yaml`.
-- Global skill config lives in `~/.config/fizzyx/config.yaml`.
 - Cache directories may be deleted and rebuilt; config remains in YAML.
 - Skills do not need to be Fizzy tags.
 
@@ -217,23 +215,11 @@ fizzyx skill add tdd
 fizzyx skill add improve-codebase
 ```
 
-Default remote repo preset:
+Bundled Matt Pocock aliases:
 
 ```sh
 fizzyx skill add mattpocock/tdd
 fizzyx skill add mattpocock/improve-codebase-architecture
-```
-
-Git remote:
-
-```sh
-fizzyx skill add https://github.com/mattpocock/skills --pick tdd,diagnosing-bugs
-```
-
-Global install:
-
-```sh
-fizzyx skill add tdd --global
 ```
 
 ### Project Config
@@ -241,20 +227,13 @@ fizzyx skill add tdd --global
 ```yaml
 skills:
   version: 1
-  sources:
-    mattpocock:
-      repo: https://github.com/mattpocock/skills
-      ref: v1.0.1
   installed:
     tdd:
       source: builtin
       version: 1.0.0
     improve-codebase:
-      source: git
-      repo: https://github.com/mattpocock/skills
-      ref: v1.0.1
-      commit: abc123
-      path: skills/engineering/improve-codebase-architecture
+      source: builtin
+      version: 1.0.0
   defaults:
     feature:
       - tdd
@@ -270,20 +249,6 @@ skills:
   areas:
     auth:
       - security-review
-```
-
-### Global Config
-
-```yaml
-skills:
-  sources:
-    mattpocock:
-      repo: https://github.com/mattpocock/skills
-      ref: v1.0.1
-  installed:
-    tdd:
-      source: builtin
-      version: 1.0.0
 ```
 
 ## Skill Recommendation
@@ -402,7 +367,7 @@ Checks:
 - cache
 - config
 - tag vocabulary
-- skill install health
+- skill pin health
 - required migrations
 
 ### `flow improve`
@@ -434,8 +399,6 @@ snapshot --auto-fix
 ## Migrate
 
 ```sh
-fizzyx migrate --check
-fizzyx migrate --apply
 fizzyx skill migrate --check
 fizzyx skill migrate --apply
 ```
@@ -444,7 +407,7 @@ Responsibilities:
 
 - upgrade `.fizzyx.yaml`
 - add or upgrade `skills:` config
-- install/update built-in skills
+- refresh local copies of bundled skills
 - update `.agents/skills/fizzyx/*`
 - migrate old command docs
 - migrate hidden metadata
@@ -466,8 +429,9 @@ Responsibilities:
 
 - Add `src/cli/skill.command.ts`.
 - Implement `skill list/add/remove/info/update/run/doctor/migrate`.
-- Add built-in skill registry.
-- Install skills into `.agents/skills` and config YAML.
+- Add bundled skill registry.
+- Use independent Markdown source files imported as text.
+- Pin bundled skills in config YAML and refresh local copies on demand.
 
 ### Slice 3: Flow Command Cleanup
 
@@ -492,7 +456,7 @@ Responsibilities:
 
 ### Slice 6: Migrate
 
-- Add `migrate --check` and `migrate --apply`.
+- Add `skill migrate --check` and `skill migrate --apply`.
 - Add workflow asset versioning.
 - Add migration report.
 
@@ -504,8 +468,8 @@ Responsibilities:
 ### Slice 8: Real Workflow Verification
 
 - Real create/show/start/review/done.
-- Built-in skill install.
-- Remote skill install from Matt Pocock skills.
+- Bundled skill pinning.
+- Bundled Matt Pocock aliases.
 - Migrate dry-run/apply.
 - Full `bun --bun run check`.
 
@@ -515,10 +479,10 @@ Responsibilities:
 - Old scattered commands are removed or produce direct new-command guidance.
 - `flow work` is the daily entry point.
 - `flow repair` covers legacy repair behavior.
-- `skill add tdd` installs and `skill run tdd` works.
+- `skill add tdd` pins the bundled skill and `skill run tdd` works.
 - `.fizzyx.yaml` is the only project config.
 - No `skills.lock.json` exists.
-- Skill installation means enabled.
+- Bundled skills are available without install.
 - `area` and `phase` project-defined rules are in the built-in skill.
 - `api_status` and `skill:*` are no longer standard tags.
 - Planner repair/health commands are removed.

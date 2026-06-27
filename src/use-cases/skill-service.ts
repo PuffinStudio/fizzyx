@@ -1,9 +1,18 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ConfigError, FileError, ValidationError } from "../domain/errors";
 import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../ports/config-repository";
 import { parseYaml } from "../adapters/config-codec";
 import { applySkillsMigration, inspectSkillsMigration } from "./migrate";
+import codebaseDesignContent from "../skills/bundled/codebase-design.md" with { type: "text" };
+import diagnoseContent from "../skills/bundled/diagnose.md" with { type: "text" };
+import handoffContent from "../skills/bundled/handoff.md" with { type: "text" };
+import improveCodebaseContent from "../skills/bundled/improve-codebase.md" with { type: "text" };
+import securityReviewContent from "../skills/bundled/security-review.md" with { type: "text" };
+import tddContent from "../skills/bundled/tdd.md" with { type: "text" };
+import toIssuesContent from "../skills/bundled/to-issues.md" with { type: "text" };
+import toPrdContent from "../skills/bundled/to-prd.md" with { type: "text" };
+import triageContent from "../skills/bundled/triage.md" with { type: "text" };
 
 const BUILTIN_SKILL_VERSION = "1.0.0";
 
@@ -11,6 +20,7 @@ type BuiltinSkill = {
 	name: string;
 	description: string;
 	runHint: string;
+	content: string;
 };
 
 type ConfigContext = {
@@ -24,7 +34,7 @@ export type SkillSummary = {
 	name: string;
 	source: string;
 	version?: string;
-	status: "installed" | "available";
+	status: "project" | "bundled";
 };
 
 const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
@@ -33,50 +43,64 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		description: "Map the current architecture before changing it.",
 		runHint:
 			"Run `codebase-design` by reading the skill instructions before changing architecture.",
+		content: codebaseDesignContent,
 	},
 	{
 		name: "diagnose",
 		description: "Debug failing behavior with a structured diagnosis pass.",
 		runHint: "Run `diagnose` by gathering the failure, hypothesis, and verification steps first.",
+		content: diagnoseContent,
 	},
 	{
 		name: "handoff",
 		description: "Prepare a concise handoff for the next worker.",
 		runHint: "Run `handoff` by summarizing status, risks, and concrete next actions.",
+		content: handoffContent,
 	},
 	{
 		name: "improve-codebase",
 		description: "Identify pragmatic improvements in the existing codebase.",
 		runHint: "Run `improve-codebase` by auditing hotspots before proposing changes.",
+		content: improveCodebaseContent,
 	},
 	{
 		name: "security-review",
 		description: "Review auth, input handling, and boundary risks.",
 		runHint: "Run `security-review` before shipping auth, secrets, or user-input changes.",
+		content: securityReviewContent,
 	},
 	{
 		name: "tdd",
 		description: "Write the failing test first and drive implementation from it.",
 		runHint: "Run `tdd` before implementation: write a failing test, confirm RED, then implement.",
+		content: tddContent,
 	},
 	{
 		name: "to-issues",
 		description: "Split a plan into directly actionable issues.",
 		runHint: "Run `to-issues` to turn the current plan into small actionable work items.",
+		content: toIssuesContent,
 	},
 	{
 		name: "to-prd",
 		description: "Turn the current problem statement into a project brief.",
 		runHint: "Run `to-prd` to produce a concise product or implementation brief.",
+		content: toPrdContent,
 	},
 	{
 		name: "triage",
 		description: "Sort incoming issues and route them to the right workflow state.",
 		runHint: "Run `triage` to classify the issue before implementation starts.",
+		content: triageContent,
 	},
 ];
 
 const BUILTIN_BY_NAME = new Map(BUILTIN_SKILLS.map((skill) => [skill.name, skill] as const));
+const MATT_POCOCK_ALIASES: Readonly<Record<string, string>> = {
+	"improve-codebase-architecture": "improve-codebase",
+	diagnosing: "diagnose",
+	"diagnosing-bugs": "diagnose",
+};
 
 export const listSkills = (): ReadonlyArray<SkillSummary> => {
 	const context = loadConfigContext();
@@ -89,7 +113,7 @@ export const listSkills = (): ReadonlyArray<SkillSummary> => {
 			name: builtin.name,
 			source: installedMeta?.source ?? "builtin",
 			version: installedMeta?.version ?? BUILTIN_SKILL_VERSION,
-			status: installedMeta ? "installed" : "available",
+			status: installedMeta ? "project" : "bundled",
 		});
 	}
 
@@ -99,7 +123,7 @@ export const listSkills = (): ReadonlyArray<SkillSummary> => {
 			name,
 			source: meta.source,
 			version: meta.version,
-			status: "installed",
+			status: "project",
 		});
 	}
 
@@ -107,17 +131,17 @@ export const listSkills = (): ReadonlyArray<SkillSummary> => {
 };
 
 export const addSkill = (source: string): SkillSummary => {
-	const builtin = BUILTIN_BY_NAME.get(source);
+	const builtin = resolveBuiltinSkill(source);
 	if (!builtin) {
 		throw new ValidationError({
-			message: `Unsupported skill source: ${source}. Only built-in skills are supported in this 1.0 baseline.`,
+			message: `Unsupported skill source: ${source}. Bundled skills are available without download; use a bundled name such as tdd or mattpocock/tdd.`,
 		});
 	}
 
 	const context = loadConfigContext();
 	const skills = ensureSkillsSection(context.document);
 	const installed = objectValue(skills.installed);
-	installed[source] = {
+	installed[builtin.name] = {
 		source: "builtin",
 		version: BUILTIN_SKILL_VERSION,
 	};
@@ -127,10 +151,10 @@ export const addSkill = (source: string): SkillSummary => {
 	writeYaml(context.writePath, context.document);
 
 	return {
-		name: source,
+		name: builtin.name,
 		source: "builtin",
 		version: BUILTIN_SKILL_VERSION,
-		status: "installed",
+		status: "project",
 	};
 };
 
@@ -144,7 +168,7 @@ export const removeSkill = (
 				name,
 				source: installed[name].source,
 				version: installed[name].version,
-				status: "installed" as const,
+				status: "project" as const,
 			}
 		: undefined;
 
@@ -178,7 +202,7 @@ export const getSkillInfo = (name: string): SkillSummary => {
 			name,
 			source: installedMeta.source,
 			version: installedMeta.version,
-			status: "installed",
+			status: "project",
 		};
 	}
 
@@ -188,7 +212,7 @@ export const getSkillInfo = (name: string): SkillSummary => {
 			name,
 			source: "builtin",
 			version: BUILTIN_SKILL_VERSION,
-			status: "available",
+			status: "bundled",
 		};
 	}
 
@@ -204,7 +228,7 @@ export const runSkill = (name: string): string => {
 	const installed = parseInstalledSkills(loadConfigContext().document);
 	const installedMeta = installed[name];
 	if (installedMeta) {
-		return `Run \`${name}\` by loading the installed skill metadata from source \`${installedMeta.source}\`.`;
+		return `Run \`${name}\` from project skill metadata.`;
 	}
 
 	throw new ValidationError({ message: `Unknown skill: ${name}` });
@@ -212,25 +236,26 @@ export const runSkill = (name: string): string => {
 
 export const doctorSkillConfig = (): string => {
 	const report = inspectSkillsMigration();
-	const versionLine = report.skillsVersion === 1 ? "skills.version: 1" : "skills.version: missing";
-	const lockLine = report.lockFileExists
-		? `skills.lock.json present at ${report.lockFilePath}`
-		: "no skills.lock.json";
-
-	return `${versionLine}\n${lockLine}`;
+	const versionLine = report.skillsVersion === 1 ? "project pins: ready" : "project pins: optional";
+	return `${versionLine}\nbundled skills: ready`;
 };
 
 export const updateSkills = (name?: string): string => {
 	if (!name) {
-		return "Built-in skills are up to date.";
+		for (const skill of BUILTIN_SKILLS) {
+			writeBundledSkill(loadConfigContext(), skill);
+		}
+		return `refreshed ${BUILTIN_SKILLS.length} bundled skills from this fizzyx release.`;
+	}
+
+	const builtin = resolveBuiltinSkill(name);
+	if (builtin) {
+		writeBundledSkill(loadConfigContext(), builtin);
+		return `refreshed bundled skill ${builtin.name} at ${BUILTIN_SKILL_VERSION}.`;
 	}
 
 	const info = getSkillInfo(name);
-	if (info.source === "builtin") {
-		return `${name} is already up to date at ${info.version ?? BUILTIN_SKILL_VERSION}.`;
-	}
-
-	return `Skill ${name} uses source ${info.source}. Remote updates are not implemented in this 1.0 baseline.`;
+	return `Skill ${name} is project-pinned from ${info.source}; bundled refresh is not available.`;
 };
 
 export const migrateSkills = (mode: "check" | "apply"): string => {
@@ -238,14 +263,28 @@ export const migrateSkills = (mode: "check" | "apply"): string => {
 		const before = inspectSkillsMigration();
 		const after = applySkillsMigration();
 		return before.needsSkillsVersion
-			? `Migration applied at ${after.writePath}; skills.version set to 1; no skills.lock.json.`
-			: `Skills config is already up to date at ${after.writePath}; no skills.lock.json.`;
+			? `Recorded skills.version: 1 in ${after.writePath}.`
+			: `Skills config ready: ${after.writePath}.`;
 	}
 
 	const report = inspectSkillsMigration();
 	return report.needsSkillsVersion
-		? `skills.version missing in ${report.writePath}; run with --apply to add version 1; no skills.lock.json.`
-		: `Skills config is up to date at ${report.writePath}; no skills.lock.json.`;
+		? `Bundled skills are ready. Project pins are optional.`
+		: `Skills config ready: ${report.writePath}.`;
+};
+
+const resolveBuiltinSkill = (source: string): BuiltinSkill | undefined => {
+	const direct = BUILTIN_BY_NAME.get(source);
+	if (direct) return direct;
+	const mattPreset = source.match(/^mattpocock\/(.+)$/);
+	if (!mattPreset?.[1]) return undefined;
+	return BUILTIN_BY_NAME.get(MATT_POCOCK_ALIASES[mattPreset[1]] ?? mattPreset[1]);
+};
+
+const writeBundledSkill = (context: ConfigContext, skill: BuiltinSkill): void => {
+	const skillDir = join(context.rootDir, ".agents", "skills", skill.name);
+	mkdirSync(skillDir, { recursive: true });
+	writeFileSync(join(skillDir, "SKILL.md"), skill.content);
 };
 
 const loadConfigContext = (): ConfigContext => {

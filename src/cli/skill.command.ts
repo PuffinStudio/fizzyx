@@ -19,28 +19,28 @@ const skillListCmd = Command.make("list", {}, () =>
 			);
 		}
 	}),
-).pipe(Command.withDescription("List built-in and project-installed skills"));
+).pipe(Command.withDescription("List bundled and project-pinned skills"));
 
 const skillAddCmd = Command.make(
 	"add",
 	{
 		source: Argument.string("source").pipe(
-			Argument.withDescription("Skill source or built-in name"),
+			Argument.withDescription("Bundled skill name or alias"),
 			Argument.withMetavar("SOURCE"),
 		),
 	},
 	({ source }) =>
 		Effect.gen(function* () {
 			const skill = addSkill(source);
-			yield* Console.log(`Installed ${skill.name} from ${skill.source} at ${skill.version}.`);
+			yield* Console.log(`Pinned bundled skill ${skill.name} at ${skill.version}.`);
 		}),
-).pipe(Command.withDescription("Add a skill to the project config"));
+).pipe(Command.withDescription("Pin a bundled skill to the project config"));
 
 const skillRemoveCmd = Command.make(
 	"remove",
 	{
 		name: Argument.string("name").pipe(
-			Argument.withDescription("Installed skill name"),
+			Argument.withDescription("Project-pinned skill name"),
 			Argument.withMetavar("NAME"),
 		),
 	},
@@ -64,7 +64,7 @@ const skillUpdateCmd = Command.make(
 		Effect.gen(function* () {
 			yield* Console.log(updateSkills(Option.getOrElse(name, () => undefined)));
 		}),
-).pipe(Command.withDescription("Update skill metadata when supported"));
+).pipe(Command.withDescription("Refresh bundled skill files"));
 
 const skillInfoCmd = Command.make(
 	"info",
@@ -82,7 +82,7 @@ const skillInfoCmd = Command.make(
 			yield* Console.log(`version: ${skill.version ?? "-"}`);
 			yield* Console.log(`status: ${skill.status}`);
 		}),
-).pipe(Command.withDescription("Show installed or built-in skill metadata"));
+).pipe(Command.withDescription("Show skill metadata"));
 
 const skillRunCmd = Command.make(
 	"run",
@@ -116,7 +116,7 @@ const skillMigrateCmd = Command.make(
 		Effect.gen(function* () {
 			yield* Console.log(migrateSkills(apply ? "apply" : "check"));
 		}),
-).pipe(Command.withDescription("Check or apply the minimal skill migration"));
+).pipe(Command.withDescription("Check or apply skill config migration"));
 
 export const skillCmd = Command.make("skill").pipe(
 	Command.withDescription("Manage Fizzyx skills"),

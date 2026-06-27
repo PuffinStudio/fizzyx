@@ -29,7 +29,7 @@ fizzyx flow repair
 
 `flow done` requires all steps to be complete and closes the card into Done.
 
-Use `fizzyx skill ...` and `fizzyx migrate --check/--apply` for skill and config migration, and use flow commands for repair/health workflows.
+Use `fizzyx skill ...` for bundled skills and project pins. Use flow commands for repair and health checks.
 
 ## Skill Commands
 
@@ -45,12 +45,7 @@ fizzyx skill migrate --check
 fizzyx skill migrate --apply
 ```
 
-## Migrate
-
-```sh
-fizzyx migrate --check
-fizzyx migrate --apply
-```
+Built-in skills are bundled. `skill update [name]` refreshes the local copy from the current fizzyx release.
 
 ![Flow command lifecycle](./docs/images/flow-workflow.svg)
 

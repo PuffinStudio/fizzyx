@@ -300,20 +300,13 @@ account: 1
 board: board-1
 skills:
   version: 1
-  sources:
-    mattpocock:
-      repo: https://github.com/mattpocock/skills
-      ref: v1.0.1
   installed:
     tdd:
       source: builtin
       version: 1.0.0
     improve-codebase:
-      source: git
-      repo: https://github.com/mattpocock/skills
-      ref: v1.0.1
-      commit: abc123
-      path: skills/engineering/improve-codebase-architecture
+      source: builtin
+      version: 1.0.0
   defaults:
     feature:
       - tdd
@@ -331,23 +324,15 @@ skills:
 
 		expect(config.skills).toEqual({
 			version: 1,
-			sources: {
-				mattpocock: {
-					repo: "https://github.com/mattpocock/skills",
-					ref: "v1.0.1",
-				},
-			},
+			sources: {},
 			installed: {
 				tdd: {
 					source: "builtin",
 					version: "1.0.0",
 				},
 				"improve-codebase": {
-					source: "git",
-					repo: "https://github.com/mattpocock/skills",
-					ref: "v1.0.1",
-					commit: "abc123",
-					path: "skills/engineering/improve-codebase-architecture",
+					source: "builtin",
+					version: "1.0.0",
 				},
 			},
 			defaults: {
@@ -384,10 +369,6 @@ flow:
   users: {}
 skills:
   version: 1
-  sources:
-    mattpocock:
-      repo: https://github.com/mattpocock/skills
-      ref: v1.0.1
   installed:
     tdd:
       source: builtin
@@ -416,12 +397,7 @@ skills:
 		const text = await Bun.file(configPath).text();
 		expect(config.skills).toEqual({
 			version: 1,
-			sources: {
-				mattpocock: {
-					repo: "https://github.com/mattpocock/skills",
-					ref: "v1.0.1",
-				},
-			},
+			sources: {},
 			installed: {
 				tdd: {
 					source: "builtin",
@@ -437,8 +413,6 @@ skills:
 		});
 		expect(text).toContain("skills:");
 		expect(text).toContain("version: 1");
-		expect(text).toContain("sources:");
-		expect(text).toContain("mattpocock:");
 		expect(text).toContain("installed:");
 		expect(text).toContain("source: builtin");
 		expect(text).toContain("defaults:");
