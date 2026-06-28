@@ -20,6 +20,7 @@ export interface ChatProviderProps {
 	readonly account: string;
 	readonly board: string;
 	readonly identity: ChatUser;
+	readonly members?: ReadonlyArray<ChatUser>;
 	readonly signalProvider: SignalProvider;
 	readonly cryptoService: CryptoService;
 	readonly storage: ChatStorage;
@@ -32,6 +33,7 @@ export const ChatProvider = ({
 	account,
 	board,
 	identity,
+	members,
 	signalProvider,
 	cryptoService,
 	storage,
@@ -42,6 +44,7 @@ export const ChatProvider = ({
 		account,
 		board,
 		identity,
+		members,
 		signalProvider,
 		cryptoService,
 		storage,

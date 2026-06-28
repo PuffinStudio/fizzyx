@@ -115,14 +115,20 @@ export function App() {
 			if (!response.ok) throw new Error(data.error || "Failed to load planner snapshot");
 			setSnapshot(data);
 			if (!fresh && data.cache === "stale") {
-				const freshResponse = await fetch("/api/planner/snapshot?fresh=1");
-				const freshData = await freshResponse.json();
-				if (!freshResponse.ok)
-					throw new Error(freshData.error || "Failed to load planner snapshot");
-				setSnapshot(freshData);
+				try {
+					const freshResponse = await fetch("/api/planner/snapshot?fresh=1");
+					const freshData = await freshResponse.json();
+					if (freshResponse.ok) {
+						setSnapshot(freshData);
+					}
+				} catch {
+					// Keep the cached snapshot visible when the network is unavailable.
+				}
 			}
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (!shouldShowRefreshing) {
+				setError(cause instanceof Error ? cause.message : String(cause));
+			}
 		} finally {
 			setIsRefreshing(false);
 			setIsLoading(false);
@@ -292,6 +298,7 @@ export function App() {
 					account={snapshot.account}
 					board={snapshot.board}
 					identity={snapshot.identity}
+					members={snapshot.users}
 					onClose={() => setChatOpen(false)}
 				/>
 			) : null}

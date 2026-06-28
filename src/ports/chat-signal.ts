@@ -11,7 +11,12 @@ export interface SignalMessageEvent {
 }
 
 export interface SignalProvider {
-	connect(roomId: string, identity: ChatUser, signalServer?: SignalServerConfig): Promise<void>;
+	connect(
+		roomId: string,
+		identity: ChatUser,
+		signalServer?: SignalServerConfig,
+		peers?: ReadonlyArray<ChatUser>,
+	): Promise<void>;
 	disconnect(): void;
 	send(data: unknown): void;
 	sendTo(peerId: string, data: unknown): void;

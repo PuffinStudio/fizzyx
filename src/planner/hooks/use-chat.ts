@@ -15,6 +15,7 @@ export interface UseChatOptions {
 	readonly account: string;
 	readonly board: string;
 	readonly identity: ChatUser;
+	readonly members?: ReadonlyArray<ChatUser>;
 	readonly signalProvider?: SignalProvider;
 	readonly cryptoService?: CryptoService;
 	readonly storage?: ChatStorage;
@@ -39,6 +40,7 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 		account,
 		board,
 		identity,
+		members,
 		signalProvider,
 		cryptoService,
 		storage,
@@ -60,6 +62,7 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 			account,
 			board,
 			identity,
+			members,
 			signalProvider,
 			cryptoService,
 			storage,
@@ -96,7 +99,7 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 			chat.disconnect();
 			chatRef.current = null;
 		};
-	}, [account, board, identity, signalProvider, cryptoService, storage]);
+	}, [account, board, identity, members, signalProvider, cryptoService, storage, signalServer]);
 
 	const connect = useCallback(async () => {
 		await chatRef.current?.connect();

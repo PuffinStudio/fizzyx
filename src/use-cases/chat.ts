@@ -29,6 +29,7 @@ export interface ConnectParams {
 	readonly account: string;
 	readonly board: string;
 	readonly identity: ChatUser;
+	readonly members?: ReadonlyArray<ChatUser>;
 	readonly signalProvider: SignalProvider;
 	readonly cryptoService: CryptoService;
 	readonly storage: ChatStorage;
@@ -52,7 +53,16 @@ const encodeImageToBase64 = (file: File): Promise<string> =>
 	});
 
 export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
-	const { account, board, identity, signalProvider, cryptoService, storage, signalServer } = params;
+	const {
+		account,
+		board,
+		identity,
+		members,
+		signalProvider,
+		cryptoService,
+		storage,
+		signalServer,
+	} = params;
 
 	let roomId = `${account}/${board}`;
 	let connected = false;
@@ -99,7 +109,7 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 		void loadSavedHistory();
 
 		try {
-			await signalProvider.connect(roomId, identity, signalServer);
+			await signalProvider.connect(roomId, identity, signalServer, members);
 			connected = true;
 			notifyState("connected");
 		} catch {

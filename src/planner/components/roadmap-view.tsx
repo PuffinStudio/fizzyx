@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { animate, motion, type PanInfo, useMotionValue } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -16,6 +16,7 @@ import { UserAvatarLabel } from "./user-avatar-label";
 type PositionedTimelineCard = TimelineCard & {
 	startColumn: number;
 	span: number;
+	isToday: boolean;
 };
 
 const MIN_DAY_WIDTH = "13rem";
@@ -24,61 +25,15 @@ const DRAG_CLICK_SUPPRESS_PX = 8;
 const DRAG_CLICK_SUPPRESS_MS = 220;
 const ASYNC_DELAY_MS = 130;
 const AUTO_ALIGN_RETRY_LIMIT = 8;
-const MONTH_INDEX_SEPARATOR = "-";
 const TODAY_LINE_WIDTH_PX = 1;
 const TODAY_LINE_RIGHT_GUTTER_PX = 10;
 
 const startOfMonth = (value: Date): Date => new Date(value.getFullYear(), value.getMonth(), 1);
 
+const addMonths = (value: Date, count: number): Date =>
+	startOfMonth(new Date(value.getFullYear(), value.getMonth() + count, 1));
+
 const monthKey = (value: Date): string => `${value.getFullYear()}-${value.getMonth()}`;
-
-const parseMonthKey = (month: string): Date | null => {
-	const items = month.split(MONTH_INDEX_SEPARATOR);
-	if (items.length !== 2) return null;
-	const yearValue = Number(items[0]);
-	const monthValue = Number(items[1]);
-	if (Number.isNaN(yearValue) || Number.isNaN(monthValue)) return null;
-	return new Date(yearValue, monthValue, 1);
-};
-
-const parseDateKey = (dateKey: string): Date | null => {
-	const parts = dateKey.split(MONTH_INDEX_SEPARATOR);
-	if (parts.length < 3) return null;
-	const yearValue = Number(parts[0]);
-	const monthValue = Number(parts[1]);
-	const dayValue = Number(parts[2]);
-	if (Number.isNaN(yearValue) || Number.isNaN(monthValue) || Number.isNaN(dayValue)) {
-		return null;
-	}
-	return new Date(yearValue, monthValue - 1, dayValue);
-};
-
-const compareMonthKey = (left: string, right: string): number => {
-	const leftParts = left.split(MONTH_INDEX_SEPARATOR).map(Number);
-	const rightParts = right.split(MONTH_INDEX_SEPARATOR).map(Number);
-	if (leftParts.length < 2 || rightParts.length < 2) return 0;
-	const leftYear = leftParts[0];
-	const leftMonth = leftParts[1];
-	const rightYear = rightParts[0];
-	const rightMonth = rightParts[1];
-	if (
-		leftYear === undefined ||
-		leftMonth === undefined ||
-		rightYear === undefined ||
-		rightMonth === undefined
-	) {
-		return 0;
-	}
-	if (
-		Number.isNaN(leftYear) ||
-		Number.isNaN(leftMonth) ||
-		Number.isNaN(rightYear) ||
-		Number.isNaN(rightMonth)
-	) {
-		return 0;
-	}
-	return leftYear === rightYear ? leftMonth - rightMonth : leftYear - rightYear;
-};
 
 export function RoadmapView({
 	metrics,
@@ -120,7 +75,7 @@ export function RoadmapPreview({
 	const [loadingRight, setLoadingRight] = useState(false);
 	const [monthStarts, setMonthStarts] = useState<Date[]>(() => {
 		const initial = startOfMonth(new Date());
-		return [startOfMonth(initial)];
+		return [addMonths(initial, -1), startOfMonth(initial), addMonths(initial, 1)];
 	});
 	const translateX = useMotionValue(0);
 	const viewportRef = useRef<HTMLDivElement>(null);
@@ -137,87 +92,23 @@ export function RoadmapPreview({
 	const todayDateKey = dateKeyFromDate(todayDate);
 
 	useEffect(() => {
-		setMonthStarts([initialMonthStart]);
+		setMonthStarts([
+			addMonths(initialMonthStart, -1),
+			initialMonthStart,
+			addMonths(initialMonthStart, 1),
+		]);
 	}, [baseMonthKey]);
 
 	const timelineDays = useMemo<TimelineDay[]>(() => {
 		return monthStarts.flatMap((monthStart) => buildTimelineDays(monthStart));
 	}, [monthStarts]);
 
-	const cardMonthStarts = useMemo(() => {
-		const monthSet = new Set<string>();
-		for (const card of metrics.timelineCards) {
-			const parsed = parseDateKey(card.dateKey);
-			if (!parsed) continue;
-			monthSet.add(monthKey(startOfMonth(parsed)));
-		}
-		const sorted = [...monthSet].sort(compareMonthKey);
-		return sorted.map((item) => parseMonthKey(item)).filter(Boolean) as Date[];
-	}, [metrics.timelineCards]);
-
 	const columnTemplate = useMemo(
 		() => `repeat(${timelineDays.length}, minmax(${MIN_DAY_WIDTH}, 1fr))`,
 		[timelineDays.length],
 	);
-	const cardMonthKeys = useMemo(() => cardMonthStarts.map(monthKey), [cardMonthStarts]);
 	const [todayLineLeftPx, setTodayLineLeftPx] = useState(0);
 	const [isTodayLineAvailable, setIsTodayLineAvailable] = useState(false);
-	const visibleMonthKeys = useMemo(() => monthStarts.map(monthKey), [monthStarts]);
-	const firstVisibleMonthIndex = useMemo(() => {
-		const first = visibleMonthKeys[0];
-		if (!first) return -1;
-		return cardMonthKeys.indexOf(first);
-	}, [cardMonthKeys, visibleMonthKeys]);
-	const lastVisibleMonthIndex = useMemo(() => {
-		const last = visibleMonthKeys[visibleMonthKeys.length - 1];
-		if (!last) return -1;
-		return cardMonthKeys.lastIndexOf(last);
-	}, [cardMonthKeys, visibleMonthKeys]);
-
-	const prevCardMonthKey = useCallback(
-		(month: string): string | undefined => {
-			if (cardMonthKeys.length === 0) return undefined;
-			const firstAtOrAfter = cardMonthKeys.findIndex((key) => compareMonthKey(key, month) >= 0);
-			if (firstAtOrAfter <= 0) {
-				if (firstAtOrAfter === -1) return cardMonthKeys[cardMonthKeys.length - 1];
-				return undefined;
-			}
-			return cardMonthKeys[firstAtOrAfter - 1];
-		},
-		[cardMonthKeys],
-	);
-	const nextCardMonthKey = useCallback(
-		(month: string): string | undefined => {
-			if (cardMonthKeys.length === 0) return undefined;
-			const firstAtOrAfter = cardMonthKeys.findIndex((key) => compareMonthKey(key, month) > 0);
-			if (firstAtOrAfter === -1) return undefined;
-			return cardMonthKeys[firstAtOrAfter];
-		},
-		[cardMonthKeys],
-	);
-
-	const canLoadMoreLeft = useMemo(() => {
-		const first = visibleMonthKeys[0];
-		if (!first) return false;
-		if (firstVisibleMonthIndex > 0) return true;
-		if (firstVisibleMonthIndex === -1) return Boolean(prevCardMonthKey(first));
-		return false;
-	}, [firstVisibleMonthIndex, prevCardMonthKey, visibleMonthKeys]);
-	const canLoadMoreRight = useMemo(() => {
-		const last = visibleMonthKeys[visibleMonthKeys.length - 1];
-		if (!last) return false;
-		if (lastVisibleMonthIndex > -1) return lastVisibleMonthIndex < cardMonthKeys.length - 1;
-		return Boolean(nextCardMonthKey(last));
-	}, [cardMonthKeys.length, lastVisibleMonthIndex, nextCardMonthKey, visibleMonthKeys]);
-
-	const canLoadMoreLeftRef = useRef(canLoadMoreLeft);
-	const canLoadMoreRightRef = useRef(canLoadMoreRight);
-	useEffect(() => {
-		canLoadMoreLeftRef.current = canLoadMoreLeft;
-	}, [canLoadMoreLeft]);
-	useEffect(() => {
-		canLoadMoreRightRef.current = canLoadMoreRight;
-	}, [canLoadMoreRight]);
 	const byDayKey = useMemo(() => {
 		const map = new Map<string, number>();
 		timelineDays.forEach((day, index) => {
@@ -233,14 +124,20 @@ export function RoadmapPreview({
 				const startColumn = byDayKey.get(card.dateKey);
 				if (!startColumn) return null;
 				const span = Math.max(1, Math.min(card.duration, timelineDays.length - startColumn + 1));
-				return { ...card, startColumn, span };
+				const todayColumn = byDayKey.get(todayDateKey);
+				const isToday =
+					todayColumn !== undefined &&
+					todayColumn >= startColumn &&
+					todayColumn < startColumn + span;
+				return { ...card, startColumn, span, isToday };
 			})
 			.filter((card): card is PositionedTimelineCard => card !== null)
 			.sort((a, b) => {
+				if (a.isToday !== b.isToday) return a.isToday ? -1 : 1;
 				if (a.startColumn !== b.startColumn) return a.startColumn - b.startColumn;
 				return a.startDay - b.startDay;
 			});
-	}, [byDayKey, metrics.timelineCards, timelineDays.length]);
+	}, [byDayKey, metrics.timelineCards, timelineDays.length, todayDateKey]);
 
 	useEffect(() => {
 		const viewport = viewportRef.current;
@@ -275,18 +172,14 @@ export function RoadmapPreview({
 
 	const prependMonth = async () => {
 		if (loadingLeftRef.current) return;
-		if (!canLoadMoreLeftRef.current) return;
 		loadingLeftRef.current = true;
 		setLoadingLeft(true);
 		await sleep();
 		setMonthStarts((months) => {
 			const firstMonth = months[0];
 			if (!firstMonth) return months;
-			const firstMonthKey = monthKey(firstMonth);
-			const prevMonthKey = prevCardMonthKey(firstMonthKey);
-			if (!prevMonthKey) return months;
-			const prevMonthStart = parseMonthKey(prevMonthKey);
-			if (!prevMonthStart) return months;
+			const prevMonthStart = addMonths(firstMonth, -1);
+			const prevMonthKey = monthKey(prevMonthStart);
 			if (months.some((month) => monthKey(month) === prevMonthKey)) return months;
 			return [prevMonthStart, ...months];
 		});
@@ -295,18 +188,15 @@ export function RoadmapPreview({
 	};
 
 	const appendMonth = async () => {
-		if (loadingRightRef.current || !canLoadMoreRightRef.current) return;
+		if (loadingRightRef.current) return;
 		loadingRightRef.current = true;
 		setLoadingRight(true);
 		await sleep();
 		setMonthStarts((months) => {
 			const lastMonth = months[months.length - 1];
 			if (!lastMonth) return months;
-			const lastMonthKey = monthKey(lastMonth);
-			const nextMonthKey = nextCardMonthKey(lastMonthKey);
-			if (!nextMonthKey) return months;
-			const nextMonthStart = parseMonthKey(nextMonthKey);
-			if (!nextMonthStart) return months;
+			const nextMonthStart = addMonths(lastMonth, 1);
+			const nextMonthKey = monthKey(nextMonthStart);
 			if (months.some((month) => monthKey(month) === nextMonthKey)) return months;
 			return [...months, nextMonthStart];
 		});
@@ -391,6 +281,13 @@ export function RoadmapPreview({
 			ref={viewportRef}
 			className="min-w-0 relative w-full max-w-full overflow-hidden overflow-x-hidden rounded-xl"
 		>
+			<button
+				type="button"
+				className="absolute right-3 top-3 z-20 rounded-full border border-primary/30 bg-background/90 px-3 py-1.5 text-xs font-medium text-primary shadow-sm backdrop-blur transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				onClick={() => scheduleAlignDateToCenter(todayDateKey)}
+			>
+				Today
+			</button>
 			<motion.div
 				ref={trackRef}
 				drag="x"
@@ -470,6 +367,7 @@ export function RoadmapPreview({
 									card={card}
 									startColumn={card.startColumn}
 									span={card.span}
+									isToday={card.isToday}
 									template={columnTemplate}
 									onSelect={onSelect}
 									blockSelection={isSelectionBlocked}
@@ -487,6 +385,7 @@ function TimelineBar({
 	card,
 	startColumn,
 	span,
+	isToday,
 	template,
 	onSelect,
 	blockSelection,
@@ -494,6 +393,7 @@ function TimelineBar({
 	card: TimelineCard;
 	startColumn: number;
 	span: number;
+	isToday: boolean;
 	template: string;
 	onSelect: SelectCard;
 	blockSelection: () => boolean;
@@ -501,7 +401,11 @@ function TimelineBar({
 	return (
 		<div className="grid w-full px-3" style={{ gridTemplateColumns: template }}>
 			<div
-				className="cursor-pointer rounded-lg bg-muted/35 p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:bg-muted/50"
+				className={`cursor-pointer rounded-lg p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+					isToday
+						? "bg-primary/12 ring-2 ring-primary/45 shadow-sm hover:bg-primary/16"
+						: "bg-muted/35 hover:bg-muted/50"
+				}`}
 				data-roadmap-card
 				style={{ gridColumn: `${startColumn} / span ${span}` }}
 				onPointerDownCapture={(event) => {

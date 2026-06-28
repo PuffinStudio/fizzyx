@@ -12,10 +12,11 @@ export interface TeamChatProps {
 	readonly account: string;
 	readonly board: string;
 	readonly identity: ChatUser;
+	readonly members: ReadonlyArray<ChatUser>;
 	readonly onClose: () => void;
 }
 
-export const TeamChat = ({ open, account, board, identity, onClose }: TeamChatProps) => {
+export const TeamChat = ({ open, account, board, identity, members, onClose }: TeamChatProps) => {
 	const [adapters, setAdapters] = useState<{
 		signal: SignalProvider;
 		crypto: CryptoService;
@@ -45,6 +46,7 @@ export const TeamChat = ({ open, account, board, identity, onClose }: TeamChatPr
 			account={account}
 			board={board}
 			identity={identity}
+			members={members}
 			signalProvider={adapters.signal}
 			cryptoService={adapters.crypto}
 			storage={adapters.storage}

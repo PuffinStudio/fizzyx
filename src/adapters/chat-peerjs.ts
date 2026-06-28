@@ -71,8 +71,9 @@ export class PeerJSSignalProvider implements SignalProvider {
 		roomId: string,
 		identity: ChatUser,
 		signalServer?: SignalServerConfig,
+		peers: ReadonlyArray<ChatUser> = [],
 	): Promise<void> {
-		this.disconnect();
+		this.closePeer(false);
 		this.identity = identity;
 		this.roomId = roomId;
 
@@ -106,6 +107,7 @@ export class PeerJSSignalProvider implements SignalProvider {
 				cleanup();
 				resolve();
 
+				this.connectKnownPeers(peers);
 				this.announcePresence();
 			};
 
@@ -124,6 +126,10 @@ export class PeerJSSignalProvider implements SignalProvider {
 	}
 
 	disconnect(): void {
+		this.closePeer(true);
+	}
+
+	private closePeer(clearHandlers: boolean): void {
 		for (const conn of this.connections.values()) {
 			try {
 				conn.close();
@@ -142,10 +148,12 @@ export class PeerJSSignalProvider implements SignalProvider {
 			this.peer = null;
 		}
 		this.receivedMsgIds.clear();
-		this.messageHandlers = [];
-		this.peerJoinHandlers = [];
-		this.peerLeaveHandlers = [];
-		this.stateHandlers = [];
+		if (clearHandlers) {
+			this.messageHandlers = [];
+			this.peerJoinHandlers = [];
+			this.peerLeaveHandlers = [];
+			this.stateHandlers = [];
+		}
 		this.identity = null;
 		this.roomId = null;
 		this.setState("disconnected");
@@ -221,7 +229,26 @@ export class PeerJSSignalProvider implements SignalProvider {
 		}
 	}
 
+	private connectKnownPeers(peers: ReadonlyArray<ChatUser>) {
+		if (!this.peer || !this.roomId || !this.identity) return;
+		for (const user of peers) {
+			if (user.id === this.identity.id) continue;
+			const peerId = `${this.roomId}_${user.id}`;
+			if (this.connections.has(peerId)) continue;
+			try {
+				const conn = this.peer.connect(peerId, { reliable: true });
+				this.handleConnection(conn);
+			} catch {
+				/* offline or unreachable peer */
+			}
+		}
+	}
+
 	private handleIncoming(conn: DataConnection) {
+		this.handleConnection(conn);
+	}
+
+	private handleConnection(conn: DataConnection) {
 		const peerId = conn.peer;
 
 		conn.on("open", () => {
