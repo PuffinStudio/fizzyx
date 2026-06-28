@@ -35,7 +35,7 @@ export const planMetadataRepair = (
 	options: PlannerRepairMetadataOptions,
 	normalizePriority: (value?: string) => PlannerPriority | undefined,
 ): PlannerRepairMetadataChange => {
-	const description = card.description_html || card.description || "";
+	const description = card.description || "";
 	const parsed = parsePlannerDescription(description);
 	const tags = parsePlannerTags(card.tags);
 	const existingPriority = normalizePriority(parsed.metadata.priority);
@@ -101,8 +101,11 @@ export const toPlannerCard = (
 	columns: ReadonlyArray<Column>,
 	account: string,
 ): PlannerCard => {
-	const parsedDescription = parsePlannerDescription(card.description_html || card.description);
+	const parsedDescription = parsePlannerDescription(card.description || "");
 	const parsedTags = parsePlannerTags(card.tags);
+	if (parsedDescription.body) {
+		parsedDescription.body = Bun.markdown.html(parsedDescription.body);
+	}
 	const tagPriority = normalizePriority(parsedTags.priority[0]);
 	const metadata: PlannerMetadata = {
 		...parsedDescription.metadata,

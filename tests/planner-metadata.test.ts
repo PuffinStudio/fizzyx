@@ -82,11 +82,12 @@ test("toPlannerCard reads hidden metadata from html descriptions and tags", () =
 			number: 382,
 			title: "HTML metadata",
 			status: "open",
-			description: "GoalPlain text without metadata.",
-			description_html: `<!--
+			description: `<!--
 owner: Ellen
 -->
 <h2>Goal</h2>
+<p>HTML body.</p>`,
+			description_html: `<h2>Goal</h2>
 <p>HTML body.</p>`,
 			has_attachments: false,
 			tags: [

@@ -267,7 +267,7 @@ export const setPlannerCardDeadline = (
 					Effect.fail(new Error(`Could not load planner card #${input.cardNumber}`)),
 				),
 			);
-		const parsed = parsePlannerDescription(rawCard.description_html || rawCard.description);
+		const parsed = parsePlannerDescription(rawCard.description || "");
 		const deadline = normalizeDeadlineInput(input.deadline);
 
 		const metadata = {

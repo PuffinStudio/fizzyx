@@ -148,9 +148,10 @@ export function CardDetailSheet({
 								</section>
 								<DetailPanel title="Description">
 									{card.body?.trim() ? (
-										<div className="whitespace-pre-wrap rounded-xl bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-											{card.body.trim()}
-										</div>
+										<div
+											className="[&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_p]:text-sm [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-sm [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:text-sm [&_li]:mt-1 [&_a]:text-primary [&_a]:underline [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-xs [&_pre]:rounded-xl [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:text-xs [&_pre]:overflow-x-auto [&_hr]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-3 [&_blockquote]:text-sm [&_blockquote]:text-muted-foreground [&_img]:rounded-lg [&_img]:max-w-full [&_table]:w-full [&_table]:text-sm [&_th]:text-left [&_th]:font-medium [&_th]:pb-1 [&_td]:py-0.5"
+											dangerouslySetInnerHTML={{ __html: card.body }}
+										/>
 									) : (
 										<p className="text-sm text-muted-foreground">No description body.</p>
 									)}
