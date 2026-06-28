@@ -1,16 +1,11 @@
 import { Effect } from "effect";
 import { readGitCommandOutput } from "./flow-git";
 import { AuthError, ValidationError } from "../domain/errors";
-import type { BoardCache, Card, ProjectConfig, Step } from "../domain/models";
+import type { BoardCache, Card, ProjectConfig } from "../domain/models";
 import type { SetupProjectConfigInput } from "../ports/config-repository";
 import { ConfigRepo, CONFIG_FILE } from "../ports/config-repository";
 import { ensureFlowConfig } from "./flow-bootstrap";
-import {
-	convertDescription,
-	parseTemplateDescription,
-	planStandardizeCardContent,
-	planStepsFromDescription,
-} from "./flow-card-content";
+import { convertDescription, parseTemplateDescription } from "./flow-card-content";
 import {
 	buildBoardUsers,
 	isCurrentUserAlias,
@@ -46,12 +41,18 @@ import { analyzeDoctor, repairDoctor, type DoctorResult } from "./flow-doctor";
 import type { PlannerMetadata } from "./planner-metadata";
 import { parsePlannerDescription } from "./planner-metadata";
 import { normalizePriority } from "./planner-transform";
+import { completeSteps } from "./flow-step";
 export { convertDescription } from "./flow-card-content";
 export { resolveUser } from "./flow-user-resolution";
+export { authLogin, authLogout, authStatus } from "./flow-auth";
+export { completeSteps, stepsFromDescription } from "./flow-step";
+export { standardizeCard, standardizeBoard } from "./flow-standardize";
+export type { StandardizeCardResult } from "./flow-standardize";
 
 export type { Env, InitializedEnv };
 export { makeEnv, makeFlowEnv, makeFlowRuntimeEnv, bootstrapFlowConfig };
-export { analyzeDoctor, repairDoctor, type DoctorResult };
+export { analyzeDoctor, repairDoctor };
+export type { DoctorResult };
 export { buildStandardizedCommentBody, getStandardizedCommentTemplate };
 
 export const setup = (input: SetupProjectConfigInput) =>
@@ -126,64 +127,11 @@ export const listBoards = () =>
 		return yield* api.listBoards();
 	});
 
-// Auth retry policy moved to flow-auth.ts
-
 export const initFlow = () =>
 	Effect.gen(function* () {
 		const env = yield* makeFlowEnv;
 		return env.config.flow;
 	});
-
-export const authLogin = (token: string) =>
-	Effect.gen(function* () {
-		const configRepo = yield* ConfigRepo;
-		const config = yield* loadConfigOrDefaults(configRepo);
-		yield* configRepo.saveCredentials(config.account, { token });
-		return config.account;
-	});
-
-export const authStatus = Effect.gen(function* () {
-	const configRepo = yield* ConfigRepo;
-	const config = yield* loadConfigOrDefaults(configRepo);
-	const credentials = yield* configRepo.loadCredentials(config.account).pipe(Effect.option);
-	if (credentials._tag === "None") {
-		return {
-			account: config.account,
-			board: config.board,
-			authenticated: false,
-		};
-	}
-
-	const api = makeFlowApiWithAuthRetry({
-		configRepo,
-		config,
-		initialToken: credentials.value.token,
-	});
-	const identityResult = yield* api.identity().pipe(
-		Effect.map((identity) => ({ _tag: "success", identity }) as const),
-		Effect.catch((cause) =>
-			Effect.succeed({
-				_tag: "failure",
-				error: cause instanceof Error ? cause.message : String(cause),
-			} as const),
-		),
-	);
-
-	return {
-		account: config.account,
-		board: config.board,
-		authenticated: true,
-		identity: identityResult._tag === "success" ? identityResult.identity : undefined,
-		identityError: identityResult._tag === "failure" ? identityResult.error : undefined,
-	};
-});
-
-export const authLogout = Effect.gen(function* () {
-	const configRepo = yield* ConfigRepo;
-	const config = yield* loadConfigOrDefaults(configRepo);
-	yield* configRepo.deleteCredentials(config.account);
-	return config.account;
-});
 
 export const syncBoard = (env: Env) =>
 	Effect.gen(function* () {
@@ -364,36 +312,6 @@ export const review = (env: InitializedEnv, number: number) =>
 		return result;
 	});
 
-const completePendingStepsForCard = (
-	env: InitializedEnv,
-	number: number,
-	card: { steps?: ReadonlyArray<Step> },
-) =>
-	Effect.gen(function* () {
-		const pending = (card.steps || []).filter((step) => !step.completed);
-		const missingIds = pending.filter((step) => !step.id);
-		if (missingIds.length > 0) {
-			const steps = missingIds.map((step) => `- ${step.content || "(no content)"}`).join("\n");
-			return yield* new ValidationError({
-				message: `Cannot complete steps for #${number}: missing step id for:\n${steps}`,
-			});
-		}
-
-		const toComplete = pending.filter(
-			(step): step is Step & { id: string } => typeof step.id === "string",
-		);
-		yield* Effect.forEach(toComplete, (step) =>
-			env.api.updateStep(number, step.id, {
-				completed: true,
-			}),
-		);
-
-		return {
-			updatedCount: toComplete.length,
-			contents: toComplete.map((step) => step.content),
-		};
-	});
-
 export const done = (
 	env: InitializedEnv,
 	number: number,
@@ -410,7 +328,11 @@ export const done = (
 			  }
 			| undefined;
 		if (unfinished.length > 0 && options?.completeSteps) {
-			completedSteps = yield* completePendingStepsForCard(env, number, card);
+			const result = yield* completeSteps(env, number, card);
+			completedSteps = {
+				updatedCount: result.updatedCount,
+				contents: result.contents,
+			};
 		} else if (unfinished.length > 0) {
 			const formatted = unfinished.map((step) => `- ${step.content || "(no content)"}`).join("\n");
 			return yield* new ValidationError({
@@ -556,74 +478,6 @@ export const repairMarkdownDescription = (env: InitializedEnv, number: number) =
 		}
 		yield* syncBoard(env);
 		return number;
-	});
-
-export const completeSteps = (env: InitializedEnv, number: number) =>
-	Effect.gen(function* () {
-		const card = yield* env.api.showCard(number);
-		const completedSteps = yield* completePendingStepsForCard(env, number, card);
-		yield* syncBoard(env);
-		return { number, ...completedSteps };
-	});
-
-export const stepsFromDescription = (env: InitializedEnv, number: number) =>
-	Effect.gen(function* () {
-		const card = yield* env.api.showCard(number);
-		const steps = planStepsFromDescription(card);
-		yield* Effect.forEach(steps, (step) =>
-			env.api.createStep(number, step.content, step.completed),
-		);
-		return steps;
-	});
-
-export interface StandardizeCardResult {
-	number: number;
-	descriptionUpdated: boolean;
-	stepsCreated: number;
-	stepsUpdated: number;
-	stepsCompleted: number;
-}
-
-export const standardizeCard = (env: InitializedEnv, number: number) =>
-	Effect.gen(function* () {
-		const card = yield* env.api.showCard(number);
-		const plan = planStandardizeCardContent(card);
-		if (plan.description !== undefined) {
-			yield* env.api.updateCardDescription(card.number, plan.description);
-		}
-		yield* Effect.forEach(plan.stepUpdates, (update) =>
-			env.api.updateStep(card.number, update.stepId, update.input),
-		);
-		yield* Effect.forEach(plan.stepCreates, (step) =>
-			env.api.createStep(card.number, step.content, step.completed),
-		);
-		return plan.result;
-	});
-
-export const standardizeBoard = (env: InitializedEnv) =>
-	Effect.gen(function* () {
-		const [openCards, closedCards] = yield* Effect.all([
-			env.api.listCards({ all: true }),
-			env.api.listCards({ indexedBy: "closed", all: true }),
-		]);
-		const seen = new Set<number>();
-		const cards = openCards.concat(closedCards).filter((card) => {
-			if (seen.has(card.number)) return false;
-			seen.add(card.number);
-			return true;
-		});
-
-		const results = yield* Effect.forEach(cards, (card) => standardizeCard(env, card.number), {
-			concurrency: 8,
-		});
-		return {
-			results,
-			total: results.length,
-			descriptionUpdated: results.filter((result) => result.descriptionUpdated).length,
-			stepsCreated: results.reduce((total, result) => total + result.stepsCreated, 0),
-			stepsUpdated: results.reduce((total, result) => total + result.stepsUpdated, 0),
-			stepsCompleted: results.reduce((total, result) => total + result.stepsCompleted, 0),
-		};
 	});
 
 export const assign = (env: InitializedEnv, number: number, users: ReadonlyArray<string>) =>

@@ -16,6 +16,8 @@ import { ConfigRepo, CONFIG_FILE } from "../ports/config-repository";
 import type { ConfigRepository } from "../ports/config-repository";
 import { makeBunManifestRepository, makeEmptyManifest } from "../adapters/bun-manifest-repository";
 import { makeBunOssRepository } from "../adapters/bun-oss-repository";
+import type { CredentialStore } from "../ports/credential-store";
+import { CredentialStoreService } from "../ports/credential-store";
 import type { OssRepository } from "../ports/oss-repository";
 import type { ManifestRepository } from "../ports/manifest-repository";
 import type { OssSetupInput } from "../ports/config-repository";
@@ -23,23 +25,12 @@ import path from "node:path";
 
 // ─── Bun.secrets constants ───────────────────────────────────
 
-export const OSS_SECRET_SERVICE = "fizzyx-oss";
 export const DEFAULT_OSS_ENV = "default";
 
-export interface OssCredentialStore {
-	get: (
-		config: ProjectConfig,
-		env: OssEnvironmentName,
-	) => Effect.Effect<OssCredentials | undefined, never>;
-	set: (
-		config: ProjectConfig,
-		env: OssEnvironmentName,
-		credentials: OssCredentials,
-	) => Effect.Effect<void, OssError>;
-}
+const OSS_SECRET_SERVICE = "fizzyx-oss";
 
 export interface OssRuntimeAdapters {
-	credentials: OssCredentialStore;
+	credentials?: CredentialStore;
 	makeOssRepository: (config: OssEnvironmentConfig & OssCredentials) => OssRepository;
 	makeManifestRepository: (rootDir: string) => ManifestRepository;
 	collectLocalFiles: typeof collectLocalFiles;
@@ -52,55 +43,7 @@ export interface OssRuntimeAdapters {
 
 export type OssRuntimeAdapterOverrides = Partial<OssRuntimeAdapters>;
 
-const getStoredOssCredentials = (
-	config: ProjectConfig,
-	env: OssEnvironmentName,
-): Effect.Effect<OssCredentials | undefined, never> =>
-	Effect.gen(function* () {
-		const secretName = getOssSecretName(config, env);
-		let raw: string | null = null;
-		try {
-			raw = yield* Effect.promise(() =>
-				Bun.secrets.get({ service: OSS_SECRET_SERVICE, name: secretName }),
-			);
-		} catch {
-			return undefined;
-		}
-		if (!raw) return undefined;
-		try {
-			const parsed = JSON.parse(raw) as Record<string, string>;
-			const ak = parsed.accessKeyId;
-			const sk = parsed.secretAccessKey;
-			if (ak && sk) return { accessKeyId: ak, secretAccessKey: sk } satisfies OssCredentials;
-		} catch {
-			// invalid JSON
-		}
-		return undefined;
-	});
-
-const setStoredOssCredentials = (
-	config: ProjectConfig,
-	env: OssEnvironmentName,
-	credentials: OssCredentials,
-): Effect.Effect<void, OssError> =>
-	Effect.tryPromise({
-		try: () =>
-			Bun.secrets.set({
-				service: OSS_SECRET_SERVICE,
-				name: getOssSecretName(config, env),
-				value: JSON.stringify(credentials),
-			}),
-		catch: (cause) =>
-			new OssError({ message: `Failed to store OSS credentials: ${String(cause)}` }),
-	});
-
-export const bunOssCredentialStore: OssCredentialStore = {
-	get: getStoredOssCredentials,
-	set: setStoredOssCredentials,
-};
-
 const defaultOssRuntimeAdapters = (): OssRuntimeAdapters => ({
-	credentials: bunOssCredentialStore,
 	makeOssRepository: makeBunOssRepository,
 	makeManifestRepository: makeBunManifestRepository,
 	collectLocalFiles,
@@ -165,7 +108,7 @@ export const ossStoreCredentials = (
 	accessKeyId: string,
 	secretAccessKey: string,
 	adapters?: Pick<OssRuntimeAdapters, "credentials">,
-): Effect.Effect<void, OssError, ConfigRepository> =>
+): Effect.Effect<void, OssError, ConfigRepository | CredentialStore> =>
 	Effect.gen(function* () {
 		const runtime = makeOssRuntimeAdapters(adapters);
 		const configRepo = yield* ConfigRepo;
@@ -178,13 +121,23 @@ export const ossStoreCredentials = (
 			configPath: `${process.cwd()}/${CONFIG_FILE}`,
 			rootDir: process.cwd(),
 		};
-		yield* runtime.credentials.set(projectConfig, env, { accessKeyId, secretAccessKey });
+		const credentialStore = runtime.credentials ?? (yield* CredentialStoreService);
+		yield* setStoredOssCredentials(
+			projectConfig,
+			env,
+			{ accessKeyId, secretAccessKey },
+			credentialStore,
+		).pipe(
+			Effect.mapError(
+				(cause) => new OssError({ message: `Failed to store OSS credentials: ${cause.message}` }),
+			),
+		);
 	});
 
 export const ossSetup = (
 	input: OssSetupInput,
 	adapters?: Pick<OssRuntimeAdapters, "credentials">,
-) =>
+): Effect.Effect<OssConfig, OssError | FileError, ConfigRepository | CredentialStore> =>
 	Effect.gen(function* () {
 		const runtime = makeOssRuntimeAdapters(adapters);
 		const configRepo = yield* ConfigRepo;
@@ -206,7 +159,12 @@ export const ossSetup = (
 				accessKeyId: envConfig.accessKeyId,
 				secretAccessKey: envConfig.secretAccessKey,
 			};
-			yield* runtime.credentials.set(projectConfig, input.env, creds);
+			const credentialStore = runtime.credentials ?? (yield* CredentialStoreService);
+			yield* setStoredOssCredentials(projectConfig, input.env, creds, credentialStore).pipe(
+				Effect.mapError(
+					(cause) => new OssError({ message: `Failed to store OSS credentials: ${cause.message}` }),
+				),
+			);
 		}
 
 		const ossConfig = yield* configRepo.setupOssConfig(input);
@@ -227,7 +185,7 @@ export const ossSync = (options: {
 }): Effect.Effect<
 	OssSyncSummary,
 	ConfigError | FileError | OssError | ValidationError,
-	ConfigRepository
+	ConfigRepository | CredentialStore
 > =>
 	Effect.gen(function* () {
 		const runtime = makeOssRuntimeAdapters(options.adapters);
@@ -400,7 +358,7 @@ export const ossList = (options: {
 }): Effect.Effect<
 	OssListResult,
 	ConfigError | FileError | OssError | ValidationError,
-	ConfigRepository
+	ConfigRepository | CredentialStore
 > =>
 	Effect.gen(function* () {
 		const runtime = makeOssRuntimeAdapters(options.adapters);
@@ -428,14 +386,15 @@ const resolveOssCredentials = (
 	config: ProjectConfig,
 	env: OssEnvironmentName,
 	envConfig: OssEnvironmentConfig,
-	credentialStore: OssCredentialStore = bunOssCredentialStore,
-): Effect.Effect<OssCredentials, OssError> =>
+	credentialStoreOverride?: CredentialStore,
+): Effect.Effect<OssCredentials, OssError, CredentialStore> =>
 	Effect.gen(function* () {
-		const fromSecrets = yield* credentialStore.get(config, env);
+		const credentialStore = credentialStoreOverride ?? (yield* CredentialStoreService);
+		const fromSecrets = yield* getStoredOssCredentials(config, env, credentialStore);
 		if (fromSecrets) return fromSecrets;
 
 		if (env !== DEFAULT_OSS_ENV) {
-			const fallback = yield* credentialStore.get(config, DEFAULT_OSS_ENV);
+			const fallback = yield* getStoredOssCredentials(config, DEFAULT_OSS_ENV, credentialStore);
 			if (fallback) return fallback;
 		}
 
@@ -456,6 +415,43 @@ const resolveOssCredentials = (
 			message: `No OSS credentials for ${env}. Store with: fizzyx oss setup [--env <name>]`,
 		});
 	});
+
+const getStoredOssCredentials = (
+	config: ProjectConfig,
+	env: OssEnvironmentName,
+	credentialStore: CredentialStore,
+): Effect.Effect<OssCredentials | undefined, never> =>
+	Effect.gen(function* () {
+		const secretName = getOssSecretName(config, env);
+		const raw = yield* credentialStore
+			.get(OSS_SECRET_SERVICE, secretName)
+			.pipe(Effect.catch(() => Effect.succeed(undefined)));
+		if (!raw) return undefined;
+
+		try {
+			const parsed = JSON.parse(raw) as Record<string, string>;
+			const accessKeyId = parsed.accessKeyId;
+			const secretAccessKey = parsed.secretAccessKey;
+			if (accessKeyId && secretAccessKey)
+				return { accessKeyId, secretAccessKey } satisfies OssCredentials;
+		} catch {
+			// invalid JSON
+		}
+
+		return undefined;
+	});
+
+const setStoredOssCredentials = (
+	config: ProjectConfig,
+	env: OssEnvironmentName,
+	credentials: OssCredentials,
+	credentialStore: CredentialStore,
+): Effect.Effect<void, FileError> =>
+	credentialStore.set(
+		OSS_SECRET_SERVICE,
+		getOssSecretName(config, env),
+		JSON.stringify(credentials),
+	);
 
 // ─── Internal helpers ────────────────────────────────────────
 

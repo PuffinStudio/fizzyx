@@ -1,13 +1,13 @@
 import { Effect } from "effect";
 import { existsSync } from "node:fs";
 import type { CodeExtensionGenerator, CodeGenerator } from "../ports/code-generator";
-import type { OpenApiLoader } from "../ports/openapi-loader";
 import {
 	ConfigRepo,
 	CONFIG_FILE,
 	LEGACY_CONFIG_FILE,
 	type ConfigRepository,
 } from "../ports/config-repository";
+import { GeneratorRegistry } from "../ports/generator-registry";
 import {
 	CodegenError,
 	FileError,
@@ -24,28 +24,10 @@ import type {
 	OpenApiGenConfig,
 	OpenApiProjectConfig,
 } from "../domain/openapi-models";
-import { openapiFileLoader } from "../adapters/openapi-file-loader";
-import { openapiUrlLoader } from "../adapters/openapi-url-loader";
-import { wxGenerator } from "../adapters/codegen-wx";
-import { fetchGenerator } from "../adapters/codegen-fetch";
-import { effectGenerator, EFFECT_GENERATOR_DEFAULTS } from "../adapters/codegen-effect";
-import { tanstackQueryGenerator } from "../adapters/codegen-tanstack-query";
+import { EFFECT_GENERATOR_DEFAULTS } from "../adapters/codegen-effect";
 import { generateIndexFile, planOpenApiArtifacts } from "./openapi-artifact-plan";
 
-const BUILTIN_GENERATORS: Record<string, CodeGenerator> = {
-	wx: wxGenerator,
-	fetch: fetchGenerator,
-	effect: effectGenerator,
-};
-
-const STATE_MANAGEMENT_PLUGINS: Record<string, CodeExtensionGenerator> = {
-	"tanstack-query": tanstackQueryGenerator,
-};
-
 const configFileExists = (): boolean => existsSync(CONFIG_FILE) || existsSync(LEGACY_CONFIG_FILE);
-
-const isUrl = (input: string): boolean =>
-	input.startsWith("http://") || input.startsWith("https://");
 
 const DEFAULT_OPENAPI_INPUT = "";
 const DEFAULT_OPENAPI_OUTPUT = "./src/api";
@@ -54,10 +36,10 @@ const DEFAULT_OPENAPI_CLIENT = "fetch";
 const SUPPORTED_OPENAPI_CLIENTS = new Set(["wx", "fetch", "effect"]);
 
 const normalizeClient = (value: string): string => value.trim().toLowerCase();
+const STATE_MANAGEMENT_GENERATOR_NAMES = ["tanstack-query"];
 
-function selectLoader(input: string): OpenApiLoader {
-	return isUrl(input) ? openapiUrlLoader : openapiFileLoader;
-}
+const isStateManagementPlugin = (generator: CodeGenerator): generator is CodeExtensionGenerator =>
+	"exportPath" in generator && typeof generator.exportPath === "string";
 
 export interface GenerateInput {
 	input: string;
@@ -98,20 +80,26 @@ function resolveOutputPath(output: string): { dir: string; opts: Partial<GenFile
 
 export const generate = (
 	input: GenerateInput,
-): Effect.Effect<GenerateResult, SpecLoadError | SpecParseError | CodegenError> =>
+): Effect.Effect<
+	GenerateResult,
+	SpecLoadError | SpecParseError | CodegenError,
+	GeneratorRegistry
+> =>
 	Effect.gen(function* () {
-		const loader = selectLoader(input.input);
+		const generatorRegistry = yield* GeneratorRegistry;
+		const loader = generatorRegistry.getLoader(input.input);
 		const spec = yield* loader.load(input.input, input.headers);
 
-		const generator = BUILTIN_GENERATORS[input.client];
-		if (!generator) {
-			return yield* Effect.fail(
-				new CodegenError({
-					message: `unknown client target: ${input.client}. available: ${Object.keys(BUILTIN_GENERATORS).join(", ")}`,
-					target: input.client,
-				}),
-			);
-		}
+		const availableClients = generatorRegistry.listGenerators().map((g) => g.name);
+		const generator = yield* generatorRegistry.getGenerator(input.client).pipe(
+			Effect.mapError(
+				() =>
+					new CodegenError({
+						message: `unknown client target: ${input.client}. available: ${availableClients.join(", ")}`,
+						target: input.client,
+					}),
+			),
+		);
 
 		const generatorDefaults =
 			input.client === "effect"
@@ -137,15 +125,24 @@ export const generate = (
 
 		// State management plugin
 		if (input.stateManagement) {
-			const plugin = STATE_MANAGEMENT_PLUGINS[input.stateManagement];
-			if (!plugin) {
+			const plugin = yield* generatorRegistry.getGenerator(input.stateManagement).pipe(
+				Effect.mapError(
+					() =>
+						new CodegenError({
+							message: `unknown state management: ${input.stateManagement}. available: ${STATE_MANAGEMENT_GENERATOR_NAMES.join(", ")}`,
+							target: input.stateManagement,
+						}),
+				),
+			);
+			if (!isStateManagementPlugin(plugin)) {
 				return yield* Effect.fail(
 					new CodegenError({
-						message: `unknown state management: ${input.stateManagement}. available: ${Object.keys(STATE_MANAGEMENT_PLUGINS).join(", ")}`,
+						message: `unknown state management: ${input.stateManagement}. available: ${STATE_MANAGEMENT_GENERATOR_NAMES.join(", ")}`,
 						target: input.stateManagement,
 					}),
 				);
 			}
+
 			const smFiles = yield* plugin.generate(spec, input.output, fileOpts);
 			files.push(...smFiles);
 			extensionExports.push(plugin.exportPath);
@@ -180,7 +177,11 @@ function dedupeRuntimeFiles(
 export const generateMany = (
 	inputs: GenerateInput[],
 	shareRuntime = false,
-): Effect.Effect<GenerateManyResult, SpecLoadError | SpecParseError | CodegenError> =>
+): Effect.Effect<
+	GenerateManyResult,
+	SpecLoadError | SpecParseError | CodegenError,
+	GeneratorRegistry
+> =>
 	Effect.gen(function* () {
 		const results: GenerateResult[] = [];
 		for (const input of inputs) {
@@ -259,8 +260,11 @@ export const initOpenApiConfig = (
 		return true;
 	});
 
-export const listGenerators = (): KnownGenerator[] =>
-	Object.values(BUILTIN_GENERATORS).map((g) => g.info);
+export const listGenerators = (): Effect.Effect<KnownGenerator[], never, GeneratorRegistry> =>
+	Effect.gen(function* () {
+		const generatorRegistry = yield* GeneratorRegistry;
+		return generatorRegistry.listGenerators();
+	});
 
 export interface GenerateCliInput {
 	inputs?: string[];
@@ -408,7 +412,7 @@ export const runOpenApiGenerateLifecycle = (
 ): Effect.Effect<
 	GenerateManyResult,
 	SpecLoadError | SpecParseError | CodegenError | ConfigValidationError | Error,
-	ConfigRepository
+	ConfigRepository | GeneratorRegistry
 > =>
 	Effect.gen(function* () {
 		const result = yield* generateFromCli(cli);

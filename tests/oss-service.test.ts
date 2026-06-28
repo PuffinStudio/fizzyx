@@ -5,6 +5,10 @@ import type { ConfigRepository } from "../src/ports/config-repository";
 import type { ProjectConfig } from "../src/domain/models";
 import { ConfigError, FileError } from "../src/domain/errors";
 import { ConfigRepo } from "../src/ports/config-repository";
+import { ossSetup, ossStoreCredentials } from "../src/use-cases/oss-service";
+import type { CredentialStore } from "../src/ports/credential-store";
+import { CredentialStoreService } from "../src/ports/credential-store";
+import type { OssConfig, OssEnvironmentConfig } from "../src/domain/models";
 
 const makeConfig = (overrides: Partial<ProjectConfig> = {}): ProjectConfig =>
 	({
@@ -40,6 +44,133 @@ test("getOssSecretName different project roots produce different hashes", () => 
 
 test("DEFAULT_OSS_ENV is 'default'", () => {
 	expect(DEFAULT_OSS_ENV).toBe("default");
+});
+
+test("ossStoreCredentials writes to provided credential store", async () => {
+	const stored: { service?: string; account?: string; credential?: string } = {};
+	const fallbackConfig: ProjectConfig = {
+		apiUrl: "https://fizzy.puffin.studio",
+		account: "1",
+		configPath: `${process.cwd()}/${".fizzyx.yaml"}`,
+		rootDir: process.cwd(),
+	};
+	const credentialStore: CredentialStore = {
+		get: () => Effect.succeed(undefined),
+		set: (service, account, credential) =>
+			Effect.sync(() => {
+				stored.service = service;
+				stored.account = account;
+				stored.credential = credential;
+			}),
+		delete: () => Effect.succeed(undefined),
+	};
+
+	const configRepo: ConfigRepository = {
+		loadProjectConfig: () => Effect.fail(new ConfigError({ message: "not mocked" })),
+		loadProjectConfigOptional: () => Effect.succeed(undefined),
+		setupProjectConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		setupOssConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		setupOpenApiConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		loadCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		migrateCredentialsFromOfficial: () =>
+			Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		saveCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		deleteCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+	};
+
+	await Effect.runPromise(
+		ossStoreCredentials("prod", "access", "secret", {
+			credentials: credentialStore,
+		}).pipe(
+			Effect.provideService(ConfigRepo, configRepo),
+			Effect.provideService(CredentialStoreService, credentialStore),
+		),
+	);
+
+	expect(stored.service).toBe("fizzyx-oss");
+	expect(stored.account).toBe(getOssSecretName(fallbackConfig, "prod"));
+	expect(stored.credential).toBe('{"accessKeyId":"access","secretAccessKey":"secret"}');
+});
+
+test("ossSetup stores credentials via provided credential store", async () => {
+	const stored: { service?: string; account?: string; credential?: string } = {};
+	const fallbackConfig: ProjectConfig = {
+		apiUrl: "https://fizzy.puffin.studio",
+		account: "1",
+		configPath: `${process.cwd()}/${".fizzyx.yaml"}`,
+		rootDir: process.cwd(),
+	};
+	const credentialStore: CredentialStore = {
+		get: () => Effect.succeed(undefined),
+		set: (service, account, credential) =>
+			Effect.sync(() => {
+				stored.service = service;
+				stored.account = account;
+				stored.credential = credential;
+			}),
+		delete: () => Effect.succeed(undefined),
+	};
+
+	const expected: OssConfig = {
+		environments: {
+			prod: {
+				endpoint: "https://example.com",
+				region: "us-east-1",
+				bucket: "bucket",
+				accessKeyId: "cfg",
+				secretAccessKey: "cfg-secret",
+			},
+		},
+		sync: {
+			localDir: "./public",
+			concurrency: 5,
+		},
+	};
+
+	const configEnv: OssEnvironmentConfig = {
+		endpoint: "https://oss.example.com",
+		region: "us-east-1",
+		bucket: "my-bucket",
+		accessKeyId: "cfg",
+		secretAccessKey: "cfg-secret",
+	};
+
+	const configRepo: ConfigRepository = {
+		loadProjectConfig: () => Effect.fail(new ConfigError({ message: "not mocked" })),
+		loadProjectConfigOptional: () => Effect.succeed(undefined),
+		setupProjectConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		setupOssConfig: () => Effect.succeed(expected),
+		setupOpenApiConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		loadCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		migrateCredentialsFromOfficial: () =>
+			Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		saveCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		deleteCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+	};
+
+	const result = await Effect.runPromise(
+		ossSetup(
+			{
+				env: "prod",
+				config: configEnv,
+				sync: {
+					localDir: "./public",
+					concurrency: 5,
+				},
+			},
+			{
+				credentials: credentialStore,
+			},
+		).pipe(
+			Effect.provideService(ConfigRepo, configRepo),
+			Effect.provideService(CredentialStoreService, credentialStore),
+		),
+	);
+
+	expect(result).toEqual(expected);
+	expect(stored.service).toBe("fizzyx-oss");
+	expect(stored.account).toBe(getOssSecretName(fallbackConfig, "prod"));
+	expect(stored.credential).toBe('{"accessKeyId":"cfg","secretAccessKey":"cfg-secret"}');
 });
 
 test("ossInitBlank returns false when oss section already exists", async () => {

@@ -22,3 +22,6 @@ export type { SignalProvider, SignalServerConfig } from "./chat-signal";
 export { DEFAULT_SIGNAL_SERVER } from "./chat-signal";
 export type { ChatStorage } from "./chat-storage";
 export type { CryptoService } from "./chat-crypto";
+
+export type { CredentialStore } from "./credential-store";
+export { CredentialStoreService } from "./credential-store";

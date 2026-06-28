@@ -63,7 +63,7 @@ const handleGenerate = (config: {
 
 const handleList = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const generators = listGenerators();
+		const generators = yield* listGenerators();
 		if (generators.length === 0) {
 			yield* Console.log(formatNoGenerators());
 			return;

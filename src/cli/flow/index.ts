@@ -1,0 +1,27 @@
+import { Command } from "effect/unstable/cli";
+import { flowBlockCmd } from "./block";
+import { flowCreateCmd } from "./create";
+import { flowDoneCmd } from "./done";
+import { flowDoctorCmd } from "./doctor";
+import { flowImproveCmd } from "./improve";
+import { flowRepairCmd } from "./repair";
+import { flowReviewCmd } from "./review";
+import { flowShowCmd } from "./show";
+import { flowStartCmd } from "./start";
+import { flowWorkCmd } from "./work";
+
+export const flowCmd = Command.make("flow").pipe(
+	Command.withDescription("Manage Fizzy workflow boards"),
+	Command.withSubcommands([
+		flowWorkCmd,
+		flowCreateCmd,
+		flowShowCmd,
+		flowStartCmd,
+		flowReviewCmd,
+		flowDoneCmd,
+		flowBlockCmd,
+		flowImproveCmd,
+		flowRepairCmd,
+		flowDoctorCmd,
+	]),
+);
