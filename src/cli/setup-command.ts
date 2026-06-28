@@ -108,4 +108,4 @@ export const setupCmd = Command.make(
 		),
 	},
 	handleSetup,
-).pipe(Command.withAlias("setup"), Command.withDescription("Initialize or list Fizzy workspace"));
+).pipe(Command.withDescription("Initialize or list Fizzy workspace"));
