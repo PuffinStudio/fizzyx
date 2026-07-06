@@ -326,6 +326,137 @@ export async function request<T, B = unknown>(
   const extractor = _extractor ?? defaultExtractor
   return extractor(raw) as T
 }
+
+// --- File upload / download (wx.uploadFile / wx.downloadFile) ---
+
+export interface UploadFileOptions {
+  filePath: string
+  fileName: string
+  query?: Record<string, unknown>
+  formData?: Record<string, unknown>
+  header?: Record<string, string>
+}
+
+/**
+ * Low-level file upload — returns raw response body without transformation.
+ * Uses wx.uploadFile under the hood.
+ */
+export async function uploadFileRaw<T>(
+  url: string,
+  options: UploadFileOptions,
+): Promise<T> {
+  const log = getLogger()
+  const start = Date.now()
+  const finalUrl = buildUrl(url, options.query)
+  const header = buildHeaders(options.header)
+  const shouldRunHooks = hasHooks()
+
+  if (shouldRunHooks) {
+    callOnRequest({ method: "POST", url: finalUrl, duration: 0 })
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    wx.uploadFile({
+      url: finalUrl,
+      filePath: options.filePath,
+      name: options.fileName,
+      header,
+      formData: options.formData as Record<string, unknown>,
+      timeout: _config.timeout ?? DEFAULT_TIMEOUT_MS,
+      success: (res) => {
+        const duration = Date.now() - start
+        if (res.statusCode >= 400) {
+          const errMsg = "HTTP " + res.statusCode
+          log.error("upload failed:", finalUrl, res.statusCode)
+          if (shouldRunHooks) {
+            callOnError({ method: "POST", url: finalUrl, status: res.statusCode, duration, message: errMsg })
+          }
+          reject(new Error(errMsg))
+          return
+        }
+        log.debug("upload success:", finalUrl, res.statusCode)
+        let data: unknown = res.data
+        try { data = JSON.parse(res.data as string) } catch { /* keep raw string */ }
+        if (shouldRunHooks) {
+          callOnSuccess({ method: "POST", url: finalUrl, status: res.statusCode, duration, data })
+        }
+        resolve(data as T)
+      },
+      fail: (err) => {
+        const duration = Date.now() - start
+        log.error("upload failed:", finalUrl, err.errMsg)
+        if (shouldRunHooks) {
+          callOnError({ method: "POST", url: finalUrl, duration, message: err.errMsg })
+        }
+        reject(new Error(err.errMsg))
+      },
+    })
+  })
+}
+
+/**
+ * Typed file upload — applies responseExtractor to the raw response.
+ */
+export async function uploadFile<T>(
+  url: string,
+  options: UploadFileOptions,
+): Promise<T> {
+  const raw = await uploadFileRaw<unknown>(url, options)
+  const extractor = _extractor ?? defaultExtractor
+  return extractor(raw) as T
+}
+
+/**
+ * Download a file via wx.downloadFile.
+ * Resolves with the temporary file path (tempFilePath).
+ */
+export async function downloadFile(
+  url: string,
+  options?: { query?: Record<string, unknown>; header?: Record<string, string> },
+): Promise<string> {
+  const log = getLogger()
+  const start = Date.now()
+  const finalUrl = buildUrl(url, options?.query)
+  const header = buildHeaders(options?.header)
+  const shouldRunHooks = hasHooks()
+
+  if (shouldRunHooks) {
+    callOnRequest({ method: "GET", url: finalUrl, duration: 0 })
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    wx.downloadFile({
+      url: finalUrl,
+      header,
+      timeout: _config.timeout ?? DEFAULT_TIMEOUT_MS,
+      success: (res) => {
+        const duration = Date.now() - start
+        if (res.statusCode >= 400) {
+          const errMsg = "HTTP " + res.statusCode
+          log.error("download failed:", finalUrl, res.statusCode)
+          if (shouldRunHooks) {
+            callOnError({ method: "GET", url: finalUrl, status: res.statusCode, duration, message: errMsg })
+          }
+          reject(new Error(errMsg))
+          return
+        }
+        log.debug("download success:", finalUrl, res.statusCode, res.tempFilePath)
+        if (shouldRunHooks) {
+          callOnSuccess({ method: "GET", url: finalUrl, status: res.statusCode, duration, data: res.tempFilePath })
+        }
+        resolve(res.tempFilePath)
+      },
+      fail: (err) => {
+        const duration = Date.now() - start
+        log.error("download failed:", finalUrl, err.errMsg)
+        if (shouldRunHooks) {
+          callOnError({ method: "GET", url: finalUrl, duration, message: err.errMsg })
+        }
+        reject(new Error(err.errMsg))
+      },
+    })
+  })
+}
 `;
 
 const DEFAULT_WX_OPTIONS: GenFileOptions = {
@@ -336,7 +467,10 @@ const DEFAULT_WX_OPTIONS: GenFileOptions = {
 
 export const wxGenerator: CodeGenerator = {
 	name: "wx",
-	info: { name: "wx", description: "WeChat Mini Program (wx.request)" },
+	info: {
+		name: "wx",
+		description: "WeChat Mini Program (wx.request / wx.uploadFile / wx.downloadFile)",
+	},
 
 	generate: (spec: ParsedSpec, output: string, options?: GenFileOptions) =>
 		Effect.gen(function* () {
@@ -357,6 +491,19 @@ export const wxGenerator: CodeGenerator = {
 				const runtimeFile = opts.runtimeName;
 				const runtimeImportPath = `./${runtimeFile.replace(/\.ts$/, "")}`;
 
+				const hasUpload = spec.endpoints.some((e) => e.bodyContentType === "multipart");
+				const hasDownload = spec.endpoints.some((e) => e.responseContentType === "binary");
+				const valueExports: string[] = [
+					"configure",
+					"setToken",
+					"setHeaders",
+					"initToken",
+					"onError",
+					"requestRaw",
+				];
+				if (hasUpload) valueExports.push("uploadFile", "uploadFileRaw");
+				if (hasDownload) valueExports.push("downloadFile");
+
 				const apiCode = generateApi(
 					spec,
 					{
@@ -368,14 +515,9 @@ export const wxGenerator: CodeGenerator = {
 							"RequestHook",
 							"HookContext",
 						],
-						valueExports: [
-							"configure",
-							"setToken",
-							"setHeaders",
-							"initToken",
-							"onError",
-							"requestRaw",
-						],
+						valueExports,
+						runtimeUploadImport: hasUpload ? "uploadFile" : undefined,
+						runtimeDownloadImport: hasDownload ? "downloadFile" : undefined,
 					},
 					typesImportPath,
 					hasTypes,

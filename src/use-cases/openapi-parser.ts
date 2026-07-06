@@ -18,7 +18,7 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 
 	const schemas = extractRawSchemas(doc);
 	const resolveSchemaName = buildSchemaNameResolver(schemas);
-	const { refMap, inlineTypes } = buildSchemaRefMap(doc, resolveSchemaName);
+	const { refMap, inlineTypes, endpointMeta } = buildSchemaRefMap(doc, resolveSchemaName);
 	const propRefs = buildPropertyRefs(doc, resolveSchemaName);
 
 	const dereferenced = (await $RefParser.dereference(JSON.parse(JSON.stringify(doc)), {
@@ -39,7 +39,7 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 	}
 
 	const paths = dereferenced.paths as Record<string, unknown> | undefined;
-	const endpoints = parseAllEndpoints(paths, derefSchemas, refMap, resolveSchemaName);
+	const endpoints = parseAllEndpoints(paths, derefSchemas, refMap, resolveSchemaName, endpointMeta);
 
 	return { title, version, endpoints, types: derefSchemas };
 }
@@ -74,13 +74,21 @@ function buildSchemaRefMap(
 ): {
 	refMap: Map<string, string>;
 	inlineTypes: Map<string, Record<string, unknown>>;
+	endpointMeta: Map<
+		string,
+		{ bodyContentType?: "json" | "multipart"; responseContentType?: "json" | "binary" }
+	>;
 } {
 	const refMap = new Map<string, string>();
 	const inlineTypes = new Map<string, Record<string, unknown>>();
+	const endpointMeta = new Map<
+		string,
+		{ bodyContentType?: "json" | "multipart"; responseContentType?: "json" | "binary" }
+	>();
 	const schemas = extractRawSchemas(doc);
 
 	const paths = doc.paths as Record<string, unknown> | undefined;
-	if (!paths) return { refMap, inlineTypes };
+	if (!paths) return { refMap, inlineTypes, endpointMeta };
 
 	for (const [path, pathItem] of Object.entries(paths)) {
 		const item = pathItem as Record<string, unknown>;
@@ -135,6 +143,17 @@ function buildSchemaRefMap(
 							}
 						}
 					}
+
+					// Detect binary response (e.g. application/octet-stream)
+					if (content) {
+						const hasJson = !!content["application/json"];
+						if (!hasJson) {
+							const binaryTypes = Object.keys(content).filter((t) => t !== "application/json");
+							if (binaryTypes.length > 0) {
+								endpointMeta.set(opKey, { responseContentType: "binary" });
+							}
+						}
+					}
 				}
 			}
 
@@ -143,7 +162,23 @@ function buildSchemaRefMap(
 			if (requestBody) {
 				const content = requestBody.content as Record<string, unknown> | undefined;
 				const json = content?.["application/json"] as Record<string, unknown> | undefined;
-				if (json?.schema) {
+				const multipart = content?.["multipart/form-data"] as Record<string, unknown> | undefined;
+
+				if (multipart?.schema) {
+					// Parse multipart body as its type ref too
+					const schema = multipart.schema as Record<string, unknown>;
+					if (typeof schema.$ref === "string") {
+						const name = schema.$ref.split("/").pop();
+						if (name && schemas[name]) {
+							refMap.set(`${opKey}/body`, resolveSchemaName(name));
+						}
+					} else if (isObjectSchema(schema)) {
+						const typeName = `${toPascalCase(operationId)}Request`;
+						inlineTypes.set(typeName, schema);
+						refMap.set(`${opKey}/body`, typeName);
+					}
+					endpointMeta.set(opKey, { bodyContentType: "multipart" });
+				} else if (json?.schema) {
 					const schema = json.schema as Record<string, unknown>;
 					if (typeof schema.$ref === "string") {
 						const name = schema.$ref.split("/").pop();
@@ -177,7 +212,7 @@ function buildSchemaRefMap(
 		}
 	}
 
-	return { refMap, inlineTypes };
+	return { refMap, inlineTypes, endpointMeta };
 }
 
 function isObjectSchema(schema: Record<string, unknown>): boolean {
@@ -373,6 +408,10 @@ function parseAllEndpoints(
 	schemas: Record<string, ParsedTypeDef>,
 	refMap: Map<string, string>,
 	resolveSchemaName: SchemaNameResolver,
+	endpointMeta: Map<
+		string,
+		{ bodyContentType?: "json" | "multipart"; responseContentType?: "json" | "binary" }
+	>,
 ): ParsedEndpoint[] {
 	const endpoints: ParsedEndpoint[] = [];
 	if (!paths) return endpoints;
@@ -428,6 +467,8 @@ function parseAllEndpoints(
 				? refMap.get(`${opKey}/response`)
 				: refMap.get(`${opKey}/response/raw`);
 
+			const meta = endpointMeta.get(opKey);
+
 			endpoints.push({
 				operationId,
 				method: httpMethod,
@@ -438,6 +479,8 @@ function parseAllEndpoints(
 				queryParams,
 				bodyTypeRef,
 				responseTypeRef,
+				bodyContentType: meta?.bodyContentType,
+				responseContentType: meta?.responseContentType,
 			});
 		}
 	}

@@ -41,6 +41,8 @@ export interface ParsedEndpoint {
 	queryParams: QueryParam[];
 	bodyTypeRef?: string;
 	responseTypeRef?: string;
+	bodyContentType?: "json" | "multipart";
+	responseContentType?: "json" | "binary";
 }
 
 export interface PathParam {
