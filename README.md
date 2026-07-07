@@ -1,8 +1,8 @@
 # fizzyx
 
-<img src="./docs/images/fizzyx-logo.png" alt="fizzyx logo" width="120" />
+> CLI tool for Fizzy board workflow, OSS/S3-compatible storage, and OpenAPI client generation.
 
-CLI tool for Fizzy board workflow, OSS/S3-compatible storage, and OpenAPI client generation.
+> <img src="./docs/images/fizzyx-logo.png" alt="fizzyx logo" width="120" />
 
 ## Install
 
@@ -45,7 +45,7 @@ fizzyx dev sync
 fizzyx dev checkpoint [--message <message>]
 fizzyx dev ready [--agent] [--full]
 fizzyx dev promote <source> --to <environment|main> --dry-run
-fizzyx dev cleanup <branch>
+fizzyx dev cleanup [--confirm-delete]
 fizzyx dev doctor
 ```
 

@@ -407,6 +407,37 @@ devTest("dev promote feature to staging --dry-run shows command preview", async 
 	}
 });
 
+devTest("dev promote blocks card-scoped WIP checkpoint commits", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		runGit(root, ["checkout", "-b", "feature/card-42-demo"]);
+		writeFileSync(join(root, "card-demo.txt"), "card checkpoint\n");
+		runGit(root, ["add", "card-demo.txt"]);
+		runGit(root, [
+			"-c",
+			"user.email=dev-workflow@example.com",
+			"-c",
+			"user.name=Dev Workflow",
+			"commit",
+			"-m",
+			"wip(card-42): checkpoint",
+		]);
+
+		const result = await runCli(
+			["dev", "promote", "feature/card-42-demo", "--to", "staging", "--dry-run"],
+			{ cwd: root },
+		);
+		const output = normalizeOutput(result);
+
+		expect(output).toMatch(/wip commit|wip commit\(s\)|checkpoint/);
+		expect(output).toMatch(/some checks failed|not ready|fix the issues/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 devTest("dev cleanup switches to safe base after cleaning merged branches", async () => {
 	const root = createWorkflowRepo();
 
@@ -416,6 +447,88 @@ devTest("dev cleanup switches to safe base after cleaning merged branches", asyn
 		const output = normalizeOutput(result);
 
 		expect(output).toMatch(/clean|main|branches/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev cleanup does not delete merged branches without explicit confirmation", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		const result = await runCli(["dev", "cleanup"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toMatch(/preview|confirm|pending|no branches deleted/);
+		const branchList = Bun.spawnSync(["git", "branch", "--list", "feature/foo"], {
+			cwd: root,
+		});
+		expect(branchList.stdout.toString()).toContain("feature/foo");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev cleanup deletes merged branches only with explicit confirmation", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		const result = await runCli(["dev", "cleanup", "--confirm-delete"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toMatch(/deleted|cleaned/);
+		const branchList = Bun.spawnSync(["git", "branch", "--list", "feature/foo"], {
+			cwd: root,
+		});
+		expect(branchList.stdout.toString()).not.toContain("feature/foo");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev cleanup refuses abandon deletion without explicit delete confirmation", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/demo"]);
+		const result = await runCli(["dev", "cleanup", "--abandon"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toMatch(/confirm|refus|no branches deleted|pending/);
+		const branchList = Bun.spawnSync(["git", "branch", "--list", "feature/demo"], {
+			cwd: root,
+		});
+		expect(branchList.stdout.toString()).toContain("feature/demo");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev doctor reports card-scoped WIP checkpoint commits", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		runGit(root, ["checkout", "-b", "feature/card-99-doctor"]);
+		writeFileSync(join(root, "doctor-card.txt"), "card checkpoint\n");
+		runGit(root, ["add", "doctor-card.txt"]);
+		runGit(root, [
+			"-c",
+			"user.email=dev-workflow@example.com",
+			"-c",
+			"user.name=Dev Workflow",
+			"commit",
+			"-m",
+			"wip(card-99): checkpoint",
+		]);
+		runGit(root, ["checkout", "main"]);
+
+		const result = await runCli(["dev", "doctor"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toMatch(/feature\/card-99-doctor\s+\d+\s+wip commit/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

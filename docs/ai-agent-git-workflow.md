@@ -359,7 +359,7 @@ Feature branch after testing:
 fizzyx dev ready --full
 fizzyx dev promote feature/payment-coupon --to main --dry-run
 fizzyx dev promote feature/payment-coupon --to main --apply --confirm-production
-fizzyx dev cleanup feature/payment-coupon
+fizzyx dev cleanup
 ```
 
 This promotes only `feature/payment-coupon`. It must not promote the entire `test`,
@@ -444,7 +444,7 @@ fizzyx dev ready --full
 fizzyx dev promote hotfix/login-timeout --to main --dry-run
 fizzyx dev promote hotfix/login-timeout --to main --apply --confirm-production
 fizzyx dev promote hotfix/login-timeout --to staging --apply
-fizzyx dev cleanup hotfix/login-timeout
+fizzyx dev cleanup
 ```
 
 Rules:
@@ -605,6 +605,14 @@ Cleans local development state.
 
 Rules:
 
+- Default mode is a preview: switch to a safe base and report branches that could be
+  deleted, but do not delete them.
+- Local branch deletion requires `--confirm-delete`.
+- AI agents must not pass `--confirm-delete` unless the user explicitly requests branch
+  deletion for this run.
+- Remote branch deletion is never allowed in the agent workflow.
+- Agents must not run remote branch deletion commands such as
+  `git push origin --delete <branch>` or `git push origin :<branch>`.
 - Refuse to delete unmerged branches unless `--abandon` or `--force` is provided.
 - Delete local branch only after switching to a safe base branch.
 - Prune stale remote-tracking branches.
@@ -619,7 +627,7 @@ Reports:
 
 - Branches older than `stale_after_days`.
 - Branches with no upstream.
-- Branches merged into main that can be deleted.
+- Branches merged into main that can be reviewed for human-confirmed deletion.
 - Environment branches ahead of production.
 - Feature branches based on environment branches when they should be based on production.
 - WIP commits on branches marked ready.
@@ -914,7 +922,8 @@ Agents should follow these rules:
 7. Use checkpoint commits for long-running work.
 8. Before reporting completion, run `fizzyx dev ready`.
 9. Promote selected feature branches to selected environment branches.
-10. Run `fizzyx dev cleanup` after merge, promotion, or abandonment.
+10. Run `fizzyx dev cleanup` after merge, promotion, or abandonment to preview cleanup,
+    and report any pending branch deletions to the user.
 
 ### AGENTS.md Snippet
 
@@ -933,7 +942,11 @@ Projects can copy this into `AGENTS.md`:
 - Production promotion requires `--dry-run` first, then explicit human approval or
   `--confirm-production`.
 - Use `fizzyx dev ready` before reporting work as complete.
-- Use `fizzyx dev cleanup` after merge, promotion, or abandonment.
+- Use `fizzyx dev cleanup` after merge, promotion, or abandonment to preview cleanup.
+- Do not use `fizzyx dev cleanup --confirm-delete` unless the user explicitly requests
+  branch deletion for this run.
+- Never delete remote branches. Do not run `git push origin --delete <branch>`,
+  `git push origin :<branch>`, or equivalent remote-ref deletion commands.
 ```
 
 ### Agent Output Requirements

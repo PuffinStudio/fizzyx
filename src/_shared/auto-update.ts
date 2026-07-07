@@ -31,29 +31,34 @@ function writeLastCheck(): void {
 	}
 }
 
-async function checkNpmUpdate(): Promise<void> {
+async function checkNpmUpdate(): Promise<boolean> {
 	try {
 		const res = await fetch("https://registry.npmjs.org/@puffinstudio/fizzyx/latest", {
 			signal: AbortSignal.timeout(1000),
 		});
-		if (!res.ok) return;
+		if (!res.ok) return false;
 		const { version } = (await res.json()) as { version?: string };
-		if (!version || version === CURRENT_VERSION) return;
-		const cur = CURRENT_VERSION.split(".").map(Number);
-		const lat = version.split(".").map(Number);
-		for (let i = 0; i < Math.max(cur.length, lat.length); i++) {
-			const a = lat[i] ?? 0;
-			const b = cur[i] ?? 0;
-			if (a > b) {
-				Bun.spawnSync(["bun", "add", "-g", "@puffinstudio/fizzyx"], {
-					stdio: ["ignore", "ignore", "ignore"],
-				});
-				return;
+		if (!version) return false;
+
+		if (version !== CURRENT_VERSION) {
+			const cur = CURRENT_VERSION.split(".").map(Number);
+			const lat = version.split(".").map(Number);
+			for (let i = 0; i < Math.max(cur.length, lat.length); i++) {
+				const a = lat[i] ?? 0;
+				const b = cur[i] ?? 0;
+				if (a > b) {
+					Bun.spawnSync(["bun", "add", "-g", "@puffinstudio/fizzyx"], {
+						stdio: ["ignore", "ignore", "ignore"],
+					});
+					break;
+				}
+				if (a < b) break;
 			}
-			if (a < b) return;
 		}
+
+		return true;
 	} catch {
-		// best effort
+		return false;
 	}
 }
 
@@ -67,6 +72,9 @@ export function checkForUpdate(): void {
 	const lastCheck = readLastCheck();
 	if (lastCheck && Date.now() - lastCheck < COOLDOWN_MS) return;
 
-	writeLastCheck();
-	checkNpmUpdate();
+	checkNpmUpdate()
+		.then((completed) => {
+			if (completed) writeLastCheck();
+		})
+		.catch(() => {});
 }

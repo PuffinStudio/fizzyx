@@ -18,7 +18,8 @@ Use this when making code changes. Prefer safe sequencing and explicit handoff.
 7. Re-run `fizzyx dev status --agent` after branch or sync changes.
 8. Before reporting completion, run `fizzyx dev ready --agent`.
 9. For movement between environments or release, use `fizzyx dev promote --dry-run` first.
-10. When blocked by config/guardrail checks, report the blocker and next safe step.
+10. Use `fizzyx dev cleanup` only as a cleanup preview, then report pending branch deletions.
+11. When blocked by config/guardrail checks, report the blocker and next safe step.
 
 ## Must not do
 
@@ -26,6 +27,10 @@ Use this when making code changes. Prefer safe sequencing and explicit handoff.
 - Create follow-up branches when already on the right non-protected branch.
 - Promote environment branches directly into production.
 - Skip `fizzyx dev ready` before marking work complete.
+- Delete local branches automatically.
+- Run `fizzyx dev cleanup --confirm-delete` unless the user explicitly requests branch deletion.
+- Delete remote branches, even with user confirmation.
+- Run remote branch deletion commands such as `git push origin --delete <branch>` or `git push origin :<branch>`.
 - Run `git merge main`, `git reset --hard`, or raw `git push --force` in agent-driven flow.
 
 ## When reporting
@@ -36,7 +41,7 @@ When a dev workflow step finishes, report:
 - Target environment/production branch
 - Checks run and outcomes
 - Promotion action taken or recommended
-- Whether cleanup (`fizzyx dev cleanup`) is still pending
+- Whether cleanup preview (`fizzyx dev cleanup`) found branch deletions pending
 
 ## Companion skills
 

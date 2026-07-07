@@ -60,6 +60,8 @@ export interface GitCommand {
 
 type DevEffect<A> = Effect.Effect<A, ConfigError | FileError | ValidationError, ConfigRepository>;
 
+const WIP_COMMIT_GREP = "^wip[:(]";
+
 const runGit = (
 	args: ReadonlyArray<string>,
 	cwd?: string,
@@ -505,7 +507,7 @@ const findWipCommits = (): Effect.Effect<ReadonlyArray<string>, ValidationError>
 			"log",
 			"--oneline",
 			"--grep",
-			"^wip[:(]",
+			WIP_COMMIT_GREP,
 			"HEAD",
 			"--not",
 			"--remotes",
@@ -796,7 +798,7 @@ const findBranchWipCommits = (
 			"log",
 			"--oneline",
 			"--grep",
-			"^wip:",
+			WIP_COMMIT_GREP,
 			branch,
 			"--not",
 			"--remotes",
@@ -904,7 +906,10 @@ export const getPromotionCommands = (
 	}
 };
 
-const getMergedBranches = (base: string): Effect.Effect<ReadonlyArray<string>, ValidationError> =>
+const getMergedBranches = (
+	base: string,
+	config?: ProjectConfig,
+): Effect.Effect<ReadonlyArray<string>, ValidationError> =>
 	Effect.gen(function* () {
 		const stdout = yield* runGit(["branch", "--merged", base, "--format", "%(refname:short)"]);
 		if (!stdout) return [];
@@ -912,13 +917,17 @@ const getMergedBranches = (base: string): Effect.Effect<ReadonlyArray<string>, V
 			.split("\n")
 			.map((l) => l.trim())
 			.filter(Boolean);
-		const protectedBranches: ReadonlyArray<string> = ["main", "master", "production", "stable"];
-		return branches.filter((b) => !protectedBranches.includes(b) && !b.startsWith("release/"));
+		return branches.filter((branch) => {
+			if (branch === base || branch.startsWith("release/")) return false;
+			const role = classifyBranch(branch, config?.dev);
+			return role === "feature" || role === "maintenance";
+		});
 	});
 
-export const cleanup = (
-	abandon?: boolean,
-): Effect.Effect<string, ValidationError | ConfigError | FileError, ConfigRepository> =>
+export const cleanup = (options?: {
+	abandon?: boolean;
+	confirmDelete?: boolean;
+}): Effect.Effect<string, ValidationError | ConfigError | FileError, ConfigRepository> =>
 	Effect.gen(function* () {
 		const status = yield* getStatus();
 		const configRepo = yield* ConfigRepo;
@@ -934,18 +943,34 @@ export const cleanup = (
 		const currentBranch = status.currentBranch;
 		yield* runGit(["checkout", productionBranch]);
 
-		const mergedBranches = yield* getMergedBranches(productionBranch);
-		for (const branch of mergedBranches) {
-			yield* runGit(["branch", "-d", branch]).pipe(Effect.catch(() => Effect.succeed("")));
+		const mergedBranches = yield* getMergedBranches(productionBranch, projectConfig ?? undefined);
+		if (!options?.confirmDelete) {
+			const pending = mergedBranches.length > 0 ? ` ${mergedBranches.join(", ")}` : " none";
+			return `Cleanup preview: ${mergedBranches.length} merged branch(es) pending deletion:${pending}. No branches deleted. Add --confirm-delete to delete local branches.`;
 		}
 
-		if (abandon && currentBranch !== productionBranch && !mergedBranches.includes(currentBranch)) {
-			yield* runGit(["branch", "-D", currentBranch]).pipe(Effect.catch(() => Effect.succeed("")));
+		let deleted = 0;
+		for (const branch of mergedBranches) {
+			const result = yield* runGit(["branch", "-d", branch]).pipe(
+				Effect.catch(() => Effect.succeed("")),
+			);
+			if (result) deleted++;
+		}
+
+		if (
+			options?.abandon &&
+			currentBranch !== productionBranch &&
+			!mergedBranches.includes(currentBranch)
+		) {
+			const result = yield* runGit(["branch", "-D", currentBranch]).pipe(
+				Effect.catch(() => Effect.succeed("")),
+			);
+			if (result) deleted++;
 		}
 
 		yield* runGit(["remote", "prune", "origin"]).pipe(Effect.catch(() => Effect.succeed("")));
 
-		return `Cleaned up ${mergedBranches.length} merged branch(es). Now on '${productionBranch}'.`;
+		return `Deleted ${deleted} local branch(es). Now on '${productionBranch}'.`;
 	});
 
 export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, ValidationError> =>
@@ -1042,7 +1067,7 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 				"log",
 				"--oneline",
 				"--grep",
-				"^wip:",
+				WIP_COMMIT_GREP,
 				branch,
 				"--not",
 				"--remotes",
@@ -1055,7 +1080,7 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 			}
 		}
 
-		const mergedList = yield* getMergedBranches(productionBranch);
+		const mergedList = yield* getMergedBranches(productionBranch, config);
 		for (const b of mergedList) {
 			if (branchList.includes(b)) {
 				mergedBranches.push({ name: b, detail: `Merged into ${productionBranch}` });
@@ -1089,7 +1114,7 @@ export const formatDoctor = (report: DoctorReport): string => {
 
 	addSection("Stale branches (no activity > threshold)", report.staleBranches);
 	addSection("Branches without upstream tracking", report.noUpstreamBranches);
-	addSection("Merged branches (safe to delete)", report.mergedBranches);
+	addSection("Merged branches (pending human-confirmed deletion)", report.mergedBranches);
 	addSection("Environment branches ahead of production", report.environmentAhead);
 	addSection(
 		"Feature branches based on environment branches (should use production)",
