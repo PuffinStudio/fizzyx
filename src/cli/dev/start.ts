@@ -3,7 +3,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import {
 	startBranch,
 	getStatus,
-	loadConfig,
+	loadConfigOptional,
 	isOnCompatibleBranch,
 } from "../../use-cases/dev-service";
 import { logSuccess } from "../ui";
@@ -20,8 +20,8 @@ const handle = (config: {
 		const kind = Option.getOrElse(config.kind, () => "feature");
 		const card = Option.getOrElse(config.card, () => undefined);
 
-		const projectConfig = yield* loadConfig().pipe(Effect.catch(() => Effect.succeed(undefined)));
-		const status = yield* getStatus(projectConfig ?? undefined);
+		const projectConfig = yield* loadConfigOptional();
+		const status = yield* getStatus(projectConfig);
 
 		const compatible = projectConfig
 			? isOnCompatibleBranch(status.currentBranch, kind, config.slug, card, projectConfig)

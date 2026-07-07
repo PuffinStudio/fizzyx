@@ -198,8 +198,21 @@ export const loadConfig = (): DevEffect<ProjectConfig> =>
 		return yield* configRepo.loadProjectConfig();
 	});
 
+export const loadConfigOptional = (): Effect.Effect<
+	ProjectConfig | undefined,
+	never,
+	ConfigRepository
+> => loadConfig().pipe(Effect.catch(() => Effect.succeed(undefined as ProjectConfig | undefined)));
+
 export const getCurrentBranch = (): Effect.Effect<string, ValidationError> =>
-	runGit(["branch", "--show-current"]);
+	Effect.gen(function* () {
+		const branch = yield* runGit(["branch", "--show-current"]);
+		if (branch) return branch;
+		const hash = yield* runGit(["rev-parse", "--short", "HEAD"]).pipe(
+			Effect.catch(() => Effect.succeed("(unknown)")),
+		);
+		return `detached/${hash}`;
+	});
 
 export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, ValidationError> =>
 	Effect.gen(function* () {
@@ -404,6 +417,7 @@ export const syncBranch = (
 	Effect.gen(function* () {
 		const status = yield* getStatus();
 
+		const didStash = status.dirty && stash;
 		if (status.dirty) {
 			if (stash) {
 				yield* runGit(["stash", "push", "-m", "fizzyx-auto-stash"]);
@@ -423,6 +437,10 @@ export const syncBranch = (
 		const syncStrategy = projectConfig?.dev?.syncStrategy ?? "rebase";
 		const base = projectConfig?.dev?.defaultBase ?? projectConfig?.dev?.productionBranch ?? "main";
 
+		const stashHint = didStash
+			? "\n  5. Run 'git stash pop' after resolving to restore your working changes."
+			: "";
+
 		if (syncStrategy === "rebase") {
 			const result = yield* runGitNoThrow(["rebase", base]);
 			if (result.exitCode !== 0) {
@@ -430,7 +448,7 @@ export const syncBranch = (
   1. Resolve conflicts manually.
   2. git add <resolved-files>
   3. git rebase --continue
-  4. Or abort: git rebase --abort`;
+  4. Or abort: git rebase --abort${stashHint}`;
 				return yield* new ValidationError({ message: recovery });
 			}
 		} else if (syncStrategy === "merge") {
@@ -440,12 +458,12 @@ export const syncBranch = (
   1. Resolve conflicts manually.
   2. git add <resolved-files>
   3. git commit (merge will complete)
-  4. Or abort: git merge --abort`;
+  4. Or abort: git merge --abort${stashHint}`;
 				return yield* new ValidationError({ message: recovery });
 			}
 		}
 
-		if (stash && status.dirty) {
+		if (didStash) {
 			const stashList = yield* runGit(["stash", "list"]);
 			if (stashList.includes("fizzyx-auto-stash")) {
 				yield* runGit(["stash", "pop"]);
@@ -816,9 +834,16 @@ const branchExists = (name: string): Effect.Effect<boolean, ValidationError> =>
 export const formatPromotionChecks = (
 	checks: ReadonlyArray<PromotionCheck>,
 	agent: boolean,
+	sourceBranch?: string,
+	targetBranch?: string,
 ): string => {
 	if (agent) {
 		const lines: string[] = [];
+		if (sourceBranch && targetBranch) {
+			lines.push(`source_branch: ${sourceBranch}`);
+			lines.push(`target_branch: ${targetBranch}`);
+		}
+		lines.push(`checks: ${checks.filter((c) => c.passed).length}/${checks.length} passed`);
 		for (const check of checks) {
 			lines.push(`check: ${check.passed ? "pass" : "fail"} ${check.reason}`);
 		}

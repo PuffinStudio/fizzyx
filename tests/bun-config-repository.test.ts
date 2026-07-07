@@ -312,7 +312,7 @@ skills:
       - tdd
       - codebase-design
     bug:
-      - diagnose
+      - diagnosing-bugs
       - tdd
   areas:
     auth:
@@ -337,7 +337,7 @@ skills:
 			},
 			defaults: {
 				feature: ["tdd", "codebase-design"],
-				bug: ["diagnose", "tdd"],
+				bug: ["diagnosing-bugs", "tdd"],
 			},
 			areas: {
 				auth: ["security-review"],

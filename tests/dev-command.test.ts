@@ -450,3 +450,92 @@ devTest("dev start fails on dirty worktree without --allow-dirty", async () => {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+devTest("dev sync recovering from rebase conflict shows recovery instructions", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		// Create a conflict: modify README on main, then on feature/foo differently.
+		runGit(root, ["checkout", "main"]);
+		writeFileSync(join(root, "README.md"), "main change\n");
+		runGit(root, [
+			"-c",
+			"user.email=dev-workflow@example.com",
+			"-c",
+			"user.name=Dev Workflow",
+			"commit",
+			"-am",
+			"main change",
+		]);
+
+		runGit(root, ["checkout", "feature/foo"]);
+		writeFileSync(join(root, "README.md"), "feature change\n");
+		runGit(root, [
+			"-c",
+			"user.email=dev-workflow@example.com",
+			"-c",
+			"user.name=Dev Workflow",
+			"commit",
+			"-am",
+			"feature change",
+		]);
+
+		const result = await runCli(["dev", "sync"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toMatch(/conflict|recovery|resolve|abort/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev sync with --stash auto-stashes dirty changes before sync", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		writeFileSync(join(root, "dirty.txt"), "in progress\n");
+
+		const result = await runCli(["dev", "sync", "--stash"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(result.exitCode).toBe(0);
+		expect(output).toMatch(/synced|fetch|rebase/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev checkpoint on clean branch says no changes", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		const result = await runCli(["dev", "checkpoint"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toMatch(/no\s*changes|nothing/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev status --agent on detached HEAD reports detached branch", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		const hash = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], {
+			cwd: root,
+		});
+		const shortHash = hash.stdout.toString().trim();
+		runGit(root, ["checkout", shortHash]);
+
+		const result = await runCli(["dev", "status", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toContain("detached/");
+		expect(output).toContain(shortHash);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

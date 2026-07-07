@@ -23,8 +23,8 @@ type WorkHealth = {
 };
 
 const DEFAULT_SKILLS_BY_TYPE: Record<string, ReadonlyArray<string>> = {
-	bug: ["diagnose", "tdd"],
-	blocker: ["diagnose"],
+	bug: ["diagnosing-bugs", "tdd"],
+	blocker: ["diagnosing-bugs"],
 	feature: ["to-prd", "tdd"],
 	chore: ["tdd"],
 };

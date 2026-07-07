@@ -11,7 +11,11 @@ import {
 import { ValidationError } from "../domain/errors";
 import codebaseDesignContent from "../skills/bundled/codebase-design.md" with { type: "text" };
 import devWorkflowContent from "../skills/bundled/dev-workflow.md" with { type: "text" };
-import diagnoseContent from "../skills/bundled/diagnose.md" with { type: "text" };
+import codeReviewContent from "../skills/bundled/code-review.md" with { type: "text" };
+import diagnoseContent from "../skills/bundled/diagnosing-bugs.md" with { type: "text" };
+import domainModelingContent from "../skills/bundled/domain-modeling.md" with { type: "text" };
+import prototypeContent from "../skills/bundled/prototype.md" with { type: "text" };
+import researchContent from "../skills/bundled/research.md" with { type: "text" };
 import handoffContent from "../skills/bundled/handoff.md" with { type: "text" };
 import improveCodebaseContent from "../skills/bundled/improve-codebase.md" with { type: "text" };
 import securityReviewContent from "../skills/bundled/security-review.md" with { type: "text" };
@@ -52,16 +56,43 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		content: devWorkflowContent,
 	},
 	{
-		name: "diagnose",
+		name: "code-review",
+		description: "Review changes since a fixed point along Standards and Spec axes.",
+		runHint:
+			"Run `code-review` with a commit, branch, or tag to review the diff against standards and spec.",
+		content: codeReviewContent,
+	},
+	{
+		name: "diagnosing-bugs",
 		description: "Debug failing behavior with a structured diagnosis pass.",
-		runHint: "Run `diagnose` by gathering the failure, hypothesis, and verification steps first.",
+		runHint:
+			"Run `diagnosing-bugs` by gathering the failure, hypothesis, and verification steps first.",
 		content: diagnoseContent,
+	},
+	{
+		name: "domain-modeling",
+		description: "Build and sharpen a project's domain model with glossary and ADRs.",
+		runHint:
+			"Run `domain-modeling` to establish shared language and capture architectural decisions.",
+		content: domainModelingContent,
 	},
 	{
 		name: "handoff",
 		description: "Prepare a concise handoff for the next worker.",
 		runHint: "Run `handoff` by summarizing status, risks, and concrete next actions.",
 		content: handoffContent,
+	},
+	{
+		name: "prototype",
+		description: "Build a throwaway prototype to answer a design question.",
+		runHint: "Run `prototype` to build throwaway code that answers a question about logic or UI.",
+		content: prototypeContent,
+	},
+	{
+		name: "research",
+		description: "Investigate a question against high-trust primary sources.",
+		runHint: "Run `research` to investigate a question and capture findings as a Markdown file.",
+		content: researchContent,
 	},
 	{
 		name: "improve-codebase",
@@ -105,11 +136,13 @@ const BUILTIN_BY_NAME = new Map(BUILTIN_SKILLS.map((skill) => [skill.name, skill
 const BUNDLE_ALIASES: Readonly<Record<string, string>> = {
 	"git-workflow": "dev-workflow",
 	"agent-git": "dev-workflow",
+	diagnose: "diagnosing-bugs",
+	diagnosing: "diagnosing-bugs",
 };
 const MATT_POCOCK_ALIASES: Readonly<Record<string, string>> = {
 	"improve-codebase-architecture": "improve-codebase",
-	diagnosing: "diagnose",
-	"diagnosing-bugs": "diagnose",
+	diagnose: "diagnosing-bugs",
+	diagnosing: "diagnosing-bugs",
 };
 
 export const listSkills = (): ReadonlyArray<SkillSummary> => {
@@ -172,12 +205,14 @@ export const removeSkill = (
 	name: string,
 ): { removed: boolean; deletedPath?: string; summary?: SkillSummary } => {
 	const context = loadConfigContext();
+	const builtin = resolveBuiltinSkill(name);
+	const canonicalName = builtin?.name ?? name;
 	const installed = parseInstalledSkills(context.document);
-	const summary = installed[name]
+	const summary = installed[canonicalName]
 		? {
-				name,
-				source: installed[name].source,
-				version: installed[name].version,
+				name: canonicalName,
+				source: installed[canonicalName].source,
+				version: installed[canonicalName].version,
 				status: "project" as const,
 			}
 		: undefined;
@@ -185,7 +220,7 @@ export const removeSkill = (
 	if (summary) {
 		const skills = ensureSkillsSection(context.document);
 		const nextInstalled = objectValue(skills.installed);
-		delete nextInstalled[name];
+		delete nextInstalled[canonicalName];
 		skills.version = 1;
 		if (Object.keys(nextInstalled).length > 0) {
 			skills.installed = nextInstalled;
@@ -196,13 +231,13 @@ export const removeSkill = (
 		writeYaml(context.writePath, context.document);
 	}
 
-	const skillDir = join(context.rootDir, ".agents", "skills", name);
+	const skillDir = join(context.rootDir, ".agents", "skills", canonicalName);
 	if (existsSync(skillDir)) {
 		rmSync(skillDir, { recursive: true, force: true });
 	}
 
 	return {
-		removed: summary !== undefined || existsSync(skillDir) === false,
+		removed: summary !== undefined || !existsSync(skillDir),
 		deletedPath: skillDir,
 		summary,
 	};
@@ -265,16 +300,18 @@ export const doctorSkillConfig = (): string => {
 };
 
 export const updateSkills = (name?: string): string => {
+	const context = loadConfigContext();
+
 	if (!name) {
 		for (const skill of BUILTIN_SKILLS) {
-			writeBundledSkill(loadConfigContext(), skill);
+			writeBundledSkill(context, skill);
 		}
 		return `refreshed ${BUILTIN_SKILLS.length} bundled skills from this fizzyx release.`;
 	}
 
 	const builtin = resolveBuiltinSkill(name);
 	if (builtin) {
-		writeBundledSkill(loadConfigContext(), builtin);
+		writeBundledSkill(context, builtin);
 		return `refreshed bundled skill ${builtin.name} at ${BUILTIN_SKILL_VERSION}.`;
 	}
 

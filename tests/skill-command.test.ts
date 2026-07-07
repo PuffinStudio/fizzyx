@@ -89,7 +89,7 @@ skills:
 
 		expect(exitCode).toBe(0);
 		expect(text).toContain("tdd");
-		expect(text).toContain("diagnose");
+		expect(text).toContain("diagnosing-bugs");
 		expect(text).toContain("security-review");
 		expect(text).toContain("local-docs");
 		expect(text).toContain("bundled");
@@ -240,7 +240,7 @@ test("skill remove tdd removes config entry and deletes local skill folder if pr
     tdd:
       source: builtin
       version: 1.0.0
-    diagnose:
+    diagnosing-bugs:
       source: builtin
       version: 1.0.0
 `,
@@ -253,7 +253,7 @@ test("skill remove tdd removes config entry and deletes local skill folder if pr
 		expect(exitCode).toBe(0);
 		expect(text).toContain("removed");
 		expect(yaml).not.toContain("\n    tdd:\n");
-		expect(yaml).toContain("diagnose:");
+		expect(yaml).toContain("diagnosing-bugs:");
 		expect(existsSync(skillDir)).toBe(false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -416,8 +416,8 @@ test("skill update tdd refreshes bundled skill content locally", async () => {
 		expect(text).toContain("tdd");
 		expect(text).toContain("refreshed");
 		expect(readFileSync(skillPath, "utf-8")).toContain("name: tdd");
-		expect(readFileSync(skillPath, "utf-8")).toContain("Test-Driven Development");
-		expect(readFileSync(skillPath, "utf-8")).toContain("Vertical slices via tracer bullets");
+		expect(readFileSync(skillPath, "utf-8")).toContain("Test-driven development");
+		expect(readFileSync(skillPath, "utf-8")).toContain("The TDD Cycle");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

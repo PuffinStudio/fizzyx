@@ -2,7 +2,7 @@ import { Array, Console, Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import {
 	checkPromotion,
-	loadConfig,
+	loadConfigOptional,
 	getProductionBranch,
 	getPromotionCommands,
 	formatPromotionChecks,
@@ -18,8 +18,8 @@ const handle = (config: {
 	agent: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
-		const projectConfig = yield* loadConfig().pipe(Effect.catch(() => Effect.succeed(undefined)));
-		const productionBranch = getProductionBranch(projectConfig ?? undefined);
+		const projectConfig = yield* loadConfigOptional();
+		const productionBranch = getProductionBranch(projectConfig);
 		const isProduction = config.to === productionBranch;
 
 		const checks = yield* checkPromotion(config.branch, config.to, projectConfig ?? undefined);
@@ -37,7 +37,7 @@ const handle = (config: {
 
 		if (!allPassed) {
 			if (config.agent) {
-				yield* Console.log(formatPromotionChecks(checks, true));
+				yield* Console.log(formatPromotionChecks(checks, true, config.branch, config.to));
 			}
 			yield* Console.log(ui.error("Some checks failed. Fix the issues and try again."));
 			return;
@@ -50,7 +50,7 @@ const handle = (config: {
 			return;
 		}
 
-		const commands = getPromotionCommands(config.branch, config.to, projectConfig ?? undefined);
+		const commands = getPromotionCommands(config.branch, config.to, projectConfig);
 		yield* Console.log("Commands that would run:");
 		for (const cmd of commands) {
 			yield* Console.log(`  ${ui.cmd(cmd.command)}  ${ui.dim(`# ${cmd.description}`)}`);
@@ -70,7 +70,7 @@ const handle = (config: {
 		}
 
 		if (config.agent) {
-			yield* Console.log(formatPromotionChecks(checks, true));
+			yield* Console.log(formatPromotionChecks(checks, true, config.branch, config.to));
 		}
 	});
 

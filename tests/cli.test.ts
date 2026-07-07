@@ -486,7 +486,7 @@ test("flow create --draft pre-fills title, assignee, and requested skills", asyn
 		writeFileSync(join(projectDir, ".fizzyx.yaml"), `api_url: https://example.com\n`);
 
 		const { stdout, exitCode } = await runCli(
-			["flow", "create", "Ellen", "测试卡-勿动", "--draft", "--skill", "diagnose"],
+			["flow", "create", "Ellen", "测试卡-勿动", "--draft", "--skill", "diagnosing-bugs"],
 			{
 				cwd: projectDir,
 			},
@@ -498,7 +498,7 @@ test("flow create --draft pre-fills title, assignee, and requested skills", asyn
 		expect(draftPath).toMatch(/^\.fizzyx\/card-.+\.md$/);
 		expect(draft).toContain("# 测试卡-勿动");
 		expect(draft).toContain("## Assignee\n- Ellen");
-		expect(draft).toContain("## Suggested Skills\n- diagnose");
+		expect(draft).toContain("## Suggested Skills\n- diagnosing-bugs");
 		expect(draft).not.toContain("- tdd\n\n## Plan");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -588,7 +588,7 @@ test("flow work suggests default skills from card type without skill config", as
 		});
 
 		expect(exitCode).toBe(0);
-		expect(stdout).toContain("suggested skills: diagnose, tdd");
+		expect(stdout).toContain("suggested skills: diagnosing-bugs, tdd");
 
 		api.stop();
 	} finally {

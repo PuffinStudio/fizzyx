@@ -3,106 +3,159 @@ name: tdd
 description: Test-driven development. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants integration tests.
 ---
 
-# Test-Driven Development
+# TDD / Test-driven development
 
-## Philosophy
+## The TDD Cycle
 
-**Core principle**: Tests should verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't.
+Build working software through a rapid, iterative cycle of test writing, production code, and refactoring.
 
-**Good tests** are integration-style: they exercise real code paths through public APIs. They describe _what_ the system does, not _how_ it does it. A good test reads like a specification - "user can checkout with valid cart" tells you exactly what capability exists. These tests survive refactors because they don't care about internal structure.
+---
 
-**Bad tests** are coupled to implementation. They mock internal collaborators, test private methods, or verify through external means (like querying a database directly instead of using the interface). The warning sign: your test breaks when you refactor, but behavior hasn't changed. If you rename an internal function and tests fail, those tests were testing implementation, not behavior.
+### Phase 1: Triangulation
 
-See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking guidelines.
+Before writing the first test, identify what you're going to build.
 
-## Anti-Pattern: Horizontal Slices
+- What are the acceptance criteria?
+- What's the smallest behavior that demonstrates value?
 
-**DO NOT write all tests first, then all implementation.** This is "horizontal slicing" - treating RED as "write all tests" and GREEN as "write all code."
+For a pure TDD exercise, **triangulate from the outside in**: what is the simplest end-to-end scenario that exercises this feature?
 
-This produces **crap tests**:
+Otherwise, pick an entry point that maps to a **meaningful, testable increment** — usually a top-level function or a component's public interface, not an internal helper.
 
-- Tests written in bulk test _imagined_ behavior, not _actual_ behavior
-- You end up testing the _shape_ of things (data structures, function signatures) rather than user-facing behavior
-- Tests become insensitive to real changes - they pass when behavior breaks, fail when behavior is fine
-- You outrun your headlights, committing to test structure before understanding the implementation
+Output: one sentence describing the first test scenario.
 
-**Correct approach**: Vertical slices via tracer bullets. One test → one implementation → repeat. Each test responds to what you learned from the previous cycle. Because you just wrote the code, you know exactly what behavior matters and how to verify it.
+---
+
+### Phase 2: Red
+
+Write a **failing** test. The test should:
+
+- Assert the desired behaviour for one specific scenario.
+- Compile and run, but fail — confirming the test is wired correctly and the feature doesn't exist yet.
+- Be minimal: no abstractions, no helper factories, no fixtures — just what you need for this single case.
+
+Commit `red`.
+
+---
+
+### Phase 3: Green
+
+Write the **minimum** production code to pass the test.
+
+- Hard-code a return value if that's what it takes.
+- Ignore edge cases, performance, and aesthetics.
+- Do not write code that isn't tested.
+
+Commit `green`.
+
+---
+
+### Phase 4: Refactor
+
+With all tests passing, improve the design of both production and test code:
+
+- Remove duplication between tests and between production code.
+- Improve naming.
+- Extract helpers/abstractions — but only if they simplify.
+
+After refactoring, all tests must still pass.
+
+Commit `refactor`.
+
+---
+
+### Phase 5: Repeat
+
+Return to **Phase 2 — Red** for the next scenario. The next scenario should be either:
+
+- **The next edge case** uncovered by the current implementation (is your current solution too specific? generalize it).
+- **The next acceptance criterion** in priority order.
+
+---
+
+## The rhythm
+
+Red → Green → Refactor → Red → Green → Refactor → ...
+
+Each cycle should be **seconds to minutes**, not hours. If a cycle drags, the increment is too large — make it smaller.
+
+---
+
+## Backfill testing
+
+The above applies to greenfield TDD. If you are working on an **existing codebase** with no tests, use **backfill testing**:
+
+1. Identify the **oldest, most stable** code — code that hasn't changed recently.
+2. Test through the **public API** only: call a function, examine the return.
+3. Use **property-based testing** (fast-check/vitest's `test.each`) to cover many inputs without writing many tests.
+4. Add tests **before** making changes — so you know you haven't broken anything.
+
+## Integration testing / stateful testing
+
+Integration tests test the behaviour of a system of components wired together. They:
+
+- Should be **scenario-based** — test a user journey, not a function.
+- Should exercise **real infrastructure** where possible (test database, test HTTP server).
+- Should test **state transitions** — given a known starting state, perform an action, assert the end state.
+
+Tools: `supertest` for HTTP, `@playwright/test` for browser, `@effect/vitest` for Effect-based services.
+
+---
+
+## Test architecture
+
+### Given / When / Then
+
+Structure each test case with clear sections:
+
+```typescript
+// Given — set up the world
+const user = await createUser({ plan: "free" });
+
+// When — perform the action
+const result = await upgradeToPro(user.id);
+
+// Then — assert on the outcome
+expect(result.success).toBe(true);
+expect(user.plan).toBe("pro");
+```
+
+Never test implementation details: private methods, internal state, or module internals.
+
+### Arrange / Act / Assert is the same structure with different words.
+
+---
+
+## Test double strategy
+
+- **Use the real thing** unless it's slow, non-deterministic, or impossible (3rd-party API).
+- **Fakes** are lightweight implementations of a real system (in-memory database, fake email sender). Prefer these.
+- **Mocks** should be used sparingly and only at system boundaries. Never mock what you don't own.
+- **Stubs** provide canned answers to calls made during the test. Use when you need specific error conditions.
+
+---
+
+## Co-located tests
+
+Tests live next to the code they test:
 
 ```
-WRONG (horizontal):
-  RED:   test1, test2, test3, test4, test5
-  GREEN: impl1, impl2, impl3, impl4, impl5
-
-RIGHT (vertical):
-  RED→GREEN: test1→impl1
-  RED→GREEN: test2→impl2
-  RED→GREEN: test3→impl3
-  ...
+src/
+  billing/
+    invoice.ts
+    invoice.test.ts
+    subscription.ts
+    subscription.test.ts
 ```
 
-## Workflow
+## What to test
 
-### 1. Planning
+Test behaviour, not implementation:
 
-When exploring the codebase, read `CONTEXT.md` (if it exists) so that test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
-
-Before writing any code:
-
-- [ ] Confirm with user what interface changes are needed
-- [ ] Confirm with user which behaviors to test (prioritize)
-- [ ] Identify opportunities for deep modules (small interface, deep implementation) — run the `/codebase-design` skill for the vocabulary and the testability checks
-- [ ] List the behaviors to test (not implementation steps)
-- [ ] Get user approval on the plan
-
-Ask: "What should the public interface look like? Which behaviors are most important to test?"
-
-**You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
-
-### 2. Tracer Bullet
-
-Write ONE test that confirms ONE thing about the system:
-
-```
-RED:   Write test for first behavior → test fails
-GREEN: Write minimal code to pass → test passes
-```
-
-This is your tracer bullet - proves the path works end-to-end.
-
-### 3. Incremental Loop
-
-For each remaining behavior:
-
-```
-RED:   Write next test → fails
-GREEN: Minimal code to pass → passes
-```
-
-Rules:
-
-- One test at a time
-- Only enough code to pass current test
-- Don't anticipate future tests
-- Keep tests focused on observable behavior
-
-### 4. Refactor
-
-After all tests pass, look for [refactor candidates](refactoring.md):
-
-- [ ] Extract duplication
-- [ ] Deepen modules (move complexity behind simple interfaces)
-- [ ] Apply SOLID principles where natural
-- [ ] Consider what new code reveals about existing code
-- [ ] Run tests after each refactor step
-
-**Never refactor while RED.** Get to GREEN first.
-
-## Checklist Per Cycle
-
-```
-[ ] Test describes behavior, not implementation
-[ ] Test uses public interface only
-[ ] Test would survive internal refactor
-[ ] Code is minimal for this test
-[ ] No speculative features added
-```
+| Test                   | Don't test                    |
+| ---------------------- | ----------------------------- |
+| Public API / interface | Private methods               |
+| State transitions      | Internal state                |
+| User-facing behaviour  | Framework internals           |
+| Business logic         | Boilerplate/config            |
+| Error handling         | Third-party library behaviour |

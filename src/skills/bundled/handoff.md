@@ -3,14 +3,12 @@ name: handoff
 description: Prepare a concise handoff for the next worker.
 ---
 
-# handoff
+Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS — not the current workspace.
 
-Use this when pausing or transferring work.
+Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
 
-Include:
+Do not duplicate content already captured in other artifacts (PRDs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
 
-- Current branch and commit.
-- What changed.
-- Verification already run.
-- Known risks.
-- Exact next action.
+Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
+
+If the user passed arguments, treat them as a description of what the next session will focus on and tailor the doc accordingly.
