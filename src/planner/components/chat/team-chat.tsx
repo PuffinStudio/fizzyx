@@ -3,7 +3,12 @@ import type { ChatUser } from "../../../domain/chat";
 import { PeerJSSignalProvider } from "../../../adapters/chat-peerjs";
 import { SubtleCryptoService } from "../../../adapters/chat-crypto-subtle";
 import { IndexedDBChatStorage } from "../../../adapters/chat-indexeddb";
-import type { CryptoService, SignalProvider, ChatStorage } from "../../../ports";
+import type {
+	CryptoService,
+	SignalProvider,
+	ChatStorage,
+	SignalServerConfig,
+} from "../../../ports";
 import { ChatProvider } from "./chat-provider";
 import { ChatPanel } from "./chat-panel";
 
@@ -13,10 +18,19 @@ export interface TeamChatProps {
 	readonly board: string;
 	readonly identity: ChatUser;
 	readonly members: ReadonlyArray<ChatUser>;
+	readonly signalServer?: SignalServerConfig;
 	readonly onClose: () => void;
 }
 
-export const TeamChat = ({ open, account, board, identity, members, onClose }: TeamChatProps) => {
+export const TeamChat = ({
+	open,
+	account,
+	board,
+	identity,
+	members,
+	signalServer,
+	onClose,
+}: TeamChatProps) => {
 	const [adapters, setAdapters] = useState<{
 		signal: SignalProvider;
 		crypto: CryptoService;
@@ -50,6 +64,7 @@ export const TeamChat = ({ open, account, board, identity, members, onClose }: T
 			signalProvider={adapters.signal}
 			cryptoService={adapters.crypto}
 			storage={adapters.storage}
+			signalServer={signalServer}
 		>
 			<ChatPanel onClose={onClose} />
 		</ChatProvider>

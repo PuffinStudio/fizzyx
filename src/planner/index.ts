@@ -7,6 +7,7 @@ import {
 	setPlannerCardDeadline,
 } from "../use-cases/planner-service";
 import { Live as ConfigRepoLive, makeBunConfigRepository } from "../adapters/bun-config-repository";
+import { loadAppConfig } from "../adapters/app-config";
 
 export type PlannerServerOptions = {
 	readonly port?: number;
@@ -70,6 +71,8 @@ export const startPlannerServer = async (
 		idleTimeout: 120,
 		routes: {
 			"/api/planner/avatar": async (req) => proxyAvatar(req),
+
+			"/api/planner/config": async () => plannerConfigResponse(),
 
 			"/api/planner/snapshot": async (req) => {
 				const requestUrl = new URL(req.url);
@@ -140,6 +143,15 @@ export const startPlannerServer = async (
 	console.log(`🚀 Planner service running at ${server.url}`);
 
 	return server;
+};
+
+const plannerConfigResponse = async (): Promise<Response> => {
+	try {
+		return Response.json(await loadAppConfig());
+	} catch (cause) {
+		const message = cause instanceof Error ? cause.message : String(cause);
+		return Response.json({ error: message }, { status: 400 });
+	}
 };
 
 const plannerJsonResponse = async <A>(effect: Effect.Effect<A, unknown>): Promise<Response> => {

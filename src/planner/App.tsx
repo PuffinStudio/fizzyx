@@ -31,6 +31,7 @@ import type {
 	PlannerView,
 	ViewDefinition,
 } from "./components/planner-types";
+import type { SignalServerConfig } from "../ports/chat-signal";
 import { ProjectOverview } from "./components/project-overview";
 import { RoadmapView } from "./components/roadmap-view";
 import "./styles/globals.css";
@@ -74,8 +75,15 @@ const views: ViewDefinition[] = [
 	},
 ];
 
+type PlannerClientConfig = {
+	readonly chat?: {
+		readonly signalServer?: SignalServerConfig;
+	};
+};
+
 export function App() {
 	const [snapshot, setSnapshot] = useState<PlannerSnapshot | null>(null);
+	const [plannerConfig, setPlannerConfig] = useState<PlannerClientConfig>({});
 	const [error, setError] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isRefreshing, setIsRefreshing] = useState(false);
@@ -135,7 +143,20 @@ export function App() {
 		}
 	};
 
+	const loadPlannerConfig = async () => {
+		try {
+			const response = await fetch("/api/planner/config");
+			const data = await response.json();
+			if (response.ok) {
+				setPlannerConfig(data);
+			}
+		} catch {
+			// Team chat falls back to the public PeerJS signaling server.
+		}
+	};
+
 	useEffect(() => {
+		void loadPlannerConfig();
 		void loadSnapshot();
 	}, []);
 
@@ -299,6 +320,7 @@ export function App() {
 					board={snapshot.board}
 					identity={snapshot.identity}
 					members={snapshot.users}
+					signalServer={plannerConfig.chat?.signalServer}
 					onClose={() => setChatOpen(false)}
 				/>
 			) : null}

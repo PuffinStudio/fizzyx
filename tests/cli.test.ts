@@ -226,12 +226,13 @@ test("prints flow help", async () => {
 	expect(stdout).not.toContain("\n  init");
 });
 
-test("planner --help lists start and snapshot only", async () => {
+test("planner --help lists planner commands", async () => {
 	const { stdout, exitCode } = await runCli(["planner", "--help"]);
 
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("start");
 	expect(stdout).toContain("snapshot");
+	expect(stdout).toContain("chat-config");
 	expect(stdout).not.toContain("health");
 	expect(stdout).not.toContain("repair-metadata");
 	expect(stdout).not.toContain("auto-fix");

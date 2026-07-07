@@ -58,11 +58,14 @@ Start a local planner dashboard backed directly by the Fizzy API:
 ```sh
 fizzyx planner start
 fizzyx planner snapshot
+fizzyx planner chat-config --host peer.example.com --port 443 --path /peerjs
 ```
 
 ![Planner dashboard workflow](./docs/images/planner-workflow.png)
 
 `planner snapshot` prints the same JSON used by the web dashboard. Project workflow uses `BACKLOG → READY → IN PROGRESS → REVIEW → DONE`, with `DONE` coming from closed cards and `BLOCKED` from Not Now/postponed cards.
+
+`planner chat-config` stores the Team Chat signaling server globally in `~/.config/fizzyx/config.yaml`. Use `--insecure` for local HTTP/ws PeerServer instances.
 
 Planner conventions use tags for filtering:
 
