@@ -148,6 +148,8 @@ devTest("dev status --agent reports branch role, branch, dirty files, and blocke
 		expect(output).toContain("feature");
 		expect(output).toContain("dirty:");
 		expect(output).toMatch(/blockers?|dirty[ _]files?/);
+		expect(output).toContain("dirty_policy:");
+		expect(output).toContain("only changes made in this task");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -383,6 +385,25 @@ devTest("dev ready --agent outputs machine-readable fields", async () => {
 		expect(result.exitCode).toBe(0);
 		expect(output).toContain("ready:");
 		expect(output).toContain("blocked:");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev ready --agent tells agents how to handle their own dirty changes", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		writeFileSync(join(root, "agent-edit.txt"), "agent edit\n");
+		const result = await runCli(["dev", "ready", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("ready: no");
+		expect(output).toContain("next_action:");
+		expect(output).toContain("only changes made in this task");
+		expect(output).toContain("pre-existing user changes");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

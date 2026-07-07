@@ -798,21 +798,24 @@ guards.
 
 It should tell agents to:
 
-1. Run `fizzyx dev status --agent`.
+1. Run `fizzyx dev status --agent` and treat its `dirty_files` as the baseline for
+   pre-existing user changes.
 2. Classify the task: feature, fix, hotfix, ops, chore, docs, or tiny follow-up.
 3. Decide whether a new branch is needed using the branch decision table.
 4. Use `fizzyx dev start` only when the current branch is unsuitable.
-5. Use `fizzyx dev sync` instead of raw `git merge main`.
-6. Use `fizzyx dev checkpoint` for long-running work.
-7. Use task-specific skills when appropriate:
+5. Commit or checkpoint only files changed by the current task; leave pre-existing dirty
+   files out unless the user explicitly asks.
+6. Use `fizzyx dev sync` instead of raw `git merge main`.
+7. Use `fizzyx dev checkpoint` for long-running work.
+8. Use task-specific skills when appropriate:
    - `diagnose` for bugs.
    - `tdd` for feature or bugfix implementation.
    - `security-review` for auth, secrets, payments, user input, or production-sensitive
      changes.
    - `handoff` before pausing or transferring work.
-8. Run `fizzyx dev ready --agent` before reporting completion.
-9. Use `fizzyx dev promote --dry-run` for environment or production movement.
-10. Report blocked states instead of guessing.
+9. Run `fizzyx dev ready --agent` before reporting completion.
+10. Use `fizzyx dev promote --dry-run` for environment or production movement.
+11. Report blocked states instead of guessing.
 
 ### What the Skill Must Not Do
 
@@ -826,6 +829,9 @@ The skill must not instruct agents to:
 - Use `git reset --hard` as cleanup.
 - Treat a Fizzy card as required for Git work.
 - Create new branches for tiny follow-ups on an already suitable feature branch.
+- Refuse to commit just because the worktree is dirty when the dirty files are the agent's
+  own current-task edits.
+- Commit pre-existing dirty files unless the user explicitly asks.
 
 ### Skill Invocation by Scenario
 
@@ -933,6 +939,8 @@ Projects can copy this into `AGENTS.md`:
 ## Git workflow for agents
 
 - Run `fizzyx dev status --agent` before code edits.
+- Treat the initial `dirty_files` as user-owned. Commit/checkpoint only files changed by
+  the current task unless the user explicitly asks.
 - Never edit protected branches directly: main, master, production, stable, release/\*.
 - Do not create a new branch when already on the correct non-protected branch.
 - Create a feature/fix/hotfix/ops/chore/docs branch for independently shippable work.

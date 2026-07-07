@@ -61,6 +61,8 @@ export interface GitCommand {
 type DevEffect<A> = Effect.Effect<A, ConfigError | FileError | ValidationError, ConfigRepository>;
 
 const WIP_COMMIT_GREP = "^wip[:(]";
+const AGENT_DIRTY_POLICY =
+	"Record dirty_files before editing. Commit or checkpoint only changes made in this task; do not commit pre-existing user changes without explicit approval.";
 
 const runGit = (
 	args: ReadonlyArray<string>,
@@ -287,11 +289,11 @@ const computeNextAction = (
 ): string => {
 	if (role === "protected") {
 		return dirty
-			? "Commit or stash changes before creating a feature branch."
+			? "Working tree is dirty on a protected branch. Preserve pre-existing changes, or move your own edits to a proper work branch before committing."
 			: `Run 'fizzyx dev start <slug> --kind feature' to start work.`;
 	}
 	if (dirty) {
-		return "Commit or checkpoint changes with 'fizzyx dev checkpoint'.";
+		return "If these are your task edits, stage only your files and run 'fizzyx dev checkpoint' or commit properly. If they pre-existed, stop and ask.";
 	}
 	if (behind > 0) {
 		return "Branch is behind base. Run 'fizzyx dev sync' to rebase.";
@@ -312,6 +314,7 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
 			`ahead: ${status.ahead}`,
 			`behind: ${status.behind}`,
 			`has_upstream: ${status.hasUpstream ? "yes" : "no"}`,
+			`dirty_policy: ${AGENT_DIRTY_POLICY}`,
 		];
 		if (status.card) lines.push(`card: ${status.card}`);
 		if (status.nextAction) lines.push(`next_action: ${status.nextAction}`);
@@ -637,6 +640,11 @@ export const formatReady = (result: DevReadyResult, agent: boolean): string => {
 		];
 		for (const reason of result.blockedReasons) {
 			lines.push(`  - ${reason}`);
+		}
+		if (result.blockedReasons.some((reason) => reason.includes("uncommitted changes"))) {
+			lines.push(
+				`next_action: Stage and commit/checkpoint only changes made in this task; do not commit pre-existing user changes without explicit approval.`,
+			);
 		}
 		for (const check of result.checksRun) {
 			lines.push(`check: ${check.name} ${check.passed ? "passed" : "failed"}`);
