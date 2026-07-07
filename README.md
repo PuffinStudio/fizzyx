@@ -2,7 +2,7 @@
 
 > CLI tool for Fizzy board workflow, OSS/S3-compatible storage, and OpenAPI client generation.
 
-> <img src="./docs/images/fizzyx-logo.png" alt="fizzyx logo" width="120" />
+> <img src="./docs/images/fizzyx-logo.webp" alt="fizzyx logo" width="120" />
 
 ## Install
 
@@ -31,7 +31,7 @@ fizzyx flow repair
 
 Use `fizzyx skill ...` for bundled skills and project pins. Use flow commands for repair and health checks.
 
-![Flow command lifecycle](./docs/images/flow-workflow.png)
+![Flow command lifecycle](./docs/images/flow-workflow.webp)
 
 ## Dev Commands (AI Agent Git Workflow)
 
@@ -72,7 +72,7 @@ fizzyx skill migrate --apply
 
 Built-in skills are bundled. `skill update [name]` refreshes the local copy from the current fizzyx release.
 
-![Skill command workflow](./docs/images/skill-workflow.png)
+![Skill command workflow](./docs/images/skill-workflow.webp)
 
 ## Planner Dashboard
 
@@ -84,7 +84,7 @@ fizzyx planner snapshot
 fizzyx planner chat-config --host peer.example.com --port 443 --path /peerjs
 ```
 
-![Planner dashboard workflow](./docs/images/planner-workflow.png)
+![Planner dashboard workflow](./docs/images/planner-workflow.webp)
 
 `planner snapshot` prints the same JSON used by the web dashboard. Project workflow uses `BACKLOG → READY → IN PROGRESS → REVIEW → DONE`, with `DONE` coming from closed cards and `BLOCKED` from Not Now/postponed cards.
 
@@ -134,7 +134,7 @@ fizzyx oss setup --env dev
 - Credentials are stored in OS keychain via `Bun.secrets`, never in config files or shell history
 - Without `--env`, keys are stored as `default` — all environments fall back to it
 
-![OSS command workflow](./docs/images/oss-workflow.png)
+![OSS command workflow](./docs/images/oss-workflow.webp)
 
 ### Sync
 
@@ -278,7 +278,7 @@ const result = await someAction();
 fizzyx openapi list
 ```
 
-![OpenAPI generation workflow](./docs/images/openapi-workflow.png)
+![OpenAPI generation workflow](./docs/images/openapi-workflow.webp)
 
 ### Initialize OpenAPI config
 
