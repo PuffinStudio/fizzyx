@@ -6,7 +6,7 @@ import {
 	loadConfigOptional,
 	isOnCompatibleBranch,
 } from "../../use-cases/dev-service";
-import { logSuccess } from "../ui";
+import { logInfo, logSuccess } from "../ui";
 
 const handle = (config: {
 	slug: string;
@@ -35,7 +35,7 @@ const handle = (config: {
 			yield* Console.log(`On protected branch '${status.currentBranch}'. Creating a new branch.`);
 		}
 
-		const branchName = yield* startBranch(config.slug, {
+		const result = yield* startBranch(config.slug, {
 			kind,
 			card,
 			base: Option.getOrElse(config.base, () => undefined),
@@ -43,7 +43,12 @@ const handle = (config: {
 			fromCurrent: config.fromCurrent,
 		});
 
-		yield* logSuccess(`Created and switched to branch '${branchName}'`);
+		yield* logSuccess(`Created and switched to branch '${result.branchName}'`);
+		if (result.configUpdated) {
+			yield* logInfo(
+				`Updated .fizzyx.yaml with branch metadata${result.configPath ? ` (${result.configPath})` : ""}`,
+			);
+		}
 	});
 
 export const devStartCmd = Command.make(

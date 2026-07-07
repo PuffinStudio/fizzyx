@@ -346,6 +346,12 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
 export const getProductionBranch = (config?: ProjectConfig): string =>
 	config?.dev?.productionBranch ?? config?.dev?.defaultBase ?? "main";
 
+export type StartBranchResult = {
+	branchName: string;
+	configUpdated: boolean;
+	configPath?: string;
+};
+
 export const startBranch = (
 	slug: string,
 	options: {
@@ -355,7 +361,7 @@ export const startBranch = (
 		allowDirty?: boolean;
 		fromCurrent?: boolean;
 	},
-): DevEffect<string> =>
+): DevEffect<StartBranchResult> =>
 	Effect.gen(function* () {
 		const configRepo = yield* ConfigRepo;
 		const projectConfig = yield* configRepo.loadProjectConfig();
@@ -383,6 +389,8 @@ export const startBranch = (
 
 		yield* runGit(["checkout", "-b", branchName]);
 
+		let configUpdated = false;
+		let configPath: string | undefined;
 		if (options.card) {
 			const currentBranches = devConfig?.branches ?? {};
 			const metadata: DevBranchMetadata = {
@@ -396,9 +404,11 @@ export const startBranch = (
 				dev: { ...projectConfig.dev, branches: { ...currentBranches, [branchName]: metadata } },
 			};
 			yield* configRepo.saveProjectConfig(updatedConfig);
+			configUpdated = true;
+			configPath = projectConfig.configPath;
 		}
 
-		return branchName;
+		return { branchName, configUpdated, configPath };
 	});
 
 export const isOnCompatibleBranch = (
@@ -905,6 +915,33 @@ export const getPromotionCommands = (
 			];
 	}
 };
+
+export interface PromotionStepResult {
+	command: string;
+	description: string;
+	exitCode: number;
+	output: string;
+}
+
+export const applyPromotion = (
+	commands: ReadonlyArray<GitCommand>,
+): Effect.Effect<ReadonlyArray<PromotionStepResult>, ValidationError> =>
+	Effect.gen(function* () {
+		const results: PromotionStepResult[] = [];
+		for (const cmd of commands) {
+			const result = yield* runShell(cmd.command);
+			results.push({
+				command: cmd.command,
+				description: cmd.description,
+				exitCode: result.exitCode,
+				output: result.stdout,
+			});
+			if (result.exitCode !== 0) {
+				return results;
+			}
+		}
+		return results;
+	});
 
 const getMergedBranches = (
 	base: string,

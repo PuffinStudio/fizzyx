@@ -8,6 +8,8 @@ export const formatLoadingNextTaskMessage = (): string => "Loading next task..."
 
 export const formatLoadingCardDetailsMessage = (): string => "Loading card details...";
 
+export const formatTogglingStepMessage = (): string => "Toggling step...";
+
 export const formatLoadingWorkSummaryMessage = (): string => "Loading work summary...";
 
 export const formatStartingCardMessage = (): string => "Starting card...";

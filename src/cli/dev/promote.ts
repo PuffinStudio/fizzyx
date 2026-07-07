@@ -5,6 +5,7 @@ import {
 	loadConfigOptional,
 	getProductionBranch,
 	getPromotionCommands,
+	applyPromotion,
 	formatPromotionChecks,
 } from "../../use-cases/dev-service";
 import { ui } from "../ui";
@@ -61,10 +62,34 @@ const handle = (config: {
 				yield* Console.log(ui.error("Production promotion requires --confirm-production."));
 				return;
 			}
-			yield* Console.log(ui.warn("--apply execution not yet implemented in MVP."));
-			yield* Console.log(
-				ui.info("Execute the commands manually or run with --dry-run to preview."),
-			);
+			yield* Console.log(ui.info(`Executing promotion: ${config.branch} -> ${config.to}`));
+			yield* Console.log("");
+			const results = yield* applyPromotion(commands);
+			let failed = false;
+			for (const r of results) {
+				const icon = r.exitCode === 0 ? "✓" : "✗";
+				yield* Console.log(`  ${icon} ${ui.cmd(r.command)}  ${ui.dim(`# ${r.description}`)}`);
+				if (r.output) {
+					yield* Console.log(
+						r.output
+							.split("\n")
+							.map((l) => `      ${l}`)
+							.join("\n"),
+					);
+				}
+				if (r.exitCode !== 0) {
+					failed = true;
+					break;
+				}
+			}
+			yield* Console.log("");
+			if (failed) {
+				yield* Console.log(
+					ui.error("Promotion stopped: a command failed. Resolve the issue and re-run."),
+				);
+			} else {
+				yield* Console.log(ui.success(`Promoted ${config.branch} -> ${config.to}.`));
+			}
 		} else {
 			if (isProduction && !config.confirmProduction) {
 				yield* Console.log(ui.error("Production promotion requires --confirm-production."));
