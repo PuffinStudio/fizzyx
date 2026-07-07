@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Kanban, Keyboard, MessageSquare, RefreshCw } from "lucide-react";
+import { ChevronsUpDown, Clock, Kanban, Keyboard, MessageSquare, RefreshCw } from "lucide-react";
 import {
 	Sidebar,
 	SidebarContent,
@@ -14,10 +14,21 @@ import {
 	SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { UserAvatar, UserAvatarLabel } from "./user-avatar-label";
-import type { PlannerSnapshot, PlannerView, ViewDefinition } from "./planner-types";
+import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "./ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import type { PlannerBoard, PlannerSnapshot, PlannerView, ViewDefinition } from "./planner-types";
 
 export function PlannerShell({
 	snapshot,
+	boards,
+	selectedBoard,
 	loading,
 	isRefreshing,
 	activeView,
@@ -25,12 +36,17 @@ export function PlannerShell({
 	onViewChange,
 	onRefresh,
 	onShowShortcuts,
+	boardPickerOpen,
+	onBoardPickerOpenChange,
+	onBoardChange,
 	onToggleChat,
 	chatOpen,
 	chatOnlineCount,
 	children,
 }: {
 	snapshot: PlannerSnapshot | null;
+	boards: PlannerBoard[];
+	selectedBoard: string | null;
 	loading: boolean;
 	isRefreshing: boolean;
 	activeView: PlannerView;
@@ -38,11 +54,20 @@ export function PlannerShell({
 	onViewChange: (view: PlannerView) => void;
 	onRefresh: () => Promise<void>;
 	onShowShortcuts: (show: boolean) => void;
+	boardPickerOpen: boolean;
+	onBoardPickerOpenChange: (open: boolean) => void;
+	onBoardChange: (boardId: string) => void;
 	onToggleChat?: () => void;
 	chatOpen?: boolean;
 	chatOnlineCount?: number;
 	children: React.ReactNode;
 }) {
+	const selectedBoardValue = selectedBoard ?? snapshot?.board ?? "";
+	const selectedBoardLabel =
+		boards.find((board) => board.id === selectedBoardValue)?.name ||
+		snapshot?.boardName ||
+		selectedBoardValue ||
+		"Board";
 	const footerPillClass =
 		"h-10 w-full rounded-full border border-sidebar-border/70 bg-background px-3 text-xs text-sidebar-foreground/75 flex items-center gap-2 transition-all hover:bg-sidebar-accent hover:text-sidebar-foreground";
 
@@ -64,9 +89,62 @@ export function PlannerShell({
 							</div>
 							<div className="mt-2 flex min-w-0 items-center gap-2">
 								<Kanban className="size-4 text-sidebar-foreground/80" />
-								<p className="truncate text-sm text-sidebar-foreground">
-									{snapshot?.boardName || snapshot?.board || "Board not loaded"}
-								</p>
+								{boards.length > 0 ? (
+									<Popover open={boardPickerOpen} onOpenChange={onBoardPickerOpenChange}>
+										<PopoverTrigger
+											render={
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													disabled={loading}
+													className="min-w-0 flex-1 justify-between rounded-xl bg-sidebar-accent/45 px-2.5 text-sidebar-foreground hover:bg-sidebar-accent"
+												/>
+											}
+											aria-label="Board"
+										>
+											<span className="min-w-0 flex-1 truncate text-left">
+												{selectedBoardLabel}
+											</span>
+											<ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+										</PopoverTrigger>
+										<PopoverContent
+											align="start"
+											sideOffset={6}
+											className="w-64 overflow-hidden rounded-2xl p-0"
+										>
+											<Command
+												filter={(value, search) =>
+													value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+												}
+											>
+												<CommandInput placeholder="Search boards" />
+												<CommandList>
+													<CommandEmpty>No boards found</CommandEmpty>
+													<CommandGroup>
+														{boards.map((board) => (
+															<CommandItem
+																key={board.id}
+																value={`${board.name || board.id} ${board.id}`}
+																data-checked={board.id === selectedBoardValue}
+																onSelect={() => {
+																	onBoardChange(board.id);
+																	onBoardPickerOpenChange(false);
+																}}
+															>
+																<span className="truncate">{board.name || board.id}</span>
+															</CommandItem>
+														))}
+													</CommandGroup>
+												</CommandList>
+											</Command>
+										</PopoverContent>
+									</Popover>
+								) : (
+									<p className="truncate text-sm text-sidebar-foreground">
+										{snapshot?.boardName || snapshot?.board || "Board not loaded"}
+									</p>
+								)}
 							</div>
 						</div>
 					</div>

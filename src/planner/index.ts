@@ -4,6 +4,7 @@ import { plannerRoute } from "./planner-html";
 import {
 	loadPlannerSnapshotForRequest,
 	loadPlannerSnapshot,
+	loadPlannerContext,
 	setPlannerCardDeadline,
 } from "../use-cases/planner-service";
 import { Live as ConfigRepoLive, makeBunConfigRepository } from "../adapters/bun-config-repository";
@@ -49,7 +50,9 @@ const refreshPlannerSnapshotInBackground = (snapshot: { account: string; board: 
 	const key = `${snapshot.account}:${snapshot.board}`;
 	if (plannerSnapshotRefreshes.has(key)) return;
 
-	const refresh = Effect.runPromise(loadPlannerSnapshot().pipe(Effect.provide(ConfigRepoLive)))
+	const refresh = Effect.runPromise(
+		loadPlannerSnapshot({ boardId: snapshot.board }).pipe(Effect.provide(ConfigRepoLive)),
+	)
 		.then(() => undefined)
 		.finally(() => {
 			plannerSnapshotRefreshes.delete(key);
@@ -74,11 +77,15 @@ export const startPlannerServer = async (
 
 			"/api/planner/config": async () => plannerConfigResponse(),
 
+			"/api/planner/context": async () =>
+				plannerJsonResponse(loadPlannerContext().pipe(Effect.provide(ConfigRepoLive))),
+
 			"/api/planner/snapshot": async (req) => {
 				const requestUrl = new URL(req.url);
 				const requestIsFresh = requestUrl.searchParams.get("fresh") === "1";
+				const boardId = cleanQueryValue(requestUrl.searchParams.get("board"));
 				return plannerJsonResponse(
-					loadPlannerSnapshotForRequest({ fresh: requestIsFresh })
+					loadPlannerSnapshotForRequest({ fresh: requestIsFresh, boardId })
 						.pipe(Effect.provide(ConfigRepoLive))
 						.pipe(
 							Effect.map((decision) => {
@@ -91,9 +98,11 @@ export const startPlannerServer = async (
 				);
 			},
 
-			"/api/planner/health": async () =>
-				plannerJsonResponse(
-					loadPlannerSnapshot().pipe(
+			"/api/planner/health": async (req) => {
+				const requestUrl = new URL(req.url);
+				const boardId = cleanQueryValue(requestUrl.searchParams.get("board"));
+				return plannerJsonResponse(
+					loadPlannerSnapshot({ boardId }).pipe(
 						Effect.provide(ConfigRepoLive),
 						Effect.map((snapshot) => ({
 							generatedAt: snapshot.generatedAt,
@@ -101,19 +110,28 @@ export const startPlannerServer = async (
 							recommendations: snapshot.recommendations,
 						})),
 					),
-				),
+				);
+			},
 
 			"/api/planner/update-deadline": {
 				POST: async (req) => {
 					let cardNumber: number | undefined;
 					let deadline: string | undefined;
+					let boardId: string | undefined;
 					try {
-						const body = (await req.json()) as { cardNumber?: unknown; deadline?: unknown };
+						const body = (await req.json()) as {
+							cardNumber?: unknown;
+							deadline?: unknown;
+							board?: unknown;
+						};
 						if (typeof body.cardNumber === "number" && Number.isInteger(body.cardNumber)) {
 							cardNumber = body.cardNumber;
 						}
 						if (typeof body.deadline === "string") {
 							deadline = body.deadline;
+						}
+						if (typeof body.board === "string" && body.board.trim().length > 0) {
+							boardId = body.board.trim();
 						}
 					} catch {}
 
@@ -122,7 +140,9 @@ export const startPlannerServer = async (
 					}
 
 					return plannerJsonResponse(
-						setPlannerCardDeadline({ cardNumber, deadline }).pipe(Effect.provide(ConfigRepoLive)),
+						setPlannerCardDeadline({ cardNumber, deadline, boardId }).pipe(
+							Effect.provide(ConfigRepoLive),
+						),
 					);
 				},
 			},
@@ -152,6 +172,11 @@ const plannerConfigResponse = async (): Promise<Response> => {
 		const message = cause instanceof Error ? cause.message : String(cause);
 		return Response.json({ error: message }, { status: 400 });
 	}
+};
+
+const cleanQueryValue = (value: string | null): string | undefined => {
+	const trimmed = value?.trim();
+	return trimmed && trimmed.length > 0 ? trimmed : undefined;
 };
 
 const plannerJsonResponse = async <A>(effect: Effect.Effect<A, unknown>): Promise<Response> => {

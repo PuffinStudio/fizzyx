@@ -16,6 +16,9 @@ export type ShortcutAction =
 	| "showShortcuts"
 	| "focusSearch"
 	| "toggleChat"
+	| "showBoards"
+	| "previousBoard"
+	| "nextBoard"
 	| "newCard";
 
 export interface Shortcut {
@@ -27,6 +30,9 @@ export interface Shortcut {
 export const SHORTCUTS: Shortcut[] = [
 	{ key: "d", description: "Toggle dark/light theme", action: "toggleTheme" },
 	{ key: "r", description: "Refresh board data", action: "refresh" },
+	{ key: "b", description: "Open board switcher", action: "showBoards" },
+	{ key: "[", description: "Previous board", action: "previousBoard" },
+	{ key: "]", description: "Next board", action: "nextBoard" },
 	{ key: "c", description: "Toggle team chat", action: "toggleChat" },
 	{ key: "/", description: "Focus search", action: "focusSearch" },
 	{ key: "?", description: "Show keyboard shortcuts", action: "showShortcuts" },
@@ -38,6 +44,9 @@ export function useKeyboardShortcuts(
 	onToggleTheme: () => void,
 	onFocusSearch?: () => void,
 	onToggleChat?: () => void,
+	onShowBoards?: () => void,
+	onPreviousBoard?: () => void,
+	onNextBoard?: () => void,
 ) {
 	const [showShortcuts, setShowShortcuts] = useState(false);
 
@@ -63,6 +72,15 @@ export function useKeyboardShortcuts(
 			} else if (key === "c" && onToggleChat) {
 				event.preventDefault();
 				onToggleChat();
+			} else if (key === "b" && onShowBoards) {
+				event.preventDefault();
+				onShowBoards();
+			} else if (key === "[" && onPreviousBoard) {
+				event.preventDefault();
+				onPreviousBoard();
+			} else if (key === "]" && onNextBoard) {
+				event.preventDefault();
+				onNextBoard();
 			} else if (key === "/" && onFocusSearch) {
 				event.preventDefault();
 				onFocusSearch();
@@ -73,7 +91,15 @@ export function useKeyboardShortcuts(
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [onRefresh, onToggleTheme, onToggleChat]);
+	}, [
+		onRefresh,
+		onToggleTheme,
+		onToggleChat,
+		onFocusSearch,
+		onShowBoards,
+		onPreviousBoard,
+		onNextBoard,
+	]);
 
 	return { showShortcuts, setShowShortcuts };
 }

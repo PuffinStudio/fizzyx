@@ -13,9 +13,6 @@ const CREDENTIALS_DIR = "credentials";
 /** Cache subdirectory */
 const CACHE_DIR = "cache";
 
-/** Update check timestamp file */
-const LAST_UPDATE_CHECK = "last-update-check";
-
 /** Global fizzyx app config file */
 const APP_CONFIG_FILE = "config.yaml";
 
@@ -31,10 +28,6 @@ export const resolveFizzyxConfigDir = (): string => `${resolveHome()}/${FIZZYX_C
 /** ~/.config/fizzyx/config.yaml */
 export const resolveAppConfigPath = (): string =>
 	`${resolveHome()}/${FIZZYX_CONFIG_DIR}/${APP_CONFIG_FILE}`;
-
-/** ~/.config/fizzyx/last-update-check */
-export const resolveLastUpdateCheckPath = (): string =>
-	`${resolveHome()}/${FIZZYX_CONFIG_DIR}/${LAST_UPDATE_CHECK}`;
 
 /** ~/.config/fizzyx/credentials/<safeName>.json */
 export const resolveCredentialPath = (profile: string): string =>

@@ -35,7 +35,7 @@ if (plannerHtml === undefined) {
 const bundledPlannerHtmlModule = `
 	export const plannerRoute = new Response(${JSON.stringify(plannerHtml)}, {
 		headers: {
-			"cache-control": "public, max-age=3600",
+			"cache-control": "no-store",
 			"content-type": "text/html; charset=utf-8",
 		},
 	});

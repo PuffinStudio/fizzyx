@@ -1,7 +1,10 @@
 import { Effect } from "effect";
 import { ConfigError, FileError } from "../domain/errors";
-import { ConfigRepo, type ConfigRepository } from "../ports/config-repository";
+import type { ProjectConfig } from "../domain/models";
+import type { PlannerRuntimeApi } from "../adapters/planner-runtime";
+import type { ConfigRepository } from "../ports/config-repository";
 import type {
+	PlannerContext,
 	PlannerRepairMetadataChange,
 	PlannerRepairMetadataOptions,
 	PlannerRepairMetadataResult,
@@ -17,7 +20,7 @@ import {
 	buildPlannerRecommendations,
 	buildPlannerSummary,
 } from "./planner-analytics";
-import { makePlannerServiceRuntime } from "./planner-runtime-context";
+import { makePlannerServiceRuntime, resolvePlannerServiceConfig } from "./planner-runtime-context";
 import { loadPlannerSnapshotCache, writePlannerSnapshotCache } from "./planner-snapshot-cache";
 import {
 	mergeCards,
@@ -35,47 +38,78 @@ import { convertDescription } from "./flow-card-content";
 
 export { analyzePlannerHealth } from "./planner-analytics";
 
-export const loadPlannerSnapshot = (): Effect.Effect<
-	PlannerSnapshot,
+export const buildPlannerContext = (
+	config: ProjectConfig,
+	runtime: PlannerRuntimeApi,
+): Effect.Effect<PlannerContext, Error> =>
+	runtime.listBoards(config.account).pipe(
+		Effect.map((items) => items.map((board) => ({ id: board.id, name: board.name }))),
+		Effect.map(
+			(boards) =>
+				({
+					account: config.account,
+					...(config.board ? { defaultBoard: config.board } : {}),
+					boards,
+				}) satisfies PlannerContext,
+		),
+	);
+
+export const loadPlannerContext = (): Effect.Effect<
+	PlannerContext,
 	ConfigError | FileError | Error,
 	ConfigRepository
 > =>
 	Effect.gen(function* () {
 		const { config, runtime } = yield* makePlannerServiceRuntime();
-		if (!config.board) {
+		return yield* buildPlannerContext(config, runtime);
+	});
+
+export const loadPlannerSnapshot = ({
+	boardId,
+}: {
+	readonly boardId?: string;
+} = {}): Effect.Effect<PlannerSnapshot, ConfigError | FileError | Error, ConfigRepository> =>
+	Effect.gen(function* () {
+		const resolved = yield* resolvePlannerServiceConfig({ boardId });
+		const selectedBoardId = resolved.config.board;
+		if (!selectedBoardId) {
 			return yield* Effect.fail(new Error("No board configured. Run: fizzyx setup <board-id>"));
 		}
+		const { config, runtime } = yield* makePlannerServiceRuntime({ boardId });
 
 		const accountId = config.account;
-		const boardId = config.board;
 
 		const [identity, board, users, columns, postponedCards, closedCards, tags] = yield* Effect.all([
 			runtime.getMyIdentity().pipe(
 				Effect.map((value) => toIdentityUser(value, accountId)),
 				Effect.catch(() => Effect.succeed(undefined)),
 			),
-			runtime.getBoard(accountId, boardId).pipe(Effect.catch(() => Effect.succeed(undefined))),
+			runtime
+				.getBoard(accountId, selectedBoardId)
+				.pipe(Effect.catch(() => Effect.succeed(undefined))),
 			runtime.listUsers(accountId).pipe(
 				Effect.map((items) =>
 					items.filter((user) => user.active).map((u) => toPlannerUser(u, accountId)),
 				),
 				Effect.catch(() => Effect.succeed([])),
 			),
-			runtime.listColumns(accountId, boardId).pipe(Effect.catch(() => Effect.succeed([]))),
-			runtime.listPostponedCards(accountId, boardId),
-			runtime.listClosedCards(accountId, boardId),
+			runtime.listColumns(accountId, selectedBoardId).pipe(Effect.catch(() => Effect.succeed([]))),
+			runtime.listPostponedCards(accountId, selectedBoardId),
+			runtime.listClosedCards(accountId, selectedBoardId),
 			runtime.listTags(accountId),
 		]);
 		const openCards = (yield* Effect.forEach(columns, (column) =>
 			runtime
-				.listColumnCards(accountId, boardId, column.id)
+				.listColumnCards(accountId, selectedBoardId, column.id)
 				.pipe(Effect.map((cards) => cards.map((card) => ({ ...card, column }))))
 				.pipe(Effect.catch(() => Effect.succeed([]))),
 		)).flat();
 		const [streamCards, listedCards] = yield* Effect.all([
-			runtime.listStreamCards(accountId, boardId).pipe(Effect.catch(() => Effect.succeed([]))),
 			runtime
-				.listCards(accountId, { "board_ids[]": [boardId], all: true })
+				.listStreamCards(accountId, selectedBoardId)
+				.pipe(Effect.catch(() => Effect.succeed([]))),
+			runtime
+				.listCards(accountId, { "board_ids[]": [selectedBoardId], all: true })
 				.pipe(Effect.catch(() => Effect.succeed([]))),
 		]);
 
@@ -114,8 +148,8 @@ export const loadPlannerSnapshot = (): Effect.Effect<
 			generatedAt: new Date().toISOString(),
 			cache: "fresh",
 			account: accountId,
-			board: boardId,
-			boardName: board?.name || boardId,
+			board: selectedBoardId,
+			boardName: board?.name || selectedBoardId,
 			identity,
 			users: visibleUsers,
 			columns: columns.map((column) => ({ id: column.id, name: column.name })),
@@ -131,6 +165,7 @@ export const loadPlannerSnapshot = (): Effect.Effect<
 
 const resolvePlannerSnapshotRoute = ({
 	fresh,
+	boardId,
 }: PlannerSnapshotRequest): Effect.Effect<
 	PlannerSnapshotRouteDecision,
 	ConfigError | FileError | Error,
@@ -138,15 +173,15 @@ const resolvePlannerSnapshotRoute = ({
 > =>
 	Effect.gen(function* () {
 		if (fresh) {
-			const snapshot = yield* loadPlannerSnapshot();
+			const snapshot = yield* loadPlannerSnapshot({ boardId });
 			return { snapshot, triggerBackgroundRefresh: false };
 		}
 
-		const cached = yield* loadCachedPlannerSnapshot().pipe(
+		const cached = yield* loadCachedPlannerSnapshot({ boardId }).pipe(
 			Effect.catch(() => Effect.succeed(null)),
 		);
 		if (cached === null) {
-			const snapshot = yield* loadPlannerSnapshot();
+			const snapshot = yield* loadPlannerSnapshot({ boardId });
 			return { snapshot, triggerBackgroundRefresh: false };
 		}
 
@@ -155,6 +190,7 @@ const resolvePlannerSnapshotRoute = ({
 
 export const loadPlannerSnapshotForRequest = ({
 	fresh = false,
+	boardId,
 }: Partial<PlannerSnapshotRequest> = {}): Effect.Effect<
 	PlannerSnapshotRouteDecision,
 	ConfigError | FileError | Error,
@@ -162,16 +198,16 @@ export const loadPlannerSnapshotForRequest = ({
 > =>
 	resolvePlannerSnapshotRoute({
 		fresh,
+		boardId,
 	});
 
-export const loadCachedPlannerSnapshot = (): Effect.Effect<
-	PlannerSnapshot | null,
-	ConfigError | FileError,
-	ConfigRepository
-> =>
+export const loadCachedPlannerSnapshot = ({
+	boardId,
+}: {
+	readonly boardId?: string;
+} = {}): Effect.Effect<PlannerSnapshot | null, ConfigError | FileError | Error, ConfigRepository> =>
 	Effect.gen(function* () {
-		const configRepo = yield* ConfigRepo;
-		const config = yield* configRepo.loadProjectConfig();
+		const { config } = yield* resolvePlannerServiceConfig({ boardId });
 		if (!config.board) return null;
 		const cached = yield* loadPlannerSnapshotCache(config.account, config.board);
 		if (cached === null) return null;
@@ -250,10 +286,11 @@ export const setPlannerCardDeadline = (
 	input: PlannerSetDeadlineInput,
 ): Effect.Effect<PlannerUpdateDeadlineResult, ConfigError | FileError | Error, ConfigRepository> =>
 	Effect.gen(function* () {
-		const { config, runtime } = yield* makePlannerServiceRuntime();
-		if (!config.board) {
+		const resolved = yield* resolvePlannerServiceConfig({ boardId: input.boardId });
+		if (!resolved.config.board) {
 			return yield* Effect.fail(new Error("No board configured. Run: fizzyx setup <board-id>"));
 		}
+		const { config, runtime } = yield* makePlannerServiceRuntime({ boardId: input.boardId });
 
 		if (!Number.isInteger(input.cardNumber) || input.cardNumber <= 0) {
 			return yield* Effect.fail(new Error("Invalid card number"));

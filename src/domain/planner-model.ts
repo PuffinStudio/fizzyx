@@ -49,6 +49,17 @@ export interface PlannerRecommendation {
 	score: number;
 }
 
+export interface PlannerBoard {
+	id: string;
+	name: string;
+}
+
+export interface PlannerContext {
+	account: string;
+	defaultBoard?: string;
+	boards: ReadonlyArray<PlannerBoard>;
+}
+
 export interface PlannerSnapshot {
 	generatedAt: string;
 	cache?: "fresh" | "stale";
@@ -98,6 +109,7 @@ export interface PlannerUpdateDeadlineResult {
 export interface PlannerSetDeadlineInput {
 	cardNumber: number;
 	deadline?: string;
+	boardId?: string;
 }
 
 export const REPAIRABLE_METADATA_ISSUE_CODES = new Set(["missing_priority", "missing_type"]);
@@ -117,4 +129,5 @@ export interface PlannerSnapshotRouteDecision {
 
 export interface PlannerSnapshotRequest {
 	fresh: boolean;
+	boardId?: string;
 }

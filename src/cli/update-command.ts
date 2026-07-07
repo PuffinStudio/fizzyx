@@ -1,9 +1,11 @@
 import { Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { VERSION } from "../_shared/version";
+import { checkFizzyxUpdate, installFizzyxTarget } from "../use-cases/update-service";
 import {
 	formatAlreadyUpToDate,
 	formatInstallRunning,
+	formatLocalVersionNewer,
 	formatUpdateAvailable,
 	formatUpdatedTo,
 	formatUpdateCheckMessage,
@@ -11,56 +13,43 @@ import {
 } from "./update-output";
 import { logSuccess, logInfo, logWarn, logError } from "./ui";
 
-const CHECK_URL = "https://registry.npmjs.org/@puffinstudio/fizzyx/latest";
-const PACKAGE_NAME = "@puffinstudio/fizzyx";
-
 const handleUpdate = (): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		yield* logInfo(formatUpdateCheckMessage());
 
-		const latest = yield* Effect.tryPromise({
-			try: async (): Promise<string> => {
-				const res = await fetch(CHECK_URL, {
-					signal: AbortSignal.timeout(5000),
-				});
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				const data = (await res.json()) as { version?: string };
-				if (!data.version) throw new Error("No version field");
-				return data.version;
-			},
+		const plan = yield* Effect.tryPromise({
+			try: () => checkFizzyxUpdate({ currentVersion: VERSION }),
 			catch: (cause) =>
-				new Error(
-					`Failed to check for updates: ${cause instanceof Error ? cause.message : String(cause)}`,
-				),
+				new Error(`Update check failed: ${cause instanceof Error ? cause.message : String(cause)}`),
 		});
 
-		if (latest === VERSION) {
+		if (plan.status === "already-current") {
 			yield* logSuccess(formatAlreadyUpToDate(VERSION));
 			return;
 		}
 
-		yield* logWarn(formatUpdateAvailable(VERSION, latest));
-		yield* logInfo(formatInstallRunning());
+		if (plan.status === "local-newer") {
+			yield* logWarn(formatLocalVersionNewer(plan.currentVersion, plan.latestVersion));
+			return;
+		}
 
-		const proc = yield* Effect.tryPromise({
-			try: async () => {
-				const p = Bun.spawnSync(["bun", "add", "-g", PACKAGE_NAME], {
-					stdio: ["inherit", "inherit", "inherit"],
-				});
-				return p;
-			},
+		yield* logWarn(formatUpdateAvailable(plan.currentVersion, plan.latestVersion));
+		yield* logInfo(formatInstallRunning(plan.target));
+
+		const installResult = yield* Effect.tryPromise({
+			try: () => installFizzyxTarget(plan.target),
 			catch: (cause) =>
 				new Error(
 					`Failed to run installer: ${cause instanceof Error ? cause.message : String(cause)}`,
 				),
 		});
 
-		if (proc.exitCode !== 0) {
-			yield* logError(formatUpdateInstallFailed());
-			return;
+		if (installResult.exitCode !== 0) {
+			yield* logError(formatUpdateInstallFailed(installResult.exitCode));
+			return yield* Effect.fail(new Error("Update installation failed"));
 		}
 
-		yield* logSuccess(formatUpdatedTo(latest));
+		yield* logSuccess(formatUpdatedTo(plan.latestVersion));
 	});
 
 export const updateCmd = Command.make("update", {}, handleUpdate).pipe(

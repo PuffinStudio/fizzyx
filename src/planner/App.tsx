@@ -26,6 +26,7 @@ import { useQueryState } from "nuqs";
 import { parseAsInteger, parseAsString, parseAsStringEnum } from "nuqs";
 import type {
 	PlannerCard,
+	PlannerContext,
 	PlannerIssue,
 	PlannerSnapshot,
 	PlannerView,
@@ -35,6 +36,8 @@ import type { SignalServerConfig } from "../ports/chat-signal";
 import { ProjectOverview } from "./components/project-overview";
 import { RoadmapView } from "./components/roadmap-view";
 import "./styles/globals.css";
+
+const GLOBAL_BOARD_STORAGE_KEY = "fizzyx.planner.selectedBoard";
 
 const views: ViewDefinition[] = [
 	{
@@ -83,12 +86,15 @@ type PlannerClientConfig = {
 
 export function App() {
 	const [snapshot, setSnapshot] = useState<PlannerSnapshot | null>(null);
+	const [plannerContext, setPlannerContext] = useState<PlannerContext | null>(null);
 	const [plannerConfig, setPlannerConfig] = useState<PlannerClientConfig>({});
 	const [error, setError] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [chatOpen, setChatOpen] = useState(false);
+	const [boardPickerOpen, setBoardPickerOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useQueryState("q", parseAsString.withDefault(""));
+	const [selectedBoard, setSelectedBoard] = useQueryState("board", parseAsString);
 	const [view, setView] = useQueryState(
 		"view",
 		parseAsStringEnum<PlannerView>([
@@ -105,7 +111,15 @@ export function App() {
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const normalizedSearchQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
 
-	const loadSnapshot = async (fresh = false) => {
+	const buildSnapshotUrl = (fresh: boolean, boardId?: string | null): string => {
+		const params = new URLSearchParams();
+		if (fresh) params.set("fresh", "1");
+		if (boardId) params.set("board", boardId);
+		const suffix = params.toString();
+		return suffix ? `/api/planner/snapshot?${suffix}` : "/api/planner/snapshot";
+	};
+
+	const loadSnapshot = async (fresh = false, boardId = selectedBoard) => {
 		const shouldShowRefreshing = snapshot !== null;
 
 		if (shouldShowRefreshing) {
@@ -116,15 +130,13 @@ export function App() {
 
 		setError(null);
 		try {
-			const response = await fetch(
-				fresh ? "/api/planner/snapshot?fresh=1" : "/api/planner/snapshot",
-			);
+			const response = await fetch(buildSnapshotUrl(fresh, boardId));
 			const data = await response.json();
 			if (!response.ok) throw new Error(data.error || "Failed to load planner snapshot");
 			setSnapshot(data);
 			if (!fresh && data.cache === "stale") {
 				try {
-					const freshResponse = await fetch("/api/planner/snapshot?fresh=1");
+					const freshResponse = await fetch(buildSnapshotUrl(true, boardId));
 					const freshData = await freshResponse.json();
 					if (freshResponse.ok) {
 						setSnapshot(freshData);
@@ -155,10 +167,76 @@ export function App() {
 		}
 	};
 
+	const loadPlannerContext = async () => {
+		try {
+			const response = await fetch("/api/planner/context");
+			const data = (await response.json()) as PlannerContext | { error?: string };
+			if (!response.ok) {
+				throw new Error(
+					"error" in data
+						? data.error || "Failed to load planner context"
+						: "Failed to load planner context",
+				);
+			}
+
+			const context = data as PlannerContext;
+			setPlannerContext(context);
+
+			const storedBoard =
+				typeof window === "undefined"
+					? null
+					: window.localStorage.getItem(GLOBAL_BOARD_STORAGE_KEY);
+			const candidate =
+				selectedBoard || context.defaultBoard || storedBoard || context.boards[0]?.id || null;
+			const boardExists =
+				candidate !== null && context.boards.some((board) => board.id === candidate);
+			const nextBoard = boardExists ? candidate : (context.boards[0]?.id ?? null);
+			if (!nextBoard) {
+				throw new Error("No boards available for this account");
+			}
+
+			if (nextBoard !== selectedBoard) {
+				void setSelectedBoard(nextBoard);
+			}
+			window.localStorage.setItem(GLOBAL_BOARD_STORAGE_KEY, nextBoard);
+			await loadSnapshot(false, nextBoard);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+			setIsLoading(false);
+		}
+	};
+
 	useEffect(() => {
 		void loadPlannerConfig();
-		void loadSnapshot();
+		void loadPlannerContext();
 	}, []);
+
+	const handleBoardChange = (boardId: string) => {
+		if (!boardId || boardId === selectedBoard) return;
+		void setSelectedBoard(boardId);
+		window.localStorage.setItem(GLOBAL_BOARD_STORAGE_KEY, boardId);
+		void setSelectedCardNumber(null);
+		setIsLoading(true);
+		setSnapshot(null);
+		void loadSnapshot(false, boardId);
+	};
+
+	const switchBoardByOffset = (offset: -1 | 1) => {
+		const boards = plannerContext?.boards ?? [];
+		if (boards.length < 2) return;
+
+		const currentBoard = selectedBoard ?? snapshot?.board ?? boards[0]?.id;
+		const currentIndex = boards.findIndex((board) => board.id === currentBoard);
+		const startIndex = currentIndex >= 0 ? currentIndex : 0;
+		const nextIndex = (startIndex + offset + boards.length) % boards.length;
+		const nextBoard = boards[nextIndex];
+		if (nextBoard) handleBoardChange(nextBoard.id);
+	};
+
+	const openBoardPicker = () => {
+		if (!plannerContext || plannerContext.boards.length === 0) return;
+		setBoardPickerOpen(true);
+	};
 
 	const { showShortcuts, setShowShortcuts } = useKeyboardShortcuts(
 		loadSnapshot,
@@ -168,6 +246,9 @@ export function App() {
 			searchInputRef.current?.select();
 		},
 		() => setChatOpen((v) => !v),
+		openBoardPicker,
+		() => switchBoardByOffset(-1),
+		() => switchBoardByOffset(1),
 	);
 
 	const selectedCard =
@@ -206,11 +287,11 @@ export function App() {
 			const response = await fetch("/api/planner/update-deadline", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ cardNumber, deadline: deadline ?? "" }),
+				body: JSON.stringify({ cardNumber, deadline: deadline ?? "", board: snapshot?.board }),
 			});
 			const data = await response.json();
 			if (!response.ok) throw new Error(data.error || "Failed to update deadline");
-			await loadSnapshot(true);
+			await loadSnapshot(true, snapshot?.board ?? selectedBoard);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		}
@@ -255,7 +336,7 @@ export function App() {
 						variant="outline"
 						size="sm"
 						className="rounded-full px-6"
-						onClick={() => void loadSnapshot()}
+						onClick={() => void (plannerContext ? loadSnapshot() : loadPlannerContext())}
 					>
 						Retry
 					</Button>
@@ -267,13 +348,18 @@ export function App() {
 	return (
 		<PlannerShell
 			snapshot={snapshot}
-			loading={isLoading || isRefreshing}
+			boards={plannerContext?.boards ?? []}
+			selectedBoard={selectedBoard}
+			loading={isLoading && snapshot === null}
 			isRefreshing={isRefreshing}
 			activeView={view}
 			views={views}
 			onViewChange={(next) => void setView(next)}
 			onRefresh={loadSnapshot}
 			onShowShortcuts={setShowShortcuts}
+			boardPickerOpen={boardPickerOpen}
+			onBoardPickerOpenChange={setBoardPickerOpen}
+			onBoardChange={handleBoardChange}
 			onToggleChat={() => setChatOpen((v) => !v)}
 			chatOpen={chatOpen}
 		>
@@ -392,9 +478,6 @@ function PlannerHeader({
 					<div className="mb-3 flex flex-wrap items-center gap-2">
 						<Badge className="rounded-full bg-primary/15 text-primary dark:text-primary">
 							Planner
-						</Badge>
-						<Badge className="rounded-full" variant="outline">
-							{snapshot.cache === "stale" ? "cached" : "live"}
 						</Badge>
 					</div>
 					<h1 className="text-3xl font-semibold tracking-tight">{activeView.label}</h1>

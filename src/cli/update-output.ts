@@ -5,8 +5,12 @@ export const formatUpdateAvailable = (currentVersion: string, latestVersion: str
 
 export const formatUpdatedTo = (latestVersion: string): string => `Updated to ${latestVersion}`;
 
-export const formatUpdateInstallFailed = (): string => "Update installation failed";
+export const formatLocalVersionNewer = (currentVersion: string, latestVersion: string): string =>
+	`Current version (${currentVersion}) is newer than the latest registry version (${latestVersion})`;
 
-export const formatInstallRunning = (): string => "Installing...";
+export const formatUpdateInstallFailed = (exitCode: number): string =>
+	`Update installation failed with exit code ${exitCode}`;
+
+export const formatInstallRunning = (target: string): string => `Installing ${target} with Bun...`;
 
 export const formatUpdateCheckMessage = (): string => "Checking for updates...";

@@ -137,7 +137,7 @@ const saveCredentials = (
 	});
 
 const findConfigPath = (): Effect.Effect<string, ConfigError> =>
-	Effect.sync(() => {
+	Effect.gen(function* () {
 		let dir = process.cwd();
 		while (true) {
 			const primary = `${dir}/${CONFIG_FILE}`;
@@ -148,42 +148,30 @@ const findConfigPath = (): Effect.Effect<string, ConfigError> =>
 			if (parent === dir) break;
 			dir = parent;
 		}
-		throw new ConfigError({
-			message: `No ${CONFIG_FILE} or ${LEGACY_CONFIG_FILE} found from ${process.cwd()}`,
-		});
-	}).pipe(
-		Effect.catch((error) =>
-			isTaggedError(error, "ConfigError")
-				? Effect.fail(error)
-				: Effect.fail(new ConfigError({ message: String(error) })),
-		),
-	);
+		return yield* Effect.fail(
+			new ConfigError({
+				message: `No ${CONFIG_FILE} or ${LEGACY_CONFIG_FILE} found from ${process.cwd()}`,
+			}),
+		);
+	});
 
 const credentialPath = (profile: string): Effect.Effect<string, FileError> =>
-	Effect.sync(() => {
+	Effect.gen(function* () {
 		const home = process.env.HOME;
-		if (!home) throw new FileError({ message: "HOME is not set" });
+		if (!home) {
+			return yield* Effect.fail(new FileError({ message: "HOME is not set" }));
+		}
 		return `${home}/.config/fizzyx/credentials/${safeName(profile)}.json`;
-	}).pipe(
-		Effect.catch((error) =>
-			isTaggedError(error, "FileError")
-				? Effect.fail(error)
-				: Effect.fail(new FileError({ message: String(error) })),
-		),
-	);
+	});
 
 const officialConfigPath = (): Effect.Effect<string, FileError> =>
-	Effect.sync(() => {
+	Effect.gen(function* () {
 		const home = process.env.HOME;
-		if (!home) throw new FileError({ message: "HOME is not set" });
+		if (!home) {
+			return yield* Effect.fail(new FileError({ message: "HOME is not set" }));
+		}
 		return `${home}/${OFFICIAL_CONFIG_FILE}`;
-	}).pipe(
-		Effect.catch((error) =>
-			isTaggedError(error, "FileError")
-				? Effect.fail(error)
-				: Effect.fail(new FileError({ message: String(error) })),
-		),
-	);
+	});
 
 const readText = (path: string): Effect.Effect<string, FileError> =>
 	Effect.tryPromise({

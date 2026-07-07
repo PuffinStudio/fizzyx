@@ -20,6 +20,7 @@ export interface PlannerRuntimeApi {
 		board?: string;
 	};
 	getMyIdentity: () => Effect.Effect<GetMyIdentityResponseContent, Error>;
+	listBoards: (accountId: string) => Effect.Effect<ReadonlyArray<Board>, Error>;
 	getBoard: (accountId: string, boardId: string) => Effect.Effect<Board, Error>;
 	listUsers: (accountId: string) => Effect.Effect<ReadonlyArray<User>, Error>;
 	listColumns: (accountId: string, boardId: string) => Effect.Effect<ReadonlyArray<Column>, Error>;
@@ -71,6 +72,7 @@ export const makePlannerRuntime = (
 			board: config.board,
 		},
 		getMyIdentity: () => runSingle(Fizzy.getMyIdentity()),
+		listBoards: (accountId) => runArray(Fizzy.listBoards({ accountId })),
 		getBoard: (accountId, boardId) => runSingle(Fizzy.getBoard({ accountId, boardId })),
 		listUsers: (accountId) => runArray(Fizzy.listUsers({ accountId })),
 		listColumns: (accountId, boardId) => runArray(Fizzy.listColumns({ accountId, boardId })),

@@ -1,6 +1,5 @@
 import { Command } from "effect/unstable/cli";
 import { VERSION } from "../_shared/version";
-import { checkForUpdate } from "../_shared/auto-update";
 import { setupCmd } from "./setup-command";
 import { authCmd } from "./auth-command";
 import { flowCmd } from "./flow-command";
@@ -27,6 +26,5 @@ const rootCmd = Command.make("fizzyx").pipe(
 );
 
 export const runCli = (args: ReadonlyArray<string>) => {
-	checkForUpdate();
 	return Command.runWith(rootCmd, { version: VERSION })(args);
 };

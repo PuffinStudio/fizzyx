@@ -75,6 +75,17 @@ export type PlannerSnapshot = {
 	recommendations: PlannerRecommendation[];
 };
 
+export type PlannerBoard = {
+	id: string;
+	name: string;
+};
+
+export type PlannerContext = {
+	account: string;
+	defaultBoard?: string;
+	boards: PlannerBoard[];
+};
+
 export type SelectCard = (card: PlannerCard) => void;
 
 export type ViewDefinition = {
