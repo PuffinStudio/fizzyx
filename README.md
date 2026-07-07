@@ -33,6 +33,29 @@ Use `fizzyx skill ...` for bundled skills and project pins. Use flow commands fo
 
 ![Flow command lifecycle](./docs/images/flow-workflow.png)
 
+## Dev Commands (AI Agent Git Workflow)
+
+Use these for guard-railed branching and promotion checks (documented in
+`docs/ai-agent-git-workflow.md`):
+
+```sh
+fizzyx dev status --agent
+fizzyx dev start <slug> --kind <feature|fix|hotfix|ops|chore|docs> [--card <id>]
+fizzyx dev sync
+fizzyx dev checkpoint [--message <message>]
+fizzyx dev ready [--agent] [--full]
+fizzyx dev promote <source> --to <environment|main> --dry-run
+fizzyx dev cleanup <branch>
+fizzyx dev doctor
+```
+
+Production promotions stay guarded:
+
+```sh
+fizzyx dev promote <source> --to main --dry-run   # preview + blocking checks
+fizzyx dev promote <source> --to main --apply --confirm-production
+```
+
 ## Skill Commands
 
 ```sh

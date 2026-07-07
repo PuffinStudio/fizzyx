@@ -10,6 +10,7 @@ import {
 } from "../_shared/config-utils";
 import { ValidationError } from "../domain/errors";
 import codebaseDesignContent from "../skills/bundled/codebase-design.md" with { type: "text" };
+import devWorkflowContent from "../skills/bundled/dev-workflow.md" with { type: "text" };
 import diagnoseContent from "../skills/bundled/diagnose.md" with { type: "text" };
 import handoffContent from "../skills/bundled/handoff.md" with { type: "text" };
 import improveCodebaseContent from "../skills/bundled/improve-codebase.md" with { type: "text" };
@@ -42,6 +43,13 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		runHint:
 			"Run `codebase-design` by reading the skill instructions before changing architecture.",
 		content: codebaseDesignContent,
+	},
+	{
+		name: "dev-workflow",
+		description: "Apply branch-first, guard-railed delivery with fizzyx dev commands.",
+		runHint:
+			"Run `dev-workflow` and follow branch, sync, checkpoint, and ready checks before completion.",
+		content: devWorkflowContent,
 	},
 	{
 		name: "diagnose",
@@ -94,6 +102,10 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 ];
 
 const BUILTIN_BY_NAME = new Map(BUILTIN_SKILLS.map((skill) => [skill.name, skill] as const));
+const BUNDLE_ALIASES: Readonly<Record<string, string>> = {
+	"git-workflow": "dev-workflow",
+	"agent-git": "dev-workflow",
+};
 const MATT_POCOCK_ALIASES: Readonly<Record<string, string>> = {
 	"improve-codebase-architecture": "improve-codebase",
 	diagnosing: "diagnose",
@@ -208,10 +220,20 @@ export const getSkillInfo = (name: string): SkillSummary => {
 		};
 	}
 
-	const builtin = BUILTIN_BY_NAME.get(name);
+	const builtin = resolveBuiltinSkill(name);
 	if (builtin) {
+		const canonicalInstalledMeta = installed[builtin.name];
+		if (canonicalInstalledMeta) {
+			return {
+				name: builtin.name,
+				source: canonicalInstalledMeta.source,
+				version: canonicalInstalledMeta.version,
+				status: "project",
+			};
+		}
+
 		return {
-			name,
+			name: builtin.name,
 			source: "builtin",
 			version: BUILTIN_SKILL_VERSION,
 			status: "bundled",
@@ -222,7 +244,7 @@ export const getSkillInfo = (name: string): SkillSummary => {
 };
 
 export const runSkill = (name: string): string => {
-	const builtin = BUILTIN_BY_NAME.get(name);
+	const builtin = resolveBuiltinSkill(name);
 	if (builtin) {
 		return builtin.runHint;
 	}
@@ -278,6 +300,10 @@ export const migrateSkills = (mode: "check" | "apply"): string => {
 const resolveBuiltinSkill = (source: string): BuiltinSkill | undefined => {
 	const direct = BUILTIN_BY_NAME.get(source);
 	if (direct) return direct;
+	const alias = BUNDLE_ALIASES[source];
+	if (alias) {
+		return BUILTIN_BY_NAME.get(alias);
+	}
 	const mattPreset = source.match(/^mattpocock\/(.+)$/);
 	if (!mattPreset?.[1]) return undefined;
 	return BUILTIN_BY_NAME.get(MATT_POCOCK_ALIASES[mattPreset[1]] ?? mattPreset[1]);

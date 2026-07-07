@@ -66,6 +66,8 @@ const makeConfigRepo = (): ConfigRepository =>
 			Effect.fail(new FileError({ message: "config repo not mocked", path: "/tmp/.fizzy.yaml" })),
 		setupOpenApiConfig: () =>
 			Effect.fail(new FileError({ message: "config repo not mocked", path: "/tmp/.fizzy.yaml" })),
+		saveProjectConfig: () =>
+			Effect.fail(new FileError({ message: "config repo not mocked", path: "/tmp/.fizzy.yaml" })),
 	}) as ConfigRepository;
 
 const defaultApi = () =>

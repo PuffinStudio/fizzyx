@@ -426,6 +426,286 @@ skills:
 	}
 });
 
+test("loadProjectConfig parses dev workflow config block", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+	const originalCwd = process.cwd();
+
+	try {
+		process.chdir(root);
+		writeFileSync(
+			configPath,
+			`api_url: https://example.com
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users: {}
+dev:
+  production_branch: main
+  default_base: main
+  sync_strategy: rebase
+  protected_branches:
+    - main
+    - master
+    - production
+  environment_branches:
+    dev:
+      deploys_to: development
+      aggregate: true
+  branch_prefixes:
+    feature: feature
+    fix: fix
+    hotfix: hotfix
+    ops: ops
+    chore: chore
+    docs: docs
+    maintenance: maintenance
+  checks:
+    ready:
+      - bun --bun run check
+    hotfix:
+      - bun --bun run check
+  promotion:
+    strategy: pr
+    allow_direct_production_merge: false
+    block_environment_to_production: true
+    require_confirm_production: true
+    require_ready_for_production: true
+  stale_after_days: 7
+  commit:
+    conventional: true
+  branches:
+    feature/card-123-payment-coupon:
+      card: 123
+      kind: feature
+      base: main
+      created_at: "2026-07-07T00:00:00Z"
+`,
+		);
+
+		const config = await Effect.runPromise(repo.loadProjectConfig());
+
+		expect(config.dev).toMatchObject({
+			productionBranch: "main",
+			defaultBase: "main",
+			syncStrategy: "rebase",
+			protectedBranches: ["main", "master", "production"],
+			environmentBranches: {
+				dev: {
+					deploysTo: "development",
+					aggregate: true,
+				},
+			},
+			branchPrefixes: {
+				feature: "feature",
+				fix: "fix",
+				hotfix: "hotfix",
+				ops: "ops",
+				chore: "chore",
+				docs: "docs",
+				maintenance: "maintenance",
+			},
+			checks: {
+				ready: ["bun --bun run check"],
+				hotfix: ["bun --bun run check"],
+			},
+			promotion: {
+				strategy: "pr",
+				blockEnvironmentToProduction: true,
+				requireConfirmProduction: true,
+				requireReadyForProduction: true,
+			},
+			staleAfterDays: 7,
+			commit: {
+				conventional: true,
+			},
+			branches: {
+				"feature/card-123-payment-coupon": {
+					card: 123,
+					kind: "feature",
+					base: "main",
+					createdAt: "2026-07-07T00:00:00Z",
+				},
+			},
+		});
+		expect(config.dev?.promotion?.allowDirectProductionMerge).toBeUndefined();
+	} finally {
+		process.chdir(originalCwd);
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("setupProjectConfig preserves existing dev config block", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+	const originalCwd = process.cwd();
+
+	try {
+		process.chdir(root);
+		writeFileSync(
+			configPath,
+			`api_url: https://example.com
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users: {}
+dev:
+  production_branch: main
+  promotion:
+    strategy: merge
+    allow_direct_production_merge: true
+`,
+		);
+
+		await Effect.runPromise(
+			repo.setupProjectConfig({
+				account: "1",
+				board: "board-1",
+				todoColumn: "todo-id",
+				inProgressColumn: "inprogress-id",
+				users: {},
+				apiUrl: "https://example.com",
+				configPath,
+			}),
+		);
+
+		const text = await Bun.file(configPath).text();
+		expect(text).toContain("dev:");
+		expect(text).toContain("production_branch: main");
+		expect(text).toContain("promotion:");
+		expect(text).toContain("strategy: merge");
+		expect(text).toContain("allow_direct_production_merge: true");
+
+		const config = await Effect.runPromise(repo.loadProjectConfig());
+		expect(config.dev?.promotion?.strategy).toBe("merge");
+	} finally {
+		process.chdir(originalCwd);
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("setupProjectConfig renders dev config block from input", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+	const originalCwd = process.cwd();
+
+	try {
+		process.chdir(root);
+		writeFileSync(
+			configPath,
+			`api_url: https://example.com
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users: {}
+`,
+		);
+
+		await Effect.runPromise(
+			repo.setupProjectConfig({
+				account: "1",
+				board: "board-1",
+				todoColumn: "todo-id",
+				inProgressColumn: "inprogress-id",
+				users: {},
+				apiUrl: "https://example.com",
+				configPath,
+				dev: {
+					productionBranch: "main",
+					defaultBase: "main",
+					syncStrategy: "rebase",
+					protectedBranches: ["main", "master", "production"],
+					environmentBranches: {
+						dev: {
+							deploysTo: "development",
+							aggregate: true,
+						},
+					},
+					branchPrefixes: {
+						feature: "feature",
+						fix: "fix",
+						hotfix: "hotfix",
+						ops: "ops",
+						chore: "chore",
+						docs: "docs",
+						maintenance: "maintenance",
+					},
+					checks: {
+						ready: ["bun --bun run check"],
+						hotfix: ["bun --bun run check --hotfix"],
+					},
+					promotion: {
+						strategy: "pr",
+						allowDirectProductionMerge: true,
+						blockEnvironmentToProduction: true,
+						requireConfirmProduction: true,
+						requireReadyForProduction: true,
+					},
+					staleAfterDays: 30,
+					commit: {
+						conventional: true,
+						allowWipOnReady: true,
+					},
+					branches: {
+						"feature/card-42-order-ui": {
+							card: 42,
+							kind: "feature",
+							base: "main",
+							createdAt: "2026-07-07T12:00:00Z",
+						},
+					},
+				},
+			}),
+		);
+
+		const text = await Bun.file(configPath).text();
+		expect(text).toContain("dev:");
+		expect(text).toContain("production_branch: main");
+		expect(text).toContain("default_base: main");
+		expect(text).toContain("sync_strategy: rebase");
+		expect(text).toContain("protected_branches:");
+		expect(text).toContain("- main");
+		expect(text).toContain("deploys_to: development");
+		expect(text).toContain("aggregate: true");
+		expect(text).toContain("branch_prefixes:");
+		expect(text).toContain("feature: feature");
+		expect(text).toContain("checks:");
+		expect(text).toContain("ready:");
+		expect(text).toContain("bun --bun run check");
+		expect(text).toContain("promotion:");
+		expect(text).toContain("strategy: pr");
+		expect(text).toContain("allow_direct_production_merge: true");
+		expect(text).toContain("block_environment_to_production: true");
+		expect(text).toContain("require_confirm_production: true");
+		expect(text).toContain("require_ready_for_production: true");
+		expect(text).toContain("stale_after_days: 30");
+		expect(text).toContain("conventional: true");
+		expect(text).toContain("allow_wip_on_ready: true");
+		expect(text).toContain("feature/card-42-order-ui:");
+
+		const config = await Effect.runPromise(repo.loadProjectConfig());
+		expect(config.dev?.syncStrategy).toBe("rebase");
+		expect(config.dev?.promotion?.strategy).toBe("pr");
+		expect(config.dev?.commit?.allowWipOnReady).toBe(true);
+		expect(config.dev?.branches?.["feature/card-42-order-ui"]?.card).toBe(42);
+	} finally {
+		process.chdir(originalCwd);
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 describe("OSS config", () => {
 	test("setupOssConfig writes non-sensitive config without credentials", async () => {
 		const root = mkdtempSync(join(tmpdir(), "fizzyx-oss-"));

@@ -18,6 +18,7 @@ import {
 	renderOpenApiConfig,
 	renderOssConfig,
 	renderProjectConfig,
+	serializeProjectConfig,
 } from "./config-codec";
 
 export const makeBunConfigRepository = (): ConfigRepository => ({
@@ -63,6 +64,12 @@ export const makeBunConfigRepository = (): ConfigRepository => ({
 				});
 			}
 			return parsed;
+		}),
+
+	saveProjectConfig: (config) =>
+		Effect.gen(function* () {
+			const text = serializeProjectConfig(config);
+			yield* writeText(config.configPath, text, 0o600);
 		}),
 
 	setupOpenApiConfig: (input: OpenApiSetupInput) =>

@@ -226,15 +226,15 @@ production changes.
 
 ### Branch Decision Table
 
-| Situation | Recommended action |
-| --- | --- |
-| On `main` and changing code | Create a feature, fix, hotfix, ops, chore, or docs branch |
-| On `dev`/`test`/`uat`/`staging` and starting an independently shippable change | Create a feature or maintenance branch |
-| On an existing branch for the same task | Continue on the current branch |
-| Documentation-only edit on a non-protected branch | Continue on the current branch |
-| Small follow-up to current branch purpose | Continue on the current branch |
-| Dependency, migration, generated code, deployment, auth, data, or production change | Create a branch |
-| Incident or urgent production repair | Create a `hotfix/*` branch from production |
+| Situation                                                                           | Recommended action                                        |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| On `main` and changing code                                                         | Create a feature, fix, hotfix, ops, chore, or docs branch |
+| On `dev`/`test`/`uat`/`staging` and starting an independently shippable change      | Create a feature or maintenance branch                    |
+| On an existing branch for the same task                                             | Continue on the current branch                            |
+| Documentation-only edit on a non-protected branch                                   | Continue on the current branch                            |
+| Small follow-up to current branch purpose                                           | Continue on the current branch                            |
+| Dependency, migration, generated code, deployment, auth, data, or production change | Create a branch                                           |
+| Incident or urgent production repair                                                | Create a `hotfix/*` branch from production                |
 
 The default recommendation should be conservative. If the branch choice can affect what
 ships to production, use a dedicated branch.
@@ -702,13 +702,13 @@ They should integrate without depending on each other:
 
 ### Flow-to-Dev Mapping
 
-| Flow action | Dev integration |
-| --- | --- |
-| `fizzyx flow start <card>` | May suggest or run `fizzyx dev start <slug> --card <card>` |
-| `fizzyx flow work` | Shows current card plus branch state from `fizzyx dev status` |
-| `fizzyx flow review <card>` | Should require or suggest `fizzyx dev ready` first |
+| Flow action                     | Dev integration                                                            |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| `fizzyx flow start <card>`      | May suggest or run `fizzyx dev start <slug> --card <card>`                 |
+| `fizzyx flow work`              | Shows current card plus branch state from `fizzyx dev status`              |
+| `fizzyx flow review <card>`     | Should require or suggest `fizzyx dev ready` first                         |
 | `fizzyx flow done <card> <ref>` | Should verify that the referenced commit or branch passed dev ready checks |
-| `fizzyx flow block <card>` | Can include current dev branch and blocked reason |
+| `fizzyx flow block <card>`      | Can include current dev branch and blocked reason                          |
 
 ### Card-Bound Branch Metadata
 
@@ -924,7 +924,7 @@ Projects can copy this into `AGENTS.md`:
 ## Git workflow for agents
 
 - Run `fizzyx dev status --agent` before code edits.
-- Never edit protected branches directly: main, master, production, stable, release/*.
+- Never edit protected branches directly: main, master, production, stable, release/\*.
 - Do not create a new branch when already on the correct non-protected branch.
 - Create a feature/fix/hotfix/ops/chore/docs branch for independently shippable work.
 - Use `fizzyx dev sync`; do not run `git merge main`.

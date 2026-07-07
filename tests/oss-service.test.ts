@@ -76,6 +76,7 @@ test("ossStoreCredentials writes to provided credential store", async () => {
 			Effect.fail(new FileError({ message: "not mocked", path: "" })),
 		saveCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
 		deleteCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		saveProjectConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
 	};
 
 	await Effect.runPromise(
@@ -146,6 +147,7 @@ test("ossSetup stores credentials via provided credential store", async () => {
 			Effect.fail(new FileError({ message: "not mocked", path: "" })),
 		saveCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
 		deleteCredentials: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		saveProjectConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
 	};
 
 	const result = await Effect.runPromise(
@@ -202,6 +204,7 @@ test("ossInitBlank returns false when oss section already exists", async () => {
 		deleteCredentials: () => Effect.succeed(undefined),
 		setupOssConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
 		setupOpenApiConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
+		saveProjectConfig: () => Effect.fail(new FileError({ message: "not mocked", path: "" })),
 	};
 
 	const result = await Effect.runPromise(

@@ -3,6 +3,7 @@ import { Context } from "effect";
 import type { ConfigError, FileError } from "../domain/errors";
 import type {
 	Credentials,
+	DevConfig,
 	InitializedProjectConfig,
 	OssConfig,
 	OssEnvironmentConfig,
@@ -19,6 +20,7 @@ export const LEGACY_CONFIG_FILE = ".fizzy.yaml";
 
 export interface ConfigRepository {
 	loadProjectConfig: () => Effect.Effect<ProjectConfig, ConfigError | FileError>;
+	saveProjectConfig: (config: ProjectConfig) => Effect.Effect<void, ConfigError | FileError>;
 	loadProjectConfigOptional: () => Effect.Effect<
 		ProjectConfig | undefined,
 		ConfigError | FileError
@@ -44,6 +46,7 @@ export interface SetupProjectConfigInput {
 	account?: string;
 	board?: string;
 	list?: boolean;
+	dev?: DevConfig;
 	todoColumn?: string;
 	inProgressColumn?: string;
 	users?: Record<string, string>;

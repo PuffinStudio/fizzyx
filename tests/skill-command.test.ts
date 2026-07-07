@@ -182,6 +182,48 @@ test("skill add mattpocock/improve-codebase-architecture maps to bundled improve
 	}
 });
 
+test("skill add git-workflow maps to bundled dev-workflow", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+
+	try {
+		writeFileSync(configPath, `api_url: https://example.com\n`);
+
+		const { stdout, exitCode } = await runCli(["skill", "add", "git-workflow"], { cwd: root });
+		const text = stripAnsi(stdout);
+		const yaml = readFileSync(configPath, "utf-8");
+
+		expect(exitCode).toBe(0);
+		expect(text).toContain("Pinned bundled skill dev-workflow");
+		expect(yaml).toContain("dev-workflow:");
+		expect(yaml).toContain("source: builtin");
+		expect(yaml).toContain("version: 1.0.0");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("skill add agent-git maps to bundled dev-workflow", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+
+	try {
+		writeFileSync(configPath, `api_url: https://example.com\n`);
+
+		const { stdout, exitCode } = await runCli(["skill", "add", "agent-git"], { cwd: root });
+		const text = stripAnsi(stdout);
+		const yaml = readFileSync(configPath, "utf-8");
+
+		expect(exitCode).toBe(0);
+		expect(text).toContain("Pinned bundled skill dev-workflow");
+		expect(yaml).toContain("dev-workflow:");
+		expect(yaml).toContain("source: builtin");
+		expect(yaml).toContain("version: 1.0.0");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("skill remove tdd removes config entry and deletes local skill folder if present", async () => {
 	const root = makeTempDir();
 	const configPath = join(root, ".fizzyx.yaml");
@@ -277,12 +319,49 @@ test("skill info tdd prints source version and status", async () => {
 	}
 });
 
+test("skill info alias resolves to canonical dev-workflow", async () => {
+	const root = makeTempDir();
+
+	try {
+		writeFileSync(
+			join(root, ".fizzyx.yaml"),
+			`skills:
+  version: 1
+  installed:
+    dev-workflow:
+      source: builtin
+      version: 1.0.0
+`,
+		);
+
+		const { stdout, exitCode } = await runCli(["skill", "info", "git-workflow"], { cwd: root });
+		const text = stripAnsi(stdout);
+
+		expect(exitCode).toBe(0);
+		expect(text).toContain("name: dev-workflow");
+		expect(text).toContain("source: builtin");
+		expect(text).toContain("version: 1.0.0");
+		expect(text).toContain("project");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("skill run tdd prints a clear invocation line", async () => {
 	const { stdout, exitCode } = await runCli(["skill", "run", "tdd"]);
 	const text = stripAnsi(stdout);
 
 	expect(exitCode).toBe(0);
 	expect(text).toContain("tdd");
+	expect(text).toContain("Run");
+});
+
+test("skill run alias resolves to canonical dev-workflow guidance", async () => {
+	const { stdout, exitCode } = await runCli(["skill", "run", "agent-git"]);
+	const text = stripAnsi(stdout);
+
+	expect(exitCode).toBe(0);
+	expect(text).toContain("dev-workflow");
 	expect(text).toContain("Run");
 });
 
@@ -339,6 +418,34 @@ test("skill update tdd refreshes bundled skill content locally", async () => {
 		expect(readFileSync(skillPath, "utf-8")).toContain("name: tdd");
 		expect(readFileSync(skillPath, "utf-8")).toContain("Test-Driven Development");
 		expect(readFileSync(skillPath, "utf-8")).toContain("Vertical slices via tracer bullets");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("skill update alias refreshes dev-workflow skill content", async () => {
+	const root = makeTempDir();
+	const skillPath = join(root, ".agents", "skills", "dev-workflow", "SKILL.md");
+
+	try {
+		writeFileSync(
+			join(root, ".fizzyx.yaml"),
+			`skills:
+  version: 1
+  installed:
+    dev-workflow:
+      source: builtin
+      version: 1.0.0
+`,
+		);
+
+		const { stdout, exitCode } = await runCli(["skill", "update", "git-workflow"], { cwd: root });
+		const text = stripAnsi(stdout);
+
+		expect(exitCode).toBe(0);
+		expect(text).toContain("refreshed bundled skill dev-workflow");
+		expect(readFileSync(skillPath, "utf-8")).toContain("name: dev-workflow");
+		expect(readFileSync(skillPath, "utf-8")).toContain("Dev Workflow");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

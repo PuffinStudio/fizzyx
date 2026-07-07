@@ -9,6 +9,7 @@ import { openapiCmd } from "./openapi-command";
 import { updateCmd } from "./update-command";
 import { plannerCmd } from "./planner-command";
 import { skillCmd } from "./skill-command";
+import { devCmd } from "./dev";
 
 const rootCmd = Command.make("fizzyx").pipe(
 	Command.withDescription("Fizzyx CLI — Fizzy workflow and code generation tool"),
@@ -17,6 +18,7 @@ const rootCmd = Command.make("fizzyx").pipe(
 		authCmd,
 		flowCmd,
 		skillCmd,
+		devCmd,
 		ossCmd,
 		openapiCmd,
 		updateCmd,

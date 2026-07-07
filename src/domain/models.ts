@@ -40,6 +40,61 @@ export interface ProjectSkillsConfig {
 	areas: Record<string, ReadonlyArray<string>>;
 }
 
+export interface DevBranchPrefixConfig {
+	feature: string;
+	fix: string;
+	hotfix: string;
+	ops: string;
+	chore: string;
+	docs: string;
+	maintenance: string;
+}
+
+export interface DevEnvironmentBranchConfig {
+	deploysTo?: string;
+	aggregate?: boolean;
+}
+
+export interface DevChecksConfig {
+	ready?: ReadonlyArray<string>;
+	full?: ReadonlyArray<string>;
+	hotfix?: ReadonlyArray<string>;
+}
+
+export interface DevPromotionConfig {
+	strategy: "pr" | "merge" | "squash";
+	allowDirectProductionMerge?: boolean;
+	blockEnvironmentToProduction?: boolean;
+	requireConfirmProduction?: boolean;
+	requireReadyForProduction?: boolean;
+}
+
+export interface DevCommitConfig {
+	conventional?: boolean;
+	allowWipOnReady?: boolean;
+}
+
+export interface DevBranchMetadata {
+	card?: number;
+	kind?: string;
+	base?: string;
+	createdAt?: string;
+}
+
+export interface DevConfig {
+	productionBranch?: string;
+	defaultBase?: string;
+	syncStrategy?: "rebase" | "merge" | "none";
+	protectedBranches?: ReadonlyArray<string>;
+	environmentBranches?: Record<string, DevEnvironmentBranchConfig>;
+	branchPrefixes?: Partial<DevBranchPrefixConfig>;
+	checks?: DevChecksConfig;
+	promotion?: DevPromotionConfig;
+	staleAfterDays?: number;
+	commit?: DevCommitConfig;
+	branches?: Record<string, DevBranchMetadata>;
+}
+
 export interface Board {
 	id: string;
 	name: string;
@@ -49,6 +104,7 @@ export interface ProjectConfig {
 	apiUrl: string;
 	account: string;
 	board?: string;
+	dev?: DevConfig;
 	flow?: FlowConfig;
 	oss?: OssConfig;
 	openapi?: OpenApiProjectConfig;
