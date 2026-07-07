@@ -35,7 +35,9 @@ export const formatNextAutoStartSummary = (number: number): string =>
 	`started #${number} and now moving to execution`;
 
 export const formatNextActionHint = (number: number): string =>
-	`quick action: fizzyx flow start ${number}`;
+	["git guardrail: fizzyx dev status --agent", `quick action: fizzyx flow start ${number}`].join(
+		"\n",
+	);
 
 export const formatCompleteStepsSummary = (updatedCount: number, number: number): string => {
 	const plural = updatedCount === 1 ? "" : "s";

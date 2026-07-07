@@ -16,7 +16,10 @@ Use `.fizzyx.yaml` as the project config file for board and workflow settings.
 
 ```sh
 fizzyx flow work
-fizzyx flow create <user> "<title>" --desc <file|->
+fizzyx flow create --draft
+fizzyx flow create "<title>" --desc .fizzyx/card-<random>.md
+fizzyx flow create "<title>" --assign <user> --desc .fizzyx/card-<random>.md
+fizzyx flow assign <card> <user>
 fizzyx flow show <card>
 fizzyx flow start <card>
 fizzyx flow review <card>
@@ -28,6 +31,21 @@ fizzyx flow repair
 ```
 
 `flow done` requires all steps to be complete and closes the card into Done.
+`flow create` expects the standard draft shape with a `## Steps` task list; generate it with `flow create --draft` instead of passing plain text.
+`flow create` does not assign by default. Use `--assign <user>` while creating or `flow assign <card> <user>` afterwards.
+
+Agent loop for card-backed code work:
+
+```sh
+fizzyx flow work
+fizzyx flow show <card>
+fizzyx dev status --agent
+fizzyx dev start <slug> --kind <feature|fix|hotfix|ops|chore|docs> --card <card>
+fizzyx flow start <card>
+fizzyx dev ready --agent
+fizzyx flow review <card>
+fizzyx flow done <card> "commit <sha>: <subject>"
+```
 
 Use `fizzyx skill ...` for bundled skills and project pins. Use flow commands for repair and health checks.
 

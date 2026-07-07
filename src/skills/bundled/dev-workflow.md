@@ -7,22 +7,41 @@ description: Apply branch-first, guard-railed delivery with fizzyx dev commands.
 
 Use this when making code changes. Prefer safe sequencing and explicit handoff.
 
+## Card workflow
+
+When creating a Fizzy card, do not pass plain text directly to `flow create`.
+
+1. Generate the standard local template with `fizzyx flow create --draft`.
+2. Fill the draft sections, especially `## Goal`, `## Acceptance Criteria`, `## Suggested Skills`,
+   `## Plan`, and `## Steps`.
+3. Create the card from the filled draft with
+   `fizzyx flow create "<title>" --desc .fizzyx/card-<id>.md`.
+4. Keep mutable execution state in Fizzy steps, `## Inputs Needed`, and blocker comments.
+5. Never create a card that has no `## Steps` task list.
+6. `flow create` does not assign by default. Use `--assign <user>` only when ownership is
+   explicit, or run `fizzyx flow assign <card> <user>` after creation.
+
 ## What to do
 
-1. Run `fizzyx dev status --agent` before editing.
+1. If working from a card, run `fizzyx flow show <card>` and keep the card number attached
+   to branch work with `fizzyx dev start <slug> --kind <kind> --card <card>`.
+2. Run `fizzyx dev status --agent` before editing.
    Treat the reported `dirty_files` as the baseline for pre-existing user changes.
-2. Classify work type: feature, fix, hotfix, ops, chore, docs, or tiny follow-up.
-3. Use a new branch only when the current branch is unsuitable for the classification.
-4. Start branch work with `fizzyx dev start <slug> --kind <kind> [--card <id>]`.
-5. Commit or checkpoint only changes made during the current task. Do not include files that
+3. Classify work type: feature, fix, hotfix, ops, chore, docs, or tiny follow-up.
+4. Use a new branch only when the current branch is unsuitable for the classification.
+5. Start branch work with `fizzyx dev start <slug> --kind <kind> [--card <id>]`.
+6. Commit or checkpoint only changes made during the current task. Do not include files that
    were already dirty before you started unless the user explicitly asks.
-6. Keep long-running work safe with `fizzyx dev checkpoint`.
-7. Sync with base using `fizzyx dev sync` (never raw `git merge main`).
-8. Re-run `fizzyx dev status --agent` after branch or sync changes.
-9. Before reporting completion, run `fizzyx dev ready --agent`.
-10. For movement between environments or release, use `fizzyx dev promote --dry-run` first.
-11. Use `fizzyx dev cleanup` only as a cleanup preview, then report pending branch deletions.
-12. When blocked by config/guardrail checks, report the blocker and next safe step.
+7. Keep long-running work safe with `fizzyx dev checkpoint`.
+8. Sync with base using `fizzyx dev sync` (never raw `git merge main`).
+9. Re-run `fizzyx dev status --agent` after branch or sync changes.
+10. Before moving a card to review or reporting completion, run `fizzyx dev ready --agent`.
+11. Move cards with `fizzyx flow review <card>` only after ready checks pass.
+12. Close cards with `fizzyx flow done <card> <ref>` only after the relevant commit, branch,
+    or accepted change is complete according to project policy.
+13. For movement between environments or release, use `fizzyx dev promote --dry-run` first.
+14. Use `fizzyx dev cleanup` only as a cleanup preview, then report pending branch deletions.
+15. When blocked by config/guardrail checks, report the blocker and next safe step.
 
 ## Must not do
 

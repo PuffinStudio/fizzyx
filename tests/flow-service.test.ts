@@ -109,6 +109,11 @@ const makeCacheRepoFrom = (cache: BoardCache, age = 0) => ({
 
 const makeTempDir = (): string => mkdtempSync(join(tmpdir(), "fizzyx-cli-"));
 
+const draftDescription = (body: string): string => `${body}
+
+## Steps
+- [ ] Finish work`;
+
 const runGit = (cwd: string, args: ReadonlyArray<string>): void => {
 	const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "ignore", stderr: "ignore" });
 	if (proc.exitCode !== 0) {
@@ -690,7 +695,7 @@ Add parser support for template-based step extraction.
 </ul>`;
 
 	const number = await Effect.runPromise(
-		add(env, { user: "me", title: "Add template steps", description }),
+		add(env, { assignee: "me", title: "Add template steps", description }),
 	);
 
 	expect(number).toBe(101);
@@ -714,38 +719,10 @@ Add parser support for template-based step extraction.
 	expect(listCardsCalls).toBe(4);
 });
 
-test("add without template steps section preserves card body conversion and skips step creation", async () => {
-	const createCardInputs: Array<{
-		board: string;
-		title: string;
-		description: string;
-		columnId?: string;
-	}> = [];
-	const templateSteps: Array<{ content: string; completed: boolean }> = [];
-
+test("add rejects non-draft descriptions without template steps", async () => {
 	const api = defaultApi();
 	api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
 	api.listCards = () => Effect.succeed([]);
-	api.createCard = (input) => {
-		createCardInputs.push(input);
-		return Effect.succeed({
-			number: 102,
-			title: input.title,
-			description: input.description,
-		});
-	};
-	api.triageCard = () => Effect.succeed(undefined);
-	api.assignCard = () => Effect.succeed(undefined);
-	api.showCard = () =>
-		Effect.succeed({
-			number: 102,
-			title: "No template steps",
-			column: { id: "todo-id", name: "TODO" },
-		});
-	api.createStep = (_number, content, completed) => {
-		templateSteps.push({ content, completed: Boolean(completed) });
-		return Effect.succeed(undefined);
-	};
 
 	const env = {
 		...makeEnv(api),
@@ -762,17 +739,15 @@ test("add without template steps section preserves card body conversion and skip
 
 	const description = `## Goal\nUpdate legacy flow add behavior.\n- [ ] Should stay in description body`;
 
-	const number = await Effect.runPromise(
-		add(env, { user: "me", title: "No template steps", description }),
-	);
+	let error: unknown;
+	try {
+		await Effect.runPromise(add(env, { assignee: "me", title: "No template steps", description }));
+	} catch (cause) {
+		error = cause;
+	}
 
-	expect(number).toBe(102);
-	expect(createCardInputs[0]!.description).toBe(`<h2>Goal</h2>
-<p>Update legacy flow add behavior.</p>
-<ul>
-<li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled>Should stay in description body</li>
-</ul>`);
-	expect(templateSteps).toEqual([]);
+	expect(error).toBeInstanceOf(ValidationError);
+	expect((error as Error).message).toContain("fizzyx flow create --draft");
 });
 
 test("add applies planner metadata as tags when rendering html description", async () => {
@@ -801,6 +776,7 @@ test("add applies planner metadata as tags when rendering html description", asy
 		tags.push(tag);
 		return Effect.succeed(undefined);
 	};
+	api.createStep = () => Effect.succeed(undefined);
 	api.showCard = () =>
 		Effect.succeed({
 			number: 103,
@@ -809,7 +785,7 @@ test("add applies planner metadata as tags when rendering html description", asy
 		});
 
 	const env = makeEnv(api);
-	const description = `## Tags
+	const description = draftDescription(`## Tags
 - priority:p2
 - type:chore
 - phase:integration
@@ -818,10 +794,10 @@ test("add applies planner metadata as tags when rendering html description", asy
 - blocks:456
 
 ## Goal
-Keep Fizzy UI readable.`;
+Keep Fizzy UI readable.`);
 
 	const number = await Effect.runPromise(
-		add(env, { user: "me", title: "Metadata tags", description }),
+		add(env, { assignee: "me", title: "Metadata tags", description }),
 	);
 
 	expect(number).toBe(103);
@@ -854,17 +830,18 @@ test("add converts skill tags and --skill input into Suggested Skills", async ()
 		tags.push(tag);
 		return Effect.succeed(undefined);
 	};
+	api.createStep = () => Effect.succeed(undefined);
 
-	const description = `## Tags
+	const description = draftDescription(`## Tags
 - priority:p2
 - skill:tdd
 
 ## Goal
-Create without legacy skill tags.`;
+Create without legacy skill tags.`);
 
 	const number = await Effect.runPromise(
 		add(makeEnv(api), {
-			user: "me",
+			assignee: "me",
 			title: "Skill card",
 			description,
 			suggestedSkills: ["security-review"],
@@ -900,6 +877,7 @@ test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
 		return Effect.succeed(undefined);
 	};
 	api.assignCard = () => Effect.succeed(undefined);
+	api.createStep = () => Effect.succeed(undefined);
 	api.showCard = () =>
 		Effect.succeed({
 			number: 103,
@@ -931,7 +909,11 @@ test("add prefers BACKLOG over legacy TODO when moving new cards", async () => {
 	};
 
 	const number = await Effect.runPromise(
-		add(env, { user: "me", title: "Alias target", description: "body" }),
+		add(env, {
+			assignee: "me",
+			title: "Alias target",
+			description: draftDescription("## Goal\nbody"),
+		}),
 	);
 
 	expect(number).toBe(103);
@@ -960,6 +942,7 @@ test("add ignores configured MAYBE column when resolving backlog", async () => {
 		return Effect.succeed(undefined);
 	};
 	api.assignCard = () => Effect.succeed(undefined);
+	api.createStep = () => Effect.succeed(undefined);
 	api.showCard = () =>
 		Effect.succeed({
 			number: 104,
@@ -985,7 +968,11 @@ test("add ignores configured MAYBE column when resolving backlog", async () => {
 	};
 
 	const number = await Effect.runPromise(
-		add(env, { user: "me", title: "Do not use maybe", description: "body" }),
+		add(env, {
+			assignee: "me",
+			title: "Do not use maybe",
+			description: draftDescription("## Goal\nbody"),
+		}),
 	);
 
 	expect(number).toBe(104);
@@ -1022,7 +1009,9 @@ test("add fails when Fizzy keeps the card outside workflow columns", async () =>
 
 	let error: unknown;
 	try {
-		await Effect.runPromise(add(env, { user: "me", title: "Stuck", description: "body" }));
+		await Effect.runPromise(
+			add(env, { assignee: "me", title: "Stuck", description: draftDescription("## Goal\nbody") }),
+		);
 	} catch (cause) {
 		error = cause;
 	}

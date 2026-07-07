@@ -6,13 +6,7 @@ import type { SetupProjectConfigInput } from "../ports/config-repository";
 import { ConfigRepo, CONFIG_FILE } from "../ports/config-repository";
 import { ensureFlowConfig } from "./flow-bootstrap";
 import { convertDescription, parseTemplateDescription } from "./flow-card-content";
-import {
-	buildBoardUsers,
-	isCurrentUserAlias,
-	resolveAssignableUser,
-	resolveMineUser,
-	resolveUser,
-} from "./flow-user-resolution";
+import { buildBoardUsers, resolveAssignableUser, resolveMineUser } from "./flow-user-resolution";
 import { makeFlowApiWithAuthRetry } from "./flow-auth";
 import { buildStandardizedCommentBody, getStandardizedCommentTemplate } from "./flow-comment";
 import {
@@ -386,7 +380,7 @@ export const block = (env: InitializedEnv, number: number, reason: string) =>
 export const add = (
 	env: InitializedEnv,
 	input: {
-		user: string;
+		assignee?: string;
 		title: string;
 		description: string;
 		suggestedSkills?: ReadonlyArray<string>;
@@ -404,6 +398,12 @@ export const add = (
 			.filter((tag) => tag.startsWith("skill:"))
 			.map((tag) => tag.slice("skill:".length))
 			.filter(Boolean);
+		if (parsed.templateSteps.length === 0) {
+			return yield* new ValidationError({
+				message:
+					'Card description must come from `fizzyx flow create --draft` and include a `## Steps` task list. Run `fizzyx flow create --draft`, fill the draft, then create with `fizzyx flow create "<title>" --desc <draft-file> [--assign <user>]`.',
+			});
+		}
 		const cardDescription = addSuggestedSkills(
 			parsed.cardDescription,
 			legacySkillSuggestions.concat(input.suggestedSkills ?? []),
@@ -415,9 +415,9 @@ export const add = (
 			}),
 			tagsFromMetadata(metadata),
 		);
-		const userId = isCurrentUserAlias(input.user)
-			? resolveAssignableUser(yield* ensureCache(env, false), input.user)
-			: resolveUser(env.config, input.user);
+		const assigneeId = input.assignee
+			? resolveAssignableUser(yield* ensureCache(env, false), input.assignee)
+			: undefined;
 		const columns = yield* env.api.listColumns();
 		const todoColumnId = resolveTodoColumnId(columns, env.config.flow.columns.todo);
 		const card = yield* env.api.createCard({
@@ -426,7 +426,9 @@ export const add = (
 			board: env.config.board,
 		});
 		yield* env.api.triageCard(card.number, todoColumnId);
-		yield* env.api.assignCard(card.number, userId);
+		if (assigneeId) {
+			yield* env.api.assignCard(card.number, assigneeId);
+		}
 		yield* Effect.forEach(tags, (tag) => env.api.tagCard(card.number, tag));
 		yield* verifyCardColumn(env, card.number, todoColumnId, isTodoColumn, "TODO");
 		yield* Effect.forEach(parsed.templateSteps, (step) =>

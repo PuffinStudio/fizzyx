@@ -23,10 +23,10 @@ type WorkHealth = {
 };
 
 const DEFAULT_SKILLS_BY_TYPE: Record<string, ReadonlyArray<string>> = {
-	bug: ["diagnosing-bugs", "tdd"],
-	blocker: ["diagnosing-bugs"],
-	feature: ["to-prd", "tdd"],
-	chore: ["tdd"],
+	bug: ["dev-workflow", "diagnosing-bugs", "tdd"],
+	blocker: ["dev-workflow", "diagnosing-bugs"],
+	feature: ["dev-workflow", "to-prd", "tdd"],
+	chore: ["dev-workflow", "tdd"],
 };
 
 const handleWork = (config: {
@@ -173,7 +173,7 @@ export const flowWorkCmd = Command.make(
 	{
 		fresh: Flag.boolean("fresh").pipe(Flag.withDescription("Skip cache, fetch from API")),
 		user: Argument.string("user").pipe(
-			Argument.withDescription("GitHub username to summarize"),
+			Argument.withDescription("Configured Fizzy user to summarize"),
 			Argument.optional,
 		),
 	},

@@ -52,7 +52,7 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		name: "dev-workflow",
 		description: "Apply branch-first, guard-railed delivery with fizzyx dev commands.",
 		runHint:
-			"Run `dev-workflow` and follow branch, sync, checkpoint, and ready checks before completion.",
+			"Run `dev-workflow`: create Fizzy cards via `fizzyx flow create --draft`, assign only with `--assign` or `flow assign`, then use `fizzyx dev status --agent`, branch, sync, checkpoint, and ready checks before completion.",
 		content: devWorkflowContent,
 	},
 	{

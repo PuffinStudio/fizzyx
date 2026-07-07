@@ -202,6 +202,7 @@ test("prints flow help", async () => {
 	expect(stdout).toContain("flow");
 	expect(stdout).toContain("work");
 	expect(stdout).toContain("create");
+	expect(stdout).toContain("assign");
 	expect(stdout).toContain("show");
 	expect(stdout).toContain("start");
 	expect(stdout).toContain("review");
@@ -221,7 +222,6 @@ test("prints flow help", async () => {
 	expect(stdout).not.toContain("\n  workflow");
 	expect(stdout).not.toContain("\n  template");
 	expect(stdout).not.toContain("\n  skill");
-	expect(stdout).not.toContain("assign");
 	expect(stdout).not.toContain("comment-template");
 	expect(stdout).not.toContain("\n  init");
 });
@@ -449,7 +449,7 @@ test("flow done requires a card number", async () => {
 });
 
 test("flow create requires description input", async () => {
-	const { stdout, exitCode } = await runCli(["flow", "create", "me", "Title"]);
+	const { stdout, exitCode } = await runCli(["flow", "create", "Title"]);
 
 	expect(exitCode).toBe(1);
 	expect(stdout).toContain("usage: fizzyx flow create");
@@ -486,7 +486,16 @@ test("flow create --draft pre-fills title, assignee, and requested skills", asyn
 		writeFileSync(join(projectDir, ".fizzyx.yaml"), `api_url: https://example.com\n`);
 
 		const { stdout, exitCode } = await runCli(
-			["flow", "create", "Ellen", "测试卡-勿动", "--draft", "--skill", "diagnosing-bugs"],
+			[
+				"flow",
+				"create",
+				"测试卡-勿动",
+				"--draft",
+				"--assign",
+				"Ellen",
+				"--skill",
+				"diagnosing-bugs",
+			],
 			{
 				cwd: projectDir,
 			},
@@ -500,6 +509,345 @@ test("flow create --draft pre-fills title, assignee, and requested skills", asyn
 		expect(draft).toContain("## Assignee\n- Ellen");
 		expect(draft).toContain("## Suggested Skills\n- diagnosing-bugs");
 		expect(draft).not.toContain("- tdd\n\n## Plan");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow create without --assign leaves card unassigned", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const homeDir = join(root, "home");
+	const assignmentBodies: unknown[] = [];
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		mkdirSync(homeDir, { recursive: true });
+		const credentialsDir = join(homeDir, ".config", "fizzyx", "credentials");
+		mkdirSync(credentialsDir, { recursive: true });
+		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
+
+		const draftPath = join(projectDir, ".fizzyx", "card-create.md");
+		mkdirSync(join(projectDir, ".fizzyx"), { recursive: true });
+		writeFileSync(
+			draftPath,
+			`## Goal
+Create a card with the current user.
+
+## Steps
+- [ ] Implement`,
+		);
+
+		const port = await getFreePort();
+		if (port === null) return;
+
+		const api = Bun.serve({
+			port,
+			hostname: "127.0.0.1",
+			async fetch(req) {
+				const url = new URL(req.url);
+
+				if (url.pathname === "/my/identity.json" && req.method === "GET") {
+					return Response.json({
+						data: {
+							user: { id: "identity-id", name: "Identity User", email: "identity@example.com" },
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "GET") {
+					return Response.json({ data: [] });
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
+					return Response.json({ data: [{ id: "todo-id", name: "TODO" }] });
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "POST") {
+					const body = req.body === null ? {} : ((await req.json()) as { name?: string });
+					return Response.json({ data: { id: `${body.name ?? "column"}-id`, name: body.name } });
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "POST") {
+					return Response.json({
+						data: {
+							number: 777,
+							title: "Title only",
+							description: "created",
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards/777/triage.json" && req.method === "POST") {
+					return Response.json({});
+				}
+
+				if (url.pathname === "/1/cards/777/assignments.json" && req.method === "POST") {
+					assignmentBodies.push(await req.json());
+					return Response.json({});
+				}
+
+				if (url.pathname === "/1/cards/777" && req.method === "GET") {
+					return Response.json({
+						data: {
+							number: 777,
+							title: "Title only",
+							column: { id: "todo-id", name: "TODO" },
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards/777/steps.json" && req.method === "POST") {
+					return Response.json({});
+				}
+
+				return new Response("not found", { status: 404 });
+			},
+		});
+
+		writeFileSync(
+			join(projectDir, ".fizzyx.yaml"),
+			`api_url: http://127.0.0.1:${api.port}
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users:
+    Ray: ray-id
+`,
+		);
+
+		const { stdout, exitCode } = await runCli(
+			["flow", "create", "Title only", "--desc", ".fizzyx/card-create.md"],
+			{
+				cwd: projectDir,
+				env: { HOME: homeDir },
+			},
+		);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("777");
+		expect(assignmentBodies).toEqual([]);
+
+		api.stop();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow create with --assign assigns the requested user", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const homeDir = join(root, "home");
+	const assignmentBodies: unknown[] = [];
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		mkdirSync(homeDir, { recursive: true });
+		const credentialsDir = join(homeDir, ".config", "fizzyx", "credentials");
+		mkdirSync(credentialsDir, { recursive: true });
+		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
+
+		const draftPath = join(projectDir, ".fizzyx", "card-create.md");
+		mkdirSync(join(projectDir, ".fizzyx"), { recursive: true });
+		writeFileSync(
+			draftPath,
+			`## Goal
+Create a card assigned to Ray.
+
+## Steps
+- [ ] Implement`,
+		);
+
+		const port = await getFreePort();
+		if (port === null) return;
+
+		const api = Bun.serve({
+			port,
+			hostname: "127.0.0.1",
+			async fetch(req) {
+				const url = new URL(req.url);
+
+				if (url.pathname === "/my/identity.json" && req.method === "GET") {
+					return Response.json({
+						data: {
+							user: { id: "identity-id", name: "Identity User", email: "identity@example.com" },
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "GET") {
+					return Response.json({ data: [] });
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
+					return Response.json({ data: [{ id: "todo-id", name: "TODO" }] });
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "POST") {
+					const body = req.body === null ? {} : ((await req.json()) as { name?: string });
+					return Response.json({ data: { id: `${body.name ?? "column"}-id`, name: body.name } });
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "POST") {
+					return Response.json({
+						data: {
+							number: 778,
+							title: "Assigned title",
+							description: "created",
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards/778/triage.json" && req.method === "POST") {
+					return Response.json({});
+				}
+
+				if (url.pathname === "/1/cards/778/assignments.json" && req.method === "POST") {
+					assignmentBodies.push(await req.json());
+					return Response.json({});
+				}
+
+				if (url.pathname === "/1/cards/778" && req.method === "GET") {
+					return Response.json({
+						data: {
+							number: 778,
+							title: "Assigned title",
+							column: { id: "todo-id", name: "TODO" },
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards/778/steps.json" && req.method === "POST") {
+					return Response.json({});
+				}
+
+				return new Response("not found", { status: 404 });
+			},
+		});
+
+		writeFileSync(
+			join(projectDir, ".fizzyx.yaml"),
+			`api_url: http://127.0.0.1:${api.port}
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users:
+    Ray: ray-id
+`,
+		);
+
+		const { stdout, exitCode } = await runCli(
+			["flow", "create", "Assigned title", "--assign", "Ray", "--desc", ".fizzyx/card-create.md"],
+			{
+				cwd: projectDir,
+				env: { HOME: homeDir },
+			},
+		);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("778");
+		expect(assignmentBodies).toEqual([{ assignee_id: "ray-id" }]);
+
+		api.stop();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("flow assign assigns an existing card to an explicit user", async () => {
+	const root = makeTempDir();
+	const projectDir = join(root, "project");
+	const homeDir = join(root, "home");
+	const assignmentBodies: unknown[] = [];
+
+	try {
+		mkdirSync(projectDir, { recursive: true });
+		mkdirSync(homeDir, { recursive: true });
+		const credentialsDir = join(homeDir, ".config", "fizzyx", "credentials");
+		mkdirSync(credentialsDir, { recursive: true });
+		writeFileSync(join(credentialsDir, "1.json"), JSON.stringify({ token: "demo-token" }, null, 2));
+
+		const port = await getFreePort();
+		if (port === null) return;
+
+		const api = Bun.serve({
+			port,
+			hostname: "127.0.0.1",
+			async fetch(req) {
+				const url = new URL(req.url);
+
+				if (url.pathname === "/my/identity.json" && req.method === "GET") {
+					return Response.json({
+						data: {
+							user: { id: "identity-id", name: "Identity User", email: "identity@example.com" },
+						},
+					});
+				}
+
+				if (url.pathname === "/1/cards.json" && req.method === "GET") {
+					const indexedBy = url.searchParams.get("indexed_by");
+					return Response.json({
+						data:
+							indexedBy === "not_now"
+								? []
+								: [
+										{
+											number: 23,
+											title: "Assign target",
+											assignees: [],
+										},
+									],
+					});
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "GET") {
+					return Response.json({ data: [{ id: "todo-id", name: "TODO" }] });
+				}
+
+				if (url.pathname === "/1/boards/board-1/columns.json" && req.method === "POST") {
+					const body = req.body === null ? {} : ((await req.json()) as { name?: string });
+					return Response.json({ data: { id: `${body.name ?? "column"}-id`, name: body.name } });
+				}
+
+				if (url.pathname === "/1/cards/23/assignments.json" && req.method === "POST") {
+					assignmentBodies.push(await req.json());
+					return Response.json({});
+				}
+
+				return new Response("not found", { status: 404 });
+			},
+		});
+
+		writeFileSync(
+			join(projectDir, ".fizzyx.yaml"),
+			`api_url: http://127.0.0.1:${api.port}
+account: 1
+board: board-1
+flow:
+  columns:
+    todo: todo-id
+    in_progress: inprogress-id
+  users:
+    Ray: ray-id
+`,
+		);
+
+		const { stdout, exitCode } = await runCli(["flow", "assign", "23", "Ray"], {
+			cwd: projectDir,
+			env: { HOME: homeDir },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("assigned #23 to Ray");
+		expect(assignmentBodies).toEqual([{ assignee_id: "ray-id" }]);
+
+		api.stop();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -588,7 +936,8 @@ test("flow work suggests default skills from card type without skill config", as
 		});
 
 		expect(exitCode).toBe(0);
-		expect(stdout).toContain("suggested skills: diagnosing-bugs, tdd");
+		expect(stdout).toContain("git guardrail: fizzyx dev status --agent");
+		expect(stdout).toContain("suggested skills: dev-workflow, diagnosing-bugs, tdd");
 
 		api.stop();
 	} finally {

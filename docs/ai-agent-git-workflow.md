@@ -704,6 +704,8 @@ They should integrate without depending on each other:
 
 - A project without Fizzy cards can use `fizzyx dev`.
 - A Fizzy-backed project can bind a dev branch to a card.
+- `flow create` creates an unassigned card by default. Assignment is explicit with
+  `flow create "<title>" --assign <user> --desc <draft>` or `flow assign <card> <user>`.
 - `flow` may call `dev` for Git-safe task starts and completions.
 - `dev` may read card metadata for branch names and summaries when a card is provided.
 - Git promotion must not require a card.
@@ -745,6 +747,19 @@ When a card exists:
 4. Use `dev promote` to test or release the branch.
 5. Use `flow done` only after the selected branch or commit is actually merged, promoted, or
    accepted according to project policy.
+
+Practical agent sequence:
+
+```sh
+fizzyx flow work
+fizzyx flow show <card>
+fizzyx dev status --agent
+fizzyx dev start <slug> --kind <kind> --card <card>
+fizzyx flow start <card>
+fizzyx dev ready --agent
+fizzyx flow review <card>
+fizzyx flow done <card> "commit <sha>: <subject>"
+```
 
 When no card exists:
 

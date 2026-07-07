@@ -1,4 +1,5 @@
 import { Command } from "effect/unstable/cli";
+import { flowAssignCmd } from "./assign";
 import { flowBlockCmd } from "./block";
 import { flowCreateCmd } from "./create";
 import { flowDoneCmd } from "./done";
@@ -15,6 +16,7 @@ export const flowCmd = Command.make("flow").pipe(
 	Command.withSubcommands([
 		flowWorkCmd,
 		flowCreateCmd,
+		flowAssignCmd,
 		flowShowCmd,
 		flowStartCmd,
 		flowReviewCmd,
