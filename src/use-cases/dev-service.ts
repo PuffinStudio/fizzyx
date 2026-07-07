@@ -135,9 +135,7 @@ const runShell = (
 	});
 
 const classifyBranch = (branch: string, config: DevConfig | undefined): BranchRole => {
-	if (!config) return "feature";
-
-	const protectedBranches = config.protectedBranches ?? ["main", "master", "production", "stable"];
+	const protectedBranches = config?.protectedBranches ?? ["main", "master", "production", "stable"];
 	for (const p of protectedBranches) {
 		if (p.endsWith("/*")) {
 			if (branch.startsWith(p.slice(0, -1))) return "protected";
@@ -146,11 +144,11 @@ const classifyBranch = (branch: string, config: DevConfig | undefined): BranchRo
 		}
 	}
 
-	if (config.environmentBranches && branch in config.environmentBranches) {
+	if (config?.environmentBranches && branch in config.environmentBranches) {
 		return "environment";
 	}
 
-	if (config.branchPrefixes) {
+	if (config?.branchPrefixes) {
 		for (const [, prefix] of Object.entries(config.branchPrefixes)) {
 			if (branch.startsWith(`${prefix}/`)) {
 				return prefix === "fix" || prefix === "feature" || prefix === "hotfix" || prefix === "docs"
@@ -227,15 +225,24 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
 			: [];
 		const dirty = dirtyFiles.length > 0;
 
+		const devConfig = config?.dev;
+		const baseBranch = devConfig?.defaultBase ?? devConfig?.productionBranch ?? "main";
+
 		const aheadStr = yield* runGit(["rev-list", "--count", "@{u}..HEAD"]).pipe(
 			Effect.catch(() => Effect.succeed("0")),
 		);
 		const ahead = Number(aheadStr) || 0;
 
 		const behindStr = yield* runGit(["rev-list", "--count", "HEAD..@{u}"]).pipe(
-			Effect.catch(() => Effect.succeed("0")),
+			Effect.catch(() => Effect.succeed("")),
 		);
-		const behind = Number(behindStr) || 0;
+		const behind = behindStr
+			? Number(behindStr) || 0
+			: Number(
+					yield* runGit(["rev-list", "--count", `HEAD..${baseBranch}`]).pipe(
+						Effect.catch(() => Effect.succeed("0")),
+					),
+				) || 0;
 
 		const hasUpstream = yield* runGit([
 			"rev-parse",
@@ -247,10 +254,8 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
 			Effect.map((v) => v.length > 0),
 		);
 
-		const devConfig = config?.dev;
 		const role = classifyBranch(currentBranch, devConfig);
 		const meta = getBranchMetadata(currentBranch, devConfig);
-		const baseBranch = devConfig?.defaultBase ?? devConfig?.productionBranch ?? "main";
 
 		const nextAction = computeNextAction(role, dirty, ahead, behind, currentBranch, baseBranch);
 		const promotionReady = role !== "protected" && role !== "unknown" && !dirty && behind === 0;
@@ -500,7 +505,7 @@ const findWipCommits = (): Effect.Effect<ReadonlyArray<string>, ValidationError>
 			"log",
 			"--oneline",
 			"--grep",
-			"^wip:",
+			"^wip[:(]",
 			"HEAD",
 			"--not",
 			"--remotes",
@@ -931,11 +936,10 @@ export const cleanup = (
 
 		const mergedBranches = yield* getMergedBranches(productionBranch);
 		for (const branch of mergedBranches) {
-			if (branch === currentBranch) continue;
 			yield* runGit(["branch", "-d", branch]).pipe(Effect.catch(() => Effect.succeed("")));
 		}
 
-		if (abandon && currentBranch !== productionBranch) {
+		if (abandon && currentBranch !== productionBranch && !mergedBranches.includes(currentBranch)) {
 			yield* runGit(["branch", "-D", currentBranch]).pipe(Effect.catch(() => Effect.succeed("")));
 		}
 

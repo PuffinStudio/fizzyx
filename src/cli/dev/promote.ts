@@ -43,13 +43,6 @@ const handle = (config: {
 			return;
 		}
 
-		if (isProduction && !config.confirmProduction) {
-			yield* Console.log(
-				ui.error("Production promotion requires --confirm-production. This is a safety gate."),
-			);
-			return;
-		}
-
 		const commands = getPromotionCommands(config.branch, config.to, projectConfig);
 		yield* Console.log("Commands that would run:");
 		for (const cmd of commands) {
@@ -58,14 +51,25 @@ const handle = (config: {
 
 		yield* Console.log("");
 		if (config.dryRun) {
+			if (isProduction && !config.confirmProduction) {
+				yield* Console.log(ui.warn("Production promotion — add --confirm-production to apply."));
+			}
 			yield* Console.log(ui.info("Dry-run mode. No commands were executed."));
 			yield* Console.log(ui.info("Run with --apply to execute the promotion."));
 		} else if (config.apply) {
+			if (isProduction && !config.confirmProduction) {
+				yield* Console.log(ui.error("Production promotion requires --confirm-production."));
+				return;
+			}
 			yield* Console.log(ui.warn("--apply execution not yet implemented in MVP."));
 			yield* Console.log(
 				ui.info("Execute the commands manually or run with --dry-run to preview."),
 			);
 		} else {
+			if (isProduction && !config.confirmProduction) {
+				yield* Console.log(ui.error("Production promotion requires --confirm-production."));
+				return;
+			}
 			yield* Console.log(ui.info("Use --dry-run to preview or --apply to execute."));
 		}
 

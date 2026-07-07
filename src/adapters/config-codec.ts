@@ -908,9 +908,51 @@ const renderOpenApiConfigFlat = (openapi: OpenApiProjectConfig): YamlObject => {
 	return result;
 };
 
-const renderSkillsConfig = (skills: ProjectSkillsConfig): YamlObject => ({
-	version: skills.version,
-});
+const renderSkillsConfig = (skills: ProjectSkillsConfig): YamlObject => {
+	const result: YamlObject = { version: skills.version };
+
+	if (Object.keys(skills.sources).length > 0) {
+		const sources: Record<string, YamlObject> = {};
+		for (const [k, v] of Object.entries(skills.sources)) {
+			const entry: YamlObject = { repo: v.repo };
+			if (v.ref) entry.ref = v.ref;
+			sources[k] = entry;
+		}
+		result.sources = sources;
+	}
+
+	if (Object.keys(skills.installed).length > 0) {
+		const installed: Record<string, YamlObject> = {};
+		for (const [k, v] of Object.entries(skills.installed)) {
+			const entry: YamlObject = { source: v.source };
+			if (v.version) entry.version = v.version;
+			if (v.repo) entry.repo = v.repo;
+			if (v.ref) entry.ref = v.ref;
+			if (v.commit) entry.commit = v.commit;
+			if (v.path) entry.path = v.path;
+			installed[k] = entry;
+		}
+		result.installed = installed;
+	}
+
+	if (Object.keys(skills.defaults).length > 0) {
+		const defaults: Record<string, readonly YamlValue[]> = {};
+		for (const [k, v] of Object.entries(skills.defaults)) {
+			defaults[k] = [...v];
+		}
+		result.defaults = defaults;
+	}
+
+	if (Object.keys(skills.areas).length > 0) {
+		const areas: Record<string, readonly YamlValue[]> = {};
+		for (const [k, v] of Object.entries(skills.areas)) {
+			areas[k] = [...v];
+		}
+		result.areas = areas;
+	}
+
+	return result;
+};
 
 type YamlValue = string | number | boolean | null | YamlObject | readonly YamlValue[];
 
