@@ -54,14 +54,23 @@ export const decryptMessage = async (
 	}
 };
 
+const hashString = (s: string): number => {
+	let h = 0;
+	for (let i = 0; i < s.length; i++) {
+		h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+	}
+	return h >>> 0;
+};
+
+export const deriveSelfRoomId = (userId: string): string => {
+	const input = `__self__${userId}`;
+	const hash = typeof Bun !== "undefined" ? Number(Bun.hash(input)) : hashString(input);
+	return `self_${hash.toString(36)}`;
+};
+
 export const deriveRoomId = (account: string, board: string): string => {
 	const input = `${account}/${board}`;
-	let hash = 0;
-	for (let i = 0; i < input.length; i++) {
-		const chr = input.charCodeAt(i);
-		hash = (hash << 5) - hash + chr;
-		hash |= 0;
-	}
+	const hash = typeof Bun !== "undefined" ? Number(Bun.hash(input)) : hashString(input);
 	return hash.toString(36);
 };
 

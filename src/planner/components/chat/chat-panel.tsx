@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback, type ClipboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import {
+	Bookmark,
 	MessageSquare,
 	Send,
 	Paperclip,
@@ -42,11 +43,12 @@ let cachedState: PanelState | null = null;
 
 export interface ChatPanelProps {
 	readonly onClose: () => void;
+	readonly onOpenSavedMessages?: () => void;
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-export const ChatPanel = ({ onClose: _onClose }: ChatPanelProps) => {
+export const ChatPanel = ({ onClose: _onClose, onOpenSavedMessages }: ChatPanelProps) => {
 	const {
 		currentUserId,
 		messages,
@@ -302,6 +304,16 @@ export const ChatPanel = ({ onClose: _onClose }: ChatPanelProps) => {
 							connectionState === "connected" ? "bg-green-500" : "bg-muted-foreground/30",
 						)}
 					/>
+					{onOpenSavedMessages ? (
+						<button
+							type="button"
+							onClick={onOpenSavedMessages}
+							className="ml-1 flex size-5 items-center justify-center rounded-full text-muted-foreground/40 hover:text-foreground transition-colors"
+							title="Saved Messages"
+						>
+							<Bookmark className="size-3.5" />
+						</button>
+					) : null}
 				</div>
 				<Button
 					variant="ghost"
