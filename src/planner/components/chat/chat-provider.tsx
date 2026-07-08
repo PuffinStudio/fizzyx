@@ -1,5 +1,10 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import type { ChatMessage, ChatUser, ChatConnectionState, MessageReplyRef } from "../../../domain/chat";
+import type {
+	ChatMessage,
+	ChatUser,
+	ChatConnectionState,
+	MessageReplyRef,
+} from "../../../domain/chat";
 import type {
 	CryptoService,
 	SignalProvider,

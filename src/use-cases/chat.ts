@@ -5,7 +5,12 @@ import type {
 	EncryptedPayload,
 	MessageReplyRef,
 } from "../domain/chat";
-import { decryptMessage, deriveSelfRoomId, MAX_IMAGE_SIZE_BYTES, IMAGE_MIME_TYPES } from "../domain/chat";
+import {
+	decryptMessage,
+	deriveSelfRoomId,
+	MAX_IMAGE_SIZE_BYTES,
+	IMAGE_MIME_TYPES,
+} from "../domain/chat";
 import { ChatValidationError } from "../domain/chat-errors";
 import type { CryptoService } from "../ports/chat-crypto";
 import type { SignalProvider } from "../ports/chat-signal";
