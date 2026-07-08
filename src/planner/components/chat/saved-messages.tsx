@@ -19,8 +19,10 @@ export interface SavedMessagesProps {
 
 const makeId = (): string => `self_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
 
-const encryptForStorage = async (crypto: SubtleCryptoService, plaintext: string): Promise<EncryptedPayload> =>
-	crypto.encrypt(plaintext);
+const encryptForStorage = async (
+	crypto: SubtleCryptoService,
+	plaintext: string,
+): Promise<EncryptedPayload> => crypto.encrypt(plaintext);
 
 interface SelfMessageServerRecord {
 	readonly id: string;
@@ -30,7 +32,13 @@ interface SelfMessageServerRecord {
 	readonly createdAt: string;
 }
 
-export const SavedMessages = ({ userId, userName, open, onClose, onBackToChat }: SavedMessagesProps) => {
+export const SavedMessages = ({
+	userId,
+	userName,
+	open,
+	onClose,
+	onBackToChat,
+}: SavedMessagesProps) => {
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [text, setText] = useState("");
 	const [sending, setSending] = useState(false);
@@ -49,17 +57,22 @@ export const SavedMessages = ({ userId, userName, open, onClose, onBackToChat }:
 	const scrollToBottom = useCallback(() => {
 		const el = viewportRef.current;
 		if (!el) return;
-		requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+		requestAnimationFrame(() => {
+			el.scrollTop = el.scrollHeight;
+		});
 	}, []);
 
-	const decryptAndAdd = useCallback(async (encrypted: ChatMessage) => {
-		if (messagesRef.current.some((m) => m.id === encrypted.id)) return;
-		const decrypted = await decryptMessage(encrypted, cryptoRef.current!);
-		messagesRef.current = [...messagesRef.current, decrypted];
-		setMessages(messagesRef.current);
-		void storageRef.current?.save(encrypted);
-		scrollToBottom();
-	}, [scrollToBottom]);
+	const decryptAndAdd = useCallback(
+		async (encrypted: ChatMessage) => {
+			if (messagesRef.current.some((m) => m.id === encrypted.id)) return;
+			const decrypted = await decryptMessage(encrypted, cryptoRef.current!);
+			messagesRef.current = [...messagesRef.current, decrypted];
+			setMessages(messagesRef.current);
+			void storageRef.current?.save(encrypted);
+			scrollToBottom();
+		},
+		[scrollToBottom],
+	);
 
 	useEffect(() => {
 		if (!open) {
@@ -116,7 +129,7 @@ export const SavedMessages = ({ userId, userName, open, onClose, onBackToChat }:
 								roomId,
 								sender: { id: userId, name: userName },
 								content: "",
-								type: (sm.type === "image" ? "image" : "text"),
+								type: sm.type === "image" ? "image" : "text",
 								createdAt: sm.createdAt,
 								encrypted: true,
 								encryptedPayload: sm.encryptedPayload,
@@ -130,8 +143,11 @@ export const SavedMessages = ({ userId, userName, open, onClose, onBackToChat }:
 
 		signal.onMessage((event) => {
 			const payload = event.data as {
-				type?: string; msgId?: string;
-				encrypted?: EncryptedPayload; msgType?: string; createdAt?: string;
+				type?: string;
+				msgId?: string;
+				encrypted?: EncryptedPayload;
+				msgType?: string;
+				createdAt?: string;
 			};
 			if (!payload.encrypted) return;
 
@@ -140,7 +156,7 @@ export const SavedMessages = ({ userId, userName, open, onClose, onBackToChat }:
 				roomId,
 				sender: event.from.user,
 				content: "",
-				type: (payload.msgType === "image" ? "image" : "text"),
+				type: payload.msgType === "image" ? "image" : "text",
 				createdAt: payload.createdAt ?? new Date().toISOString(),
 				encrypted: true,
 				encryptedPayload: payload.encrypted,
@@ -271,12 +287,7 @@ export const SavedMessages = ({ userId, userName, open, onClose, onBackToChat }:
 							const prev = messages[i - 1];
 							const compact = prev !== undefined && prev.sender.id === msg.sender.id;
 							return (
-								<ChatMessageBubble
-									key={msg.id}
-									message={msg}
-									isOwn={true}
-									compact={compact}
-								/>
+								<ChatMessageBubble key={msg.id} message={msg} isOwn={true} compact={compact} />
 							);
 						})}
 					</div>

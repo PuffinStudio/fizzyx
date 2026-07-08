@@ -184,30 +184,45 @@ export const startPlannerServer = async (
 				GET: async (req) => {
 					const url = new URL(req.url);
 					const userId = url.searchParams.get("userId");
-					if (!userId) return new Response(JSON.stringify({ error: "Missing userId" }), { status: 400 });
+					if (!userId)
+						return new Response(JSON.stringify({ error: "Missing userId" }), { status: 400 });
 					const messages = readSelfMessages(userId);
 					return Response.json(messages);
 				},
 				POST: async (req) => {
 					let body: {
-						userId?: string; id?: string; encrypted?: boolean;
+						userId?: string;
+						id?: string;
+						encrypted?: boolean;
 						encryptedPayload?: { iv: string; ciphertext: string };
-						type?: string; createdAt?: string;
+						type?: string;
+						createdAt?: string;
 					};
 					try {
 						body = (await req.json()) as typeof body;
 					} catch {
 						return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
 					}
-					if (!body.userId || !body.id || !body.encryptedPayload?.iv || !body.encryptedPayload?.ciphertext) {
-						return new Response(JSON.stringify({ error: "Missing userId, id, or encryptedPayload" }), { status: 400 });
+					if (
+						!body.userId ||
+						!body.id ||
+						!body.encryptedPayload?.iv ||
+						!body.encryptedPayload?.ciphertext
+					) {
+						return new Response(
+							JSON.stringify({ error: "Missing userId, id, or encryptedPayload" }),
+							{ status: 400 },
+						);
 					}
 					const messages = readSelfMessages(body.userId);
 					if (!messages.some((m) => m.id === body.id)) {
 						messages.push({
 							id: body.id,
 							encrypted: true,
-							encryptedPayload: { iv: body.encryptedPayload.iv, ciphertext: body.encryptedPayload.ciphertext },
+							encryptedPayload: {
+								iv: body.encryptedPayload.iv,
+								ciphertext: body.encryptedPayload.ciphertext,
+							},
 							type: (body.type as string) ?? "text",
 							createdAt: body.createdAt ?? new Date().toISOString(),
 						});
