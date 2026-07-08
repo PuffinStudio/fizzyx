@@ -48,6 +48,19 @@ interface DataConnection {
 
 const SYSTEM_PREFIX = "__peer_handshake__";
 
+const getDeviceId = (): string => {
+	try {
+		let id = localStorage.getItem("fizzyx_peer_device_id");
+		if (!id) {
+			id = crypto.randomUUID().slice(0, 8);
+			localStorage.setItem("fizzyx_peer_device_id", id);
+		}
+		return id;
+	} catch {
+		return crypto.randomUUID().slice(0, 8);
+	}
+};
+
 export interface PeerJSOptions {
 	readonly signalServer?: SignalServerConfig;
 	readonly debug?: boolean;
@@ -64,8 +77,10 @@ export class PeerJSSignalProvider implements SignalProvider {
 		(state: "connecting" | "connected" | "disconnected" | "error") => void
 	> = [];
 	private identity: ChatUser | null = null;
+	private selfDevicePeerId: string | null = null;
 	private roomId: string | null = null;
 	private receivedMsgIds = new Set<string>();
+	private knownPeersList: ReadonlyArray<ChatUser> = [];
 
 	async connect(
 		roomId: string,
@@ -76,12 +91,16 @@ export class PeerJSSignalProvider implements SignalProvider {
 		this.closePeer(false);
 		this.identity = identity;
 		this.roomId = roomId;
+		this.knownPeersList = peers;
+		this.selfDevicePeerId = null;
 
 		const config = signalServer ?? DEFAULT_SIGNAL_SERVER;
 		const { host, port, path, secure, key } = config;
 
 		const Peer = await loadPeerJS();
-		const selfId = `${roomId}_${identity.id}`;
+		const basePeerId = `${roomId}_${identity.id}`;
+		const deviceTag = getDeviceId();
+		const selfId = `${basePeerId}_${deviceTag}`;
 
 		this.setState("connecting");
 
@@ -103,6 +122,7 @@ export class PeerJSSignalProvider implements SignalProvider {
 			};
 
 			const onOpen = () => {
+				this.selfDevicePeerId = this.peer!.id;
 				this.setState("connected");
 				cleanup();
 				resolve();
@@ -229,18 +249,27 @@ export class PeerJSSignalProvider implements SignalProvider {
 		}
 	}
 
+	private tryConnect(basePeerId: string) {
+		if (!this.peer) return;
+		if (this.connections.has(basePeerId)) return;
+		if (this.peer.id === basePeerId) return;
+		try {
+			const conn = this.peer.connect(basePeerId, { reliable: true });
+			this.handleConnection(conn);
+		} catch {
+			/* offline or unreachable peer */
+		}
+	}
+
 	private connectKnownPeers(peers: ReadonlyArray<ChatUser>) {
 		if (!this.peer || !this.roomId || !this.identity) return;
+
+		const baseSelfId = `${this.roomId}_${this.identity.id}`;
+		this.tryConnect(baseSelfId);
+
 		for (const user of peers) {
 			if (user.id === this.identity.id) continue;
-			const peerId = `${this.roomId}_${user.id}`;
-			if (this.connections.has(peerId)) continue;
-			try {
-				const conn = this.peer.connect(peerId, { reliable: true });
-				this.handleConnection(conn);
-			} catch {
-				/* offline or unreachable peer */
-			}
+			this.tryConnect(`${this.roomId}_${user.id}`);
 		}
 	}
 
