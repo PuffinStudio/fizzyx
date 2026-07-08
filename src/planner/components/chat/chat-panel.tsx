@@ -41,25 +41,31 @@ interface PanelState {
 
 let cachedState: PanelState | null = null;
 
+type ChatView = "team" | "self";
+
 export interface ChatPanelProps {
 	readonly onClose: () => void;
-	readonly onOpenSavedMessages?: () => void;
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-export const ChatPanel = ({ onClose: _onClose, onOpenSavedMessages }: ChatPanelProps) => {
+export const ChatPanel = ({ onClose: _onClose }: ChatPanelProps) => {
 	const {
 		currentUserId,
 		messages,
+		selfMessages,
 		connectedPeers,
 		connectionState,
 		sendText,
+		sendSelfText,
 		sendImage,
 		connect,
 		loadHistory,
+		loadSelfHistory,
 	} = useChatContext();
 
+	const [view, setView] = useState<ChatView>("team");
+	const displayMessages = view === "self" ? selfMessages : messages;
 	const [text, setText] = useState("");
 	const [imagePreview, setImagePreview] = useState<string | null>(null);
 	const [sending, setSending] = useState(false);
@@ -131,13 +137,17 @@ export const ChatPanel = ({ onClose: _onClose, onOpenSavedMessages }: ChatPanelP
 
 	useEffect(() => {
 		scrollToBottom();
-	}, [messages, scrollToBottom]);
+	}, [displayMessages, scrollToBottom]);
 
 	useEffect(() => {
-		if (connectionState === "connected" && messages.length === 0) {
-			void loadHistory().then(() => scrollToBottom());
+		if (connectionState === "connected") {
+			if (view === "team" && displayMessages.length === 0) {
+				void loadHistory().then(() => scrollToBottom());
+			} else if (view === "self" && displayMessages.length === 0) {
+				void loadSelfHistory().then(() => scrollToBottom());
+			}
 		}
-	}, [connectionState]);
+	}, [connectionState, view]);
 
 	const handleSend = async () => {
 		if (sending || (!text.trim() && !imagePreview)) return;
@@ -151,7 +161,11 @@ export const ChatPanel = ({ onClose: _onClose, onOpenSavedMessages }: ChatPanelP
 				if (fileInputRef.current) fileInputRef.current.value = "";
 			}
 			if (text.trim()) {
-				await sendText(text, replyingTo ?? undefined);
+				if (view === "self") {
+					await sendSelfText(text);
+				} else {
+					await sendText(text, replyingTo ?? undefined);
+				}
 				setText("");
 				setReplyingTo(null);
 			}
@@ -295,25 +309,39 @@ export const ChatPanel = ({ onClose: _onClose, onOpenSavedMessages }: ChatPanelP
 				onPointerUp={handleHeaderPointerEnd}
 				onPointerCancel={handleHeaderPointerEnd}
 			>
-				<div className="flex items-center gap-2">
-					<MessageSquare className="size-4 text-muted-foreground/60" />
-					<span className="text-sm font-medium">Chat</span>
+				<div className="flex items-center gap-1">
+					<button
+						type="button"
+						onClick={() => setView("team")}
+						className={cn(
+							"flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-all",
+							view === "team"
+								? "bg-primary/10 text-primary font-medium"
+								: "text-muted-foreground/50 hover:text-foreground",
+						)}
+					>
+						<MessageSquare className="size-3.5" />
+						<span>Chat</span>
+					</button>
+					<button
+						type="button"
+						onClick={() => setView("self")}
+						className={cn(
+							"flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-all",
+							view === "self"
+								? "bg-primary/10 text-primary font-medium"
+								: "text-muted-foreground/50 hover:text-foreground",
+						)}
+					>
+						<Bookmark className="size-3.5" />
+						<span>Saved</span>
+					</button>
 					<div
 						className={cn(
-							"size-1.5 rounded-full",
+							"size-1.5 rounded-full ml-1",
 							connectionState === "connected" ? "bg-green-500" : "bg-muted-foreground/30",
 						)}
 					/>
-					{onOpenSavedMessages ? (
-						<button
-							type="button"
-							onClick={onOpenSavedMessages}
-							className="ml-1 flex size-5 items-center justify-center rounded-full text-muted-foreground/40 hover:text-foreground transition-colors"
-							title="Saved Messages"
-						>
-							<Bookmark className="size-3.5" />
-						</button>
-					) : null}
 				</div>
 				<Button
 					variant="ghost"
@@ -334,7 +362,7 @@ export const ChatPanel = ({ onClose: _onClose, onOpenSavedMessages }: ChatPanelP
 				</Button>
 			</div>
 
-			{connectionState === "disconnected" ? (
+			{connectionState === "disconnected" && view === "team" ? (
 				<div className="flex flex-col items-center gap-3 px-4 py-12">
 					<Users className="size-10 text-muted-foreground/30" />
 					<div className="text-center">
@@ -373,31 +401,33 @@ export const ChatPanel = ({ onClose: _onClose, onOpenSavedMessages }: ChatPanelP
 				</div>
 			) : (
 				<>
-					<div className="flex items-center gap-2 border-b border-sidebar-border/20 px-4 py-1.5">
-						<Users className="size-3 text-muted-foreground/50" />
-						<span className="text-[10px] text-muted-foreground/50">
-							{connectedPeers.length > 0
-								? connectedPeers.map((p) => p.name).join(", ")
-								: "No one else online"}
-						</span>
-					</div>
+					{view === "team" ? (
+						<div className="flex items-center gap-2 border-b border-sidebar-border/20 px-4 py-1.5">
+							<Users className="size-3 text-muted-foreground/50" />
+							<span className="text-[10px] text-muted-foreground/50">
+								{connectedPeers.length > 0
+									? connectedPeers.map((p) => p.name).join(", ")
+									: "No one else online"}
+							</span>
+						</div>
+					) : null}
 
 					<MessageScrollerProvider>
 						<MessageScroller className="min-h-0 flex-1">
 							<MessageScrollerViewport ref={messageViewportRef} className="px-1">
 								<MessageScrollerContent className="gap-0.5 px-2 py-3">
-									{messages.length === 0 ? (
+									{displayMessages.length === 0 ? (
 										<p className="py-8 text-center text-xs text-muted-foreground">
-											No messages yet. Say hello!
+											{view === "self" ? "No saved messages yet." : "No messages yet. Say hello!"}
 										</p>
 									) : (
-										messages.map((msg, i) => {
-											const prev = messages[i - 1];
+										displayMessages.map((msg, i) => {
+											const prev = displayMessages[i - 1];
 											const compact = prev !== undefined && prev.sender.id === msg.sender.id;
 											return (
 												<MessageScrollerItem
 													key={msg.id}
-													scrollAnchor={i === messages.length - 1}
+													scrollAnchor={i === displayMessages.length - 1}
 													ref={(el) => {
 														if (el) messageRefs.current.set(msg.id, el);
 														else messageRefs.current.delete(msg.id);

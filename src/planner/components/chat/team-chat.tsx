@@ -20,7 +20,6 @@ export interface TeamChatProps {
 	readonly members: ReadonlyArray<ChatUser>;
 	readonly signalServer?: SignalServerConfig;
 	readonly onClose: () => void;
-	readonly onOpenSavedMessages?: () => void;
 }
 
 export const TeamChat = ({
@@ -31,7 +30,6 @@ export const TeamChat = ({
 	members,
 	signalServer,
 	onClose,
-	onOpenSavedMessages,
 }: TeamChatProps) => {
 	const [adapters, setAdapters] = useState<{
 		signal: SignalProvider;
@@ -68,7 +66,7 @@ export const TeamChat = ({
 			storage={adapters.storage}
 			signalServer={signalServer}
 		>
-			<ChatPanel onClose={onClose} onOpenSavedMessages={onOpenSavedMessages} />
+			<ChatPanel onClose={onClose} />
 		</ChatProvider>
 	);
 };

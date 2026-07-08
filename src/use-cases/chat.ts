@@ -5,7 +5,7 @@ import type {
 	EncryptedPayload,
 	MessageReplyRef,
 } from "../domain/chat";
-import { decryptMessage, MAX_IMAGE_SIZE_BYTES, IMAGE_MIME_TYPES } from "../domain/chat";
+import { decryptMessage, deriveSelfRoomId, MAX_IMAGE_SIZE_BYTES, IMAGE_MIME_TYPES } from "../domain/chat";
 import { ChatValidationError } from "../domain/chat-errors";
 import type { CryptoService } from "../ports/chat-crypto";
 import type { SignalProvider } from "../ports/chat-signal";
@@ -15,10 +15,13 @@ export interface ChatUseCase {
 	connect(): Promise<void>;
 	disconnect(): void;
 	sendText(content: string, replyTo?: MessageReplyRef): Promise<void>;
+	sendSelfText(content: string): Promise<void>;
 	sendImage(file: File): Promise<void>;
 	loadHistory(): Promise<ChatMessage[]>;
+	loadSelfHistory(): Promise<ChatMessage[]>;
 	loadMore(beforeTimestamp: string): Promise<ChatMessage[]>;
 	onMessage(handler: (msg: ChatMessage) => void): void;
+	onSelfMessage(handler: (msg: ChatMessage) => void): void;
 	onPeerJoin(handler: (user: ChatUser) => void): void;
 	onPeerLeave(handler: (user: ChatUser) => void): void;
 	onConnectionState(handler: (state: string) => void): void;
@@ -65,8 +68,10 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 	} = params;
 
 	let roomId = `${account}/${board}`;
+	let selfRoomId = "";
 	let connected = false;
 	const messageHandlers: Array<(msg: ChatMessage) => void> = [];
+	const selfMessageHandlers: Array<(msg: ChatMessage) => void> = [];
 	const peerJoinHandlers: Array<(user: ChatUser) => void> = [];
 	const peerLeaveHandlers: Array<(user: ChatUser) => void> = [];
 	const stateHandlers: Array<(state: string) => void> = [];
@@ -76,12 +81,16 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 		for (const h of stateHandlers) h(state);
 	};
 
-	const broadcastDecrypted = async (msg: ChatMessage) => {
+	const broadcastDecrypted = async (msg: ChatMessage, isSelf = false) => {
 		if (seenIds.has(msg.id)) return;
 		seenIds.add(msg.id);
 
 		const display = await decryptMessage(msg, cryptoService);
-		for (const h of messageHandlers) h(display);
+		if (isSelf) {
+			for (const h of selfMessageHandlers) h(display);
+		} else {
+			for (const h of messageHandlers) h(display);
+		}
 
 		const storageMsg: ChatMessage = msg.content
 			? {
@@ -105,8 +114,10 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 		const roomKey = await cryptoService.deriveRoomKey(account, board);
 		await cryptoService.init(roomKey);
 		roomId = roomKey.slice(0, 16);
+		selfRoomId = deriveSelfRoomId(identity.id);
 
 		void loadSavedHistory();
+		void loadSavedSelfHistory();
 
 		try {
 			await signalProvider.connect(roomId, identity, signalServer, members);
@@ -131,6 +142,21 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 		}
 	};
 
+	const loadSavedSelfHistory = async () => {
+		if (!selfRoomId) return;
+		try {
+			const saved = await storage.getHistory(selfRoomId, { limit: 200 });
+			for (const msg of saved) {
+				if (seenIds.has(msg.id)) continue;
+				seenIds.add(msg.id);
+				const display = await decryptMessage(msg, cryptoService);
+				for (const h of selfMessageHandlers) h(display);
+			}
+		} catch {
+			// history load is best-effort
+		}
+	};
+
 	signalProvider.onMessage((event) => {
 		type SignalPayload = {
 			type?: string;
@@ -140,11 +166,16 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 			msgId?: string;
 			createdAt?: string;
 			encryptedReplyTo?: EncryptedPayload;
+			scope?: string;
 		};
 
 		const payload = event.data as SignalPayload;
 
 		if (!payload.encrypted) return;
+
+		const isSelf = payload.scope === "self" && event.from.user.id === identity.id;
+
+		if (payload.scope === "self" && !isSelf) return;
 
 		const resolveContent = async () => {
 			let decrypted: string;
@@ -166,7 +197,7 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 
 			const msg: ChatMessage = {
 				id: payload.msgId ?? makeMessageId(),
-				roomId,
+				roomId: isSelf ? selfRoomId : roomId,
 				sender: event.from.user,
 				content: decrypted,
 				type: payload.msgType ?? "text",
@@ -176,7 +207,7 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 				replyTo,
 				encryptedReplyTo: payload.encryptedReplyTo,
 			};
-			void broadcastDecrypted(msg);
+			void broadcastDecrypted(msg, isSelf);
 		};
 
 		void resolveContent();
@@ -273,8 +304,44 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 			void broadcastDecrypted(msg);
 		},
 
+		async sendSelfText(content: string) {
+			if (!connected) throw new ChatValidationError("Not connected to chat room");
+			const trimmed = content.trim();
+			if (!trimmed) throw new ChatValidationError("Message cannot be empty");
+			if (trimmed.length > 5000) throw new ChatValidationError("Message too long (max 5000 chars)");
+
+			const encrypted = await cryptoService.encrypt(trimmed);
+
+			const msg: ChatMessage = {
+				id: makeMessageId(),
+				roomId: selfRoomId,
+				sender: identity,
+				content: trimmed,
+				type: "text",
+				createdAt: new Date().toISOString(),
+				encrypted: true,
+				encryptedPayload: encrypted,
+			};
+
+			signalProvider.send({
+				type: "chat",
+				scope: "self",
+				msgId: msg.id,
+				msgType: "text",
+				encrypted,
+				createdAt: msg.createdAt,
+			});
+
+			void broadcastDecrypted(msg, true);
+		},
+
 		async loadHistory() {
 			const saved = await storage.getHistory(roomId, { limit: 50 });
+			return Promise.all(saved.map((m) => decryptMessage(m, cryptoService)));
+		},
+
+		async loadSelfHistory() {
+			const saved = await storage.getHistory(selfRoomId, { limit: 200 });
 			return Promise.all(saved.map((m) => decryptMessage(m, cryptoService)));
 		},
 
@@ -285,6 +352,10 @@ export const createChatUseCase = (params: ConnectParams): ChatUseCase => {
 
 		onMessage(handler) {
 			messageHandlers.push(handler);
+		},
+
+		onSelfMessage(handler) {
+			selfMessageHandlers.push(handler);
 		},
 
 		onPeerJoin(handler) {

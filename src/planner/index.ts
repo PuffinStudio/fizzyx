@@ -9,9 +9,6 @@ import {
 } from "../use-cases/planner-service";
 import { Live as ConfigRepoLive, makeBunConfigRepository } from "../adapters/bun-config-repository";
 import { loadAppConfig } from "../adapters/app-config";
-import { homedir } from "os";
-import { join } from "path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 
 export type PlannerServerOptions = {
 	readonly port?: number;
@@ -63,36 +60,6 @@ const refreshPlannerSnapshotInBackground = (snapshot: { account: string; board: 
 	plannerSnapshotRefreshes.set(key, refresh);
 	refresh.catch(() => undefined);
 };
-
-const SELF_MESSAGES_DIR = join(homedir(), ".config", "fizzyx", "self-messages");
-
-const readSelfMessages = (userId: string): SelfMessageRecord[] => {
-	try {
-		const filePath = join(SELF_MESSAGES_DIR, `${sanitizeId(userId)}.json`);
-		if (!existsSync(filePath)) return [];
-		const raw = readFileSync(filePath, "utf-8");
-		return JSON.parse(raw) as SelfMessageRecord[];
-	} catch {
-		return [];
-	}
-};
-
-const writeSelfMessages = (userId: string, messages: SelfMessageRecord[]): void => {
-	const dir = SELF_MESSAGES_DIR;
-	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	const filePath = join(dir, `${sanitizeId(userId)}.json`);
-	writeFileSync(filePath, JSON.stringify(messages, null, 2));
-};
-
-interface SelfMessageRecord {
-	readonly id: string;
-	readonly encrypted: boolean;
-	readonly encryptedPayload: { readonly iv: string; readonly ciphertext: string };
-	readonly type: string;
-	readonly createdAt: string;
-}
-
-const sanitizeId = (id: string): string => id.replace(/[^a-zA-Z0-9_-]/g, "_");
 
 export const startPlannerServer = async (
 	options: PlannerServerOptions = {},
@@ -177,58 +144,6 @@ export const startPlannerServer = async (
 							Effect.provide(ConfigRepoLive),
 						),
 					);
-				},
-			},
-
-			"/api/chat/self-messages": {
-				GET: async (req) => {
-					const url = new URL(req.url);
-					const userId = url.searchParams.get("userId");
-					if (!userId)
-						return new Response(JSON.stringify({ error: "Missing userId" }), { status: 400 });
-					const messages = readSelfMessages(userId);
-					return Response.json(messages);
-				},
-				POST: async (req) => {
-					let body: {
-						userId?: string;
-						id?: string;
-						encrypted?: boolean;
-						encryptedPayload?: { iv: string; ciphertext: string };
-						type?: string;
-						createdAt?: string;
-					};
-					try {
-						body = (await req.json()) as typeof body;
-					} catch {
-						return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
-					}
-					if (
-						!body.userId ||
-						!body.id ||
-						!body.encryptedPayload?.iv ||
-						!body.encryptedPayload?.ciphertext
-					) {
-						return new Response(
-							JSON.stringify({ error: "Missing userId, id, or encryptedPayload" }),
-							{ status: 400 },
-						);
-					}
-					const messages = readSelfMessages(body.userId);
-					if (!messages.some((m) => m.id === body.id)) {
-						messages.push({
-							id: body.id,
-							encrypted: true,
-							encryptedPayload: {
-								iv: body.encryptedPayload.iv,
-								ciphertext: body.encryptedPayload.ciphertext,
-							},
-							type: (body.type as string) ?? "text",
-							createdAt: body.createdAt ?? new Date().toISOString(),
-						});
-						writeSelfMessages(body.userId, messages);
-					}
-					return Response.json({ ok: true });
 				},
 			},
 

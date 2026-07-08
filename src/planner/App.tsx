@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { TeamChat } from "./components/chat/team-chat";
-import { SavedMessages } from "./components/chat/saved-messages";
 import {
 	Calendar,
 	HeartPulse,
@@ -93,7 +92,6 @@ export function App() {
 	const [isLoading, setIsLoading] = useState(true);
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [chatOpen, setChatOpen] = useState(false);
-	const [savedMessagesOpen, setSavedMessagesOpen] = useState(false);
 	const [boardPickerOpen, setBoardPickerOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useQueryState("q", parseAsString.withDefault(""));
 	const [selectedBoard, setSelectedBoard] = useQueryState("board", parseAsString);
@@ -410,22 +408,6 @@ export function App() {
 					members={snapshot.users}
 					signalServer={plannerConfig.chat?.signalServer}
 					onClose={() => setChatOpen(false)}
-					onOpenSavedMessages={() => {
-						setChatOpen(false);
-						setSavedMessagesOpen(true);
-					}}
-				/>
-			) : null}
-			{savedMessagesOpen && snapshot?.identity ? (
-				<SavedMessages
-					open={savedMessagesOpen}
-					userId={snapshot.identity.id}
-					userName={snapshot.identity.name}
-					onClose={() => setSavedMessagesOpen(false)}
-					onBackToChat={() => {
-						setSavedMessagesOpen(false);
-						setChatOpen(true);
-					}}
 				/>
 			) : null}
 		</PlannerShell>

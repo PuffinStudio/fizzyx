@@ -25,13 +25,16 @@ export interface UseChatOptions {
 
 export interface UseChatReturn {
 	messages: ChatMessage[];
+	selfMessages: ChatMessage[];
 	connectedPeers: ChatUser[];
 	connectionState: ChatConnectionState;
 	connect: () => Promise<void>;
 	disconnect: () => void;
 	sendText: (content: string, replyTo?: MessageReplyRef) => Promise<void>;
+	sendSelfText: (content: string) => Promise<void>;
 	sendImage: (file: File) => Promise<void>;
 	loadHistory: () => Promise<ChatMessage[]>;
+	loadSelfHistory: () => Promise<ChatMessage[]>;
 	loadMore: (beforeTimestamp: string) => Promise<ChatMessage[]>;
 }
 
@@ -49,11 +52,13 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 	} = options;
 
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
+	const [selfMessages, setSelfMessages] = useState<ChatMessage[]>([]);
 	const [connectedPeers, setConnectedPeers] = useState<ChatUser[]>([]);
 	const [connectionState, setConnectionState] = useState<ChatConnectionState>("disconnected");
 
 	const chatRef = useRef<ChatUseCase | null>(null);
 	const messagesRef = useRef<ChatMessage[]>([]);
+	const selfMessagesRef = useRef<ChatMessage[]>([]);
 
 	useEffect(() => {
 		if (!signalProvider || !cryptoService || !storage) return;
@@ -74,6 +79,11 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 		chat.onMessage((msg) => {
 			messagesRef.current = [...messagesRef.current, msg];
 			setMessages(messagesRef.current);
+		});
+
+		chat.onSelfMessage((msg) => {
+			selfMessagesRef.current = [...selfMessagesRef.current, msg];
+			setSelfMessages(selfMessagesRef.current);
 		});
 
 		chat.onPeerJoin((user) => {
@@ -108,11 +118,17 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 	const disconnect = useCallback(() => {
 		chatRef.current?.disconnect();
 		messagesRef.current = [];
+		selfMessagesRef.current = [];
 		setMessages([]);
+		setSelfMessages([]);
 	}, []);
 
 	const sendText = useCallback(async (content: string, replyTo?: MessageReplyRef) => {
 		await chatRef.current?.sendText(content, replyTo);
+	}, []);
+
+	const sendSelfText = useCallback(async (content: string) => {
+		await chatRef.current?.sendSelfText(content);
 	}, []);
 
 	const sendImage = useCallback(async (file: File) => {
@@ -127,6 +143,14 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 		return history;
 	}, []);
 
+	const loadSelfHistory = useCallback(async () => {
+		if (!chatRef.current) return [];
+		const history = await chatRef.current.loadSelfHistory();
+		selfMessagesRef.current = history;
+		setSelfMessages(history);
+		return history;
+	}, []);
+
 	const loadMore = useCallback(async (beforeTimestamp: string) => {
 		if (!chatRef.current) return [];
 		return chatRef.current.loadMore(beforeTimestamp);
@@ -134,13 +158,16 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 
 	return {
 		messages,
+		selfMessages,
 		connectedPeers,
 		connectionState,
 		connect,
 		disconnect,
 		sendText,
+		sendSelfText,
 		sendImage,
 		loadHistory,
+		loadSelfHistory,
 		loadMore,
 	};
 };

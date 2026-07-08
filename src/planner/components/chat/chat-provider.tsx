@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import type { ChatUser } from "../../../domain/chat";
+import type { ChatMessage, ChatUser, ChatConnectionState, MessageReplyRef } from "../../../domain/chat";
 import type {
 	CryptoService,
 	SignalProvider,
@@ -11,6 +11,7 @@ import { useChat, type UseChatReturn } from "../../hooks/use-chat";
 export interface ChatContextValue extends UseChatReturn {
 	readonly enabled: boolean;
 	readonly currentUserId: string;
+	readonly currentUserName: string;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -53,8 +54,8 @@ export const ChatProvider = ({
 	});
 
 	const value = useMemo(
-		() => ({ ...chat, enabled: true, currentUserId: identity.id }),
-		[chat, identity.id],
+		() => ({ ...chat, enabled: true, currentUserId: identity.id, currentUserName: identity.name }),
+		[chat, identity.id, identity.name],
 	);
 
 	return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
@@ -66,14 +67,18 @@ export const useChatContext = (): ChatContextValue => {
 		return {
 			enabled: false,
 			currentUserId: "",
+			currentUserName: "",
 			messages: [],
+			selfMessages: [],
 			connectedPeers: [],
 			connectionState: "disconnected",
 			connect: async () => {},
 			disconnect: () => {},
 			sendText: async () => {},
+			sendSelfText: async () => {},
 			sendImage: async () => {},
 			loadHistory: async () => [],
+			loadSelfHistory: async () => [],
 			loadMore: async () => [],
 		};
 	}
