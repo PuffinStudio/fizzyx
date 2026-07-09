@@ -70,12 +70,15 @@ export const startPlannerServer = async (
 			: DEFAULT_PLANNER_PORT;
 
 	const server = serve({
+		hostname: "127.0.0.1",
 		port,
 		idleTimeout: 120,
 		routes: {
 			"/api/planner/avatar": async (req) => proxyAvatar(req),
 
 			"/api/planner/config": async () => plannerConfigResponse(),
+
+			"/api/planner/self-chat-key": async () => selfChatKeyResponse(),
 
 			"/api/planner/context": async () =>
 				plannerJsonResponse(loadPlannerContext().pipe(Effect.provide(ConfigRepoLive))),
@@ -172,6 +175,27 @@ const plannerConfigResponse = async (): Promise<Response> => {
 		const message = cause instanceof Error ? cause.message : String(cause);
 		return Response.json({ error: message }, { status: 400 });
 	}
+};
+
+const selfChatKeyResponse = async (): Promise<Response> => {
+	try {
+		const repo = makeBunConfigRepository();
+		const config = await Effect.runPromise(repo.loadProjectConfig());
+		const credentials = await Effect.runPromise(repo.loadCredentials(config.account));
+		const key = await sha256Hex(`fizzyx-self-chat-v1:${config.account}:${credentials.token}`);
+		return Response.json({ key });
+	} catch (cause) {
+		const message = cause instanceof Error ? cause.message : String(cause);
+		return Response.json({ error: message }, { status: 400 });
+	}
+};
+
+const sha256Hex = async (input: string): Promise<string> => {
+	const bytes = new TextEncoder().encode(input);
+	const digest = await crypto.subtle.digest("SHA-256", bytes);
+	return Array.from(new Uint8Array(digest))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
 };
 
 const cleanQueryValue = (value: string | null): string | undefined => {

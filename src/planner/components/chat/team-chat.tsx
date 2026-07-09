@@ -34,7 +34,9 @@ export const TeamChat = ({
 	const [adapters, setAdapters] = useState<{
 		signal: SignalProvider;
 		crypto: CryptoService;
+		selfCrypto: CryptoService;
 		storage: ChatStorage;
+		selfRoomKey?: string;
 	} | null>(null);
 
 	useEffect(() => {
@@ -45,10 +47,27 @@ export const TeamChat = ({
 
 		const signal = new PeerJSSignalProvider();
 		const crypto = new SubtleCryptoService();
+		const selfCrypto = new SubtleCryptoService();
 		const storage = new IndexedDBChatStorage();
-		setAdapters({ signal, crypto, storage });
+		let active = true;
+
+		void fetch("/api/planner/self-chat-key")
+			.then(async (response) => {
+				if (!response.ok) return {};
+				return (await response.json()) as { key?: string };
+			})
+			.catch(() => undefined)
+			.then((data) => {
+				if (!active) return;
+				const selfRoomKey =
+					data && typeof data === "object" && "key" in data && typeof data.key === "string"
+						? data.key
+						: undefined;
+				setAdapters({ signal, crypto, selfCrypto, storage, selfRoomKey });
+			});
 
 		return () => {
+			active = false;
 			signal.disconnect();
 		};
 	}, [open]);
@@ -63,6 +82,8 @@ export const TeamChat = ({
 			members={members}
 			signalProvider={adapters.signal}
 			cryptoService={adapters.crypto}
+			selfCryptoService={adapters.selfCrypto}
+			selfRoomKey={adapters.selfRoomKey}
 			storage={adapters.storage}
 			signalServer={signalServer}
 		>

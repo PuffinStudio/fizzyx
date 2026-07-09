@@ -22,6 +22,8 @@ interface PeerModule {
 	): PeerInstance;
 }
 
+type PeerError = Error & { type?: string };
+
 interface PeerInstance {
 	on(event: "open", handler: (id: string) => void): void;
 	on(event: "connection", handler: (conn: DataConnection) => void): void;
@@ -45,6 +47,14 @@ interface DataConnection {
 	peer: string;
 	metadata?: unknown;
 }
+
+type SignalWireMessage = {
+	readonly type?: string;
+	readonly msgId?: string;
+	readonly from?: SignalPeerEvent | null;
+	readonly data?: unknown;
+	readonly user?: ChatUser;
+};
 
 const SYSTEM_PREFIX = "__peer_handshake__";
 
@@ -100,48 +110,74 @@ export class PeerJSSignalProvider implements SignalProvider {
 		const Peer = await loadPeerJS();
 		const basePeerId = `${roomId}_${identity.id}`;
 		const deviceTag = getDeviceId();
-		const selfId = `${basePeerId}_${deviceTag}`;
+		const devicePeerId = `${basePeerId}_${deviceTag}`;
 
 		this.setState("connecting");
 
-		this.peer = new Peer(selfId, {
+		const peerOptions = {
 			host,
 			port,
 			path,
 			secure,
 			...(key ? { key } : {}),
 			debug: 0,
-		}) as PeerInstance;
+		};
 
+		try {
+			await this.openPeer(Peer, basePeerId, peerOptions);
+		} catch (err) {
+			if (!isUnavailablePeerId(err)) {
+				this.setState("error");
+				throw new ChatConnectionError("Failed to connect to signaling server", err as Error);
+			}
+			await this.openPeer(Peer, devicePeerId, peerOptions).catch((fallbackErr) => {
+				this.setState("error");
+				throw new ChatConnectionError(
+					"Failed to connect to signaling server",
+					fallbackErr as Error,
+				);
+			});
+		}
+
+		if (!this.peer) throw new ChatConnectionError("Peer not initialized");
+		this.selfDevicePeerId = this.peer.id;
+		this.setState("connected");
+		this.connectKnownPeers(peers);
+		this.announcePresence();
+	}
+
+	private openPeer(
+		Peer: PeerModule,
+		peerId: string,
+		options: ConstructorParameters<PeerModule>[1],
+	): Promise<void> {
+		this.peer = new Peer(peerId, options) as PeerInstance;
 		return new Promise<void>((resolve, reject) => {
-			if (!this.peer) return reject(new ChatConnectionError("Peer not initialized"));
-
+			const peer = this.peer;
+			if (!peer) return reject(new ChatConnectionError("Peer not initialized"));
 			const cleanup = () => {
-				this.peer?.off("open", onOpen);
-				this.peer?.off("error", onError);
+				peer.off("open", onOpen);
+				peer.off("error", onError);
 			};
-
 			const onOpen = () => {
-				this.selfDevicePeerId = this.peer!.id;
-				this.setState("connected");
 				cleanup();
 				resolve();
-
-				this.connectKnownPeers(peers);
-				this.announcePresence();
 			};
-
 			const onError = (err: Error) => {
 				cleanup();
-				this.setState("error");
-				reject(new ChatConnectionError("Failed to connect to signaling server", err));
+				try {
+					peer.destroy();
+				} catch {
+					/* ignore */
+				}
+				if (this.peer === peer) this.peer = null;
+				reject(err);
 			};
-
-			this.peer.on("open", onOpen);
-			this.peer.on("error", onError);
-			this.peer.on("connection", (conn) => this.handleIncoming(conn));
-			this.peer.on("disconnected", () => this.setState("disconnected"));
-			this.peer.on("close", () => this.setState("disconnected"));
+			peer.on("open", onOpen);
+			peer.on("error", onError);
+			peer.on("connection", (conn) => this.handleIncoming(conn));
+			peer.on("disconnected", () => this.setState("disconnected"));
+			peer.on("close", () => this.setState("disconnected"));
 		});
 	}
 
@@ -180,7 +216,7 @@ export class PeerJSSignalProvider implements SignalProvider {
 	}
 
 	send(data: unknown): void {
-		const payload = { from: this.getSelfPeer(), data };
+		const payload = { msgId: getPayloadMessageId(data), from: this.getSelfPeer(), data };
 		for (const conn of this.connections.values()) {
 			try {
 				conn.send(payload);
@@ -193,7 +229,7 @@ export class PeerJSSignalProvider implements SignalProvider {
 	sendTo(peerId: string, data: unknown): void {
 		const conn = this.connections.get(peerId);
 		if (!conn) return;
-		const payload = { from: this.getSelfPeer(), data };
+		const payload = { msgId: getPayloadMessageId(data), from: this.getSelfPeer(), data };
 		try {
 			conn.send(payload);
 		} catch {
@@ -291,16 +327,14 @@ export class PeerJSSignalProvider implements SignalProvider {
 		});
 
 		conn.on("data", (raw: unknown) => {
-			const msg = raw as {
-				type?: string;
-				msgId?: string;
-				from?: SignalPeerEvent;
-				data?: unknown;
-				user?: ChatUser;
-			};
+			const msg = raw as SignalWireMessage;
+			const msgId = getWireMessageId(msg);
 
-			if (msg.msgId && this.receivedMsgIds.has(msg.msgId)) return;
-			if (msg.msgId) this.receivedMsgIds.add(msg.msgId);
+			if (msgId && this.receivedMsgIds.has(msgId)) return;
+			if (msgId) {
+				this.receivedMsgIds.add(msgId);
+				this.forwardToOtherPeers(peerId, raw);
+			}
 
 			if (msg.type === `${SYSTEM_PREFIX}_presence` && msg.user) {
 				const event: SignalPeerEvent = { peerId, user: msg.user };
@@ -323,7 +357,7 @@ export class PeerJSSignalProvider implements SignalProvider {
 
 			const messageEvent: SignalMessageEvent = {
 				from: fromEvent,
-				data: msg,
+				data: msg.data ?? msg,
 			};
 			for (const h of this.messageHandlers) h(messageEvent);
 		});
@@ -341,6 +375,17 @@ export class PeerJSSignalProvider implements SignalProvider {
 			this.connections.delete(peerId);
 		});
 	}
+
+	private forwardToOtherPeers(sourcePeerId: string, raw: unknown): void {
+		for (const [targetPeerId, conn] of this.connections.entries()) {
+			if (targetPeerId === sourcePeerId) continue;
+			try {
+				conn.send(raw);
+			} catch {
+				/* ignore */
+			}
+		}
+	}
 }
 
 let peerJSPromise: Promise<unknown> | null = null;
@@ -353,3 +398,23 @@ const loadPeerJS = async (): Promise<PeerModule> => {
 	const Peer = (mod.default ?? mod.Peer) as PeerModule;
 	return Peer;
 };
+
+const isUnavailablePeerId = (err: unknown): boolean => {
+	const peerErr = err as PeerError;
+	const message = peerErr?.message?.toLowerCase() ?? "";
+	return (
+		peerErr?.type === "unavailable-id" ||
+		message.includes("unavailable-id") ||
+		message.includes("is taken") ||
+		message.includes("taken")
+	);
+};
+
+const getPayloadMessageId = (data: unknown): string | undefined => {
+	if (!data || typeof data !== "object") return undefined;
+	const msgId = (data as { msgId?: unknown }).msgId;
+	return typeof msgId === "string" ? msgId : undefined;
+};
+
+const getWireMessageId = (msg: SignalWireMessage): string | undefined =>
+	typeof msg.msgId === "string" ? msg.msgId : getPayloadMessageId(msg.data);

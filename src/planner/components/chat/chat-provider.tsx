@@ -1,10 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import type {
-	ChatMessage,
-	ChatUser,
-	ChatConnectionState,
-	MessageReplyRef,
-} from "../../../domain/chat";
+import type { ChatUser } from "../../../domain/chat";
 import type {
 	CryptoService,
 	SignalProvider,
@@ -29,6 +24,8 @@ export interface ChatProviderProps {
 	readonly members?: ReadonlyArray<ChatUser>;
 	readonly signalProvider: SignalProvider;
 	readonly cryptoService: CryptoService;
+	readonly selfCryptoService?: CryptoService;
+	readonly selfRoomKey?: string;
 	readonly storage: ChatStorage;
 	readonly signalServer?: SignalServerConfig;
 	readonly autoConnect?: boolean;
@@ -42,6 +39,8 @@ export const ChatProvider = ({
 	members,
 	signalProvider,
 	cryptoService,
+	selfCryptoService,
+	selfRoomKey,
 	storage,
 	signalServer,
 	autoConnect = true,
@@ -53,6 +52,8 @@ export const ChatProvider = ({
 		members,
 		signalProvider,
 		cryptoService,
+		selfCryptoService,
+		selfRoomKey,
 		storage,
 		signalServer,
 		autoConnect,
@@ -82,6 +83,7 @@ export const useChatContext = (): ChatContextValue => {
 			sendText: async () => {},
 			sendSelfText: async () => {},
 			sendImage: async () => {},
+			sendSelfImage: async () => {},
 			loadHistory: async () => [],
 			loadSelfHistory: async () => [],
 			loadMore: async () => [],

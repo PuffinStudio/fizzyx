@@ -18,6 +18,8 @@ export interface UseChatOptions {
 	readonly members?: ReadonlyArray<ChatUser>;
 	readonly signalProvider?: SignalProvider;
 	readonly cryptoService?: CryptoService;
+	readonly selfCryptoService?: CryptoService;
+	readonly selfRoomKey?: string;
 	readonly storage?: ChatStorage;
 	readonly signalServer?: SignalServerConfig;
 	readonly autoConnect?: boolean;
@@ -33,6 +35,7 @@ export interface UseChatReturn {
 	sendText: (content: string, replyTo?: MessageReplyRef) => Promise<void>;
 	sendSelfText: (content: string) => Promise<void>;
 	sendImage: (file: File) => Promise<void>;
+	sendSelfImage: (file: File) => Promise<void>;
 	loadHistory: () => Promise<ChatMessage[]>;
 	loadSelfHistory: () => Promise<ChatMessage[]>;
 	loadMore: (beforeTimestamp: string) => Promise<ChatMessage[]>;
@@ -46,6 +49,8 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 		members,
 		signalProvider,
 		cryptoService,
+		selfCryptoService,
+		selfRoomKey,
 		storage,
 		signalServer,
 		autoConnect = false,
@@ -70,6 +75,8 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 			members,
 			signalProvider,
 			cryptoService,
+			selfCryptoService,
+			selfRoomKey,
 			storage,
 			signalServer,
 		});
@@ -109,7 +116,18 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 			chat.disconnect();
 			chatRef.current = null;
 		};
-	}, [account, board, identity, members, signalProvider, cryptoService, storage, signalServer]);
+	}, [
+		account,
+		board,
+		identity,
+		members,
+		signalProvider,
+		cryptoService,
+		selfCryptoService,
+		selfRoomKey,
+		storage,
+		signalServer,
+	]);
 
 	const connect = useCallback(async () => {
 		await chatRef.current?.connect();
@@ -133,6 +151,10 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 
 	const sendImage = useCallback(async (file: File) => {
 		await chatRef.current?.sendImage(file);
+	}, []);
+
+	const sendSelfImage = useCallback(async (file: File) => {
+		await chatRef.current?.sendSelfImage(file);
 	}, []);
 
 	const loadHistory = useCallback(async () => {
@@ -166,6 +188,7 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 		sendText,
 		sendSelfText,
 		sendImage,
+		sendSelfImage,
 		loadHistory,
 		loadSelfHistory,
 		loadMore,

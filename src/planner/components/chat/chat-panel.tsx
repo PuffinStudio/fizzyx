@@ -59,6 +59,7 @@ export const ChatPanel = ({ onClose: _onClose }: ChatPanelProps) => {
 		sendText,
 		sendSelfText,
 		sendImage,
+		sendSelfImage,
 		connect,
 		loadHistory,
 		loadSelfHistory,
@@ -155,7 +156,11 @@ export const ChatPanel = ({ onClose: _onClose }: ChatPanelProps) => {
 		try {
 			const file = pastedFileRef.current ?? fileInputRef.current?.files?.[0];
 			if (imagePreview && file) {
-				await sendImage(file);
+				if (view === "self") {
+					await sendSelfImage(file);
+				} else {
+					await sendImage(file);
+				}
 				setImagePreview(null);
 				pastedFileRef.current = null;
 				if (fileInputRef.current) fileInputRef.current.value = "";
