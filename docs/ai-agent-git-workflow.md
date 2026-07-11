@@ -706,6 +706,9 @@ They should integrate without depending on each other:
 - A Fizzy-backed project can bind a dev branch to a card.
 - `flow create` creates an unassigned card by default. Assignment is explicit with
   `flow create "<title>" --assign <user> --desc <draft>` or `flow assign <card> <user>`.
+- `flow edit <card> --desc <draft>` uses the same standard draft contract as create and
+  synchronizes the card description, metadata tags, and Fizzy steps.
+- `flow repair` is reserved for normalizing legacy or malformed cards, not routine editing.
 - `flow` may call `dev` for Git-safe task starts and completions.
 - `dev` may read card metadata for branch names and summaries when a card is provided.
 - Git promotion must not require a card.
@@ -716,6 +719,7 @@ They should integrate without depending on each other:
 | ------------------------------- | -------------------------------------------------------------------------- |
 | `fizzyx flow start <card>`      | May suggest or run `fizzyx dev start <slug> --card <card>`                 |
 | `fizzyx flow work`              | Shows current card plus branch state from `fizzyx dev status`              |
+| `fizzyx flow edit <card>`       | Keeps card scope and execution steps aligned as the work changes           |
 | `fizzyx flow review <card>`     | Should require or suggest `fizzyx dev ready` first                         |
 | `fizzyx flow done <card> <ref>` | Should verify that the referenced commit or branch passed dev ready checks |
 | `fizzyx flow block <card>`      | Can include current dev branch and blocked reason                          |

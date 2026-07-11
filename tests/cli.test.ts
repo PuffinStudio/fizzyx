@@ -455,6 +455,15 @@ test("flow create requires description input", async () => {
 	expect(stdout).toContain("usage: fizzyx flow create");
 });
 
+test("flow edit exposes title and description options", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "edit", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("Edit a card title or description");
+	expect(stdout).toContain("--title");
+	expect(stdout).toContain("--desc");
+});
+
 test("flow create --draft writes a local card draft", async () => {
 	const root = makeTempDir();
 	const projectDir = join(root, "project");

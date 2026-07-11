@@ -27,6 +27,10 @@ export interface FizzyApi {
 	comment: (number: CardNumber, body: string) => Effect.Effect<void, ApiError>;
 	closeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	postponeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
+	updateCard: (
+		number: CardNumber,
+		input: { title?: string; description?: string },
+	) => Effect.Effect<void, ApiError>;
 	updateCardDescription: (number: CardNumber, description: string) => Effect.Effect<void, ApiError>;
 	updateStep: (
 		number: CardNumber,
@@ -41,6 +45,7 @@ export interface FizzyApi {
 		content: string,
 		completed?: boolean,
 	) => Effect.Effect<void, ApiError>;
+	deleteStep: (number: CardNumber, stepId: string) => Effect.Effect<void, ApiError>;
 }
 
 export const FizzyApi = Context.Service<FizzyApi>("FizzyApi");

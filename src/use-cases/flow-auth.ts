@@ -75,6 +75,7 @@ export const makeFlowApiWithAuthRetry = ({
 		listColumns: () => withAuthRetry((api) => api.listColumns()),
 		createColumn: (name) => withAuthRetry((api) => api.createColumn(name)),
 		createCard: (input) => withAuthRetry((api) => api.createCard(input)),
+		updateCard: (number, input) => withAuthRetry((api) => api.updateCard(number, input)),
 		updateCardDescription: (number, description) =>
 			withAuthRetry((api) => api.updateCardDescription(number, description)),
 		assignCard: (number, userId) => withAuthRetry((api) => api.assignCard(number, userId)),
@@ -89,6 +90,7 @@ export const makeFlowApiWithAuthRetry = ({
 			withAuthRetry((api) => api.updateStep(number, stepId, input)),
 		createStep: (number, content, completed) =>
 			withAuthRetry((api) => api.createStep(number, content, completed)),
+		deleteStep: (number, stepId) => withAuthRetry((api) => api.deleteStep(number, stepId)),
 	} satisfies FizzyApi;
 };
 

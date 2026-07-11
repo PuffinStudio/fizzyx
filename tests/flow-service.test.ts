@@ -18,6 +18,7 @@ import {
 	convertDescription,
 	getStandardizedCommentTemplate,
 	done,
+	edit,
 	start,
 	resolveDoneRefFromGit,
 	block,
@@ -92,6 +93,7 @@ const defaultApi = () =>
 			Effect.fail(new ApiError({ message: "updateCardDescription not mocked" })),
 		updateStep: () => Effect.fail(new ApiError({ message: "updateStep not mocked" })),
 		createStep: () => Effect.fail(new ApiError({ message: "createStep not mocked" })),
+		deleteStep: () => Effect.fail(new ApiError({ message: "deleteStep not mocked" })),
 	}) as unknown as FizzyApi;
 
 const makeEnv = (api: FizzyApi) => ({
@@ -113,6 +115,70 @@ const draftDescription = (body: string): string => `${body}
 
 ## Steps
 - [ ] Finish work`;
+
+test("edit applies the create draft format and replaces remote steps", async () => {
+	const api = defaultApi();
+	const updates: Array<{ number: number; title?: string; description?: string }> = [];
+	const stepUpdates: unknown[] = [];
+	const stepCreates: unknown[] = [];
+	const stepDeletes: unknown[] = [];
+	api.updateCard = (number, input) => {
+		updates.push({ number, ...input });
+		return Effect.succeed(undefined);
+	};
+	api.showCard = () =>
+		Effect.succeed({
+			number: 42,
+			title: "Old title",
+			steps: [
+				{ id: "step-1", content: "Old step", completed: false },
+				{ id: "step-2", content: "Remove me", completed: false },
+			],
+		});
+	api.updateStep = (_number, stepId, input) => {
+		stepUpdates.push({ stepId, ...input });
+		return Effect.succeed(undefined);
+	};
+	api.createStep = (...args) => {
+		stepCreates.push(args);
+		return Effect.succeed(undefined);
+	};
+	api.deleteStep = (...args) => {
+		stepDeletes.push(args);
+		return Effect.succeed(undefined);
+	};
+	api.identity = () => Effect.succeed({ userId: "user-1", name: "User" });
+	api.listCards = () => Effect.succeed([]);
+
+	const result = await Effect.runPromise(
+		edit(makeEnv(api), 42, {
+			title: "  New title  ",
+			description: "## Goal\nShip it\n\n## Steps\n- [x] New step",
+		}),
+	);
+
+	expect(result).toBe(42);
+	expect(updates).toEqual([
+		{
+			number: 42,
+			title: "New title",
+			description: "<h2>Goal</h2>\n<p>Ship it</p>",
+		},
+	]);
+	expect(stepUpdates).toEqual([
+		{ stepId: "step-1", content: "New step", completed: true },
+	]);
+	expect(stepCreates).toEqual([]);
+	expect(stepDeletes).toEqual([[42, "step-2"]]);
+});
+
+test("edit rejects descriptions that do not use the create draft format", async () => {
+	const result = await Effect.runPromise(
+		edit(makeEnv(defaultApi()), 42, { description: "## Goal\nShip it" }).pipe(Effect.flip),
+	);
+
+	expect(result).toBeInstanceOf(ValidationError);
+});
 
 const runGit = (cwd: string, args: ReadonlyArray<string>): void => {
 	const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "ignore", stderr: "ignore" });

@@ -24,7 +24,8 @@ import toIssuesContent from "../skills/bundled/to-issues.md" with { type: "text"
 import toPrdContent from "../skills/bundled/to-prd.md" with { type: "text" };
 import triageContent from "../skills/bundled/triage.md" with { type: "text" };
 
-const BUILTIN_SKILL_VERSION = "1.0.0";
+// Matt-derived content checked against mattpocock/skills@391a270 (2026-07-10).
+const BUILTIN_SKILL_VERSION = "1.1.0";
 
 type BuiltinSkill = {
 	name: string;

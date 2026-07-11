@@ -199,6 +199,28 @@ test("updateCardDescription uses generated PATCH card body", async () => {
 	});
 });
 
+test("updateCard sends title and description in one PATCH", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(
+			makeFetchFizzyApi(config, "token").updateCard(12, {
+				title: "New title",
+				description: "New description",
+			}),
+		),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("PATCH");
+	expect(JSON.parse(summary.bodyText)).toEqual({
+		title: "New title",
+		description: "New description",
+	});
+});
+
 test("updateStep uses generated PATCH step body", async () => {
 	const config = makeConfig();
 	const response = jsonResponse({});
@@ -220,6 +242,20 @@ test("updateStep uses generated PATCH step body", async () => {
 		completed: false,
 		content: "Plain step",
 	});
+});
+
+test("deleteStep uses generated DELETE endpoint", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(makeFetchFizzyApi(config, "token").deleteStep(42, "step-1")),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("DELETE");
+	expect(summary.url).toContain("/acme/cards/42/steps/step-1");
 });
 
 test("listColumns decodes board columns", async () => {

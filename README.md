@@ -19,6 +19,7 @@ fizzyx flow work
 fizzyx flow create --draft
 fizzyx flow create "<title>" --desc .fizzyx/card-<random>.md
 fizzyx flow create "<title>" --assign <user> --desc .fizzyx/card-<random>.md
+fizzyx flow edit <card> [--title "<title>"] [--desc <file|->]
 fizzyx flow assign <card> <user>
 fizzyx flow show <card>
 fizzyx flow start <card>
@@ -33,6 +34,7 @@ fizzyx flow repair
 `flow done` requires all steps to be complete and closes the card into Done.
 `flow create` expects the standard draft shape with a `## Steps` task list; generate it with `flow create --draft` instead of passing plain text.
 `flow create` does not assign by default. Use `--assign <user>` while creating or `flow assign <card> <user>` afterwards.
+`flow edit` updates the title, description, or both. Description input accepts a standard card draft file or `-` for stdin and synchronizes its `## Steps` task list.
 
 Agent loop for card-backed code work:
 

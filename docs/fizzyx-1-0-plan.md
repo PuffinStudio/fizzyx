@@ -28,6 +28,7 @@ fizzyx planner <command>
 ```sh
 fizzyx flow work
 fizzyx flow create
+fizzyx flow edit <card>
 fizzyx flow show <card>
 fizzyx flow start <card>
 fizzyx flow review <card>
@@ -230,10 +231,10 @@ skills:
   installed:
     tdd:
       source: builtin
-      version: 1.0.0
+      version: 1.1.0
     improve-codebase:
       source: builtin
-      version: 1.0.0
+      version: 1.1.0
   defaults:
     feature:
       - tdd
@@ -339,6 +340,14 @@ Combines:
 - Validates standard tags.
 - Accepts suggested skills without writing `skill:*` tags.
 - Does not write hidden metadata.
+
+### `flow edit`
+
+- Updates the title, standard draft description, or both.
+- Uses the same description parsing and validation contract as `flow create`.
+- Synchronizes standard tags, metadata tags, and the `## Steps` task list.
+- Keeps steps as Fizzy step resources instead of embedding them in the description.
+- Leaves `flow repair` responsible for legacy normalization rather than routine edits.
 
 ### `flow done`
 

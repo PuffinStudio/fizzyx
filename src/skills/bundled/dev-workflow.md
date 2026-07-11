@@ -21,6 +21,14 @@ When creating a Fizzy card, do not pass plain text directly to `flow create`.
 6. `flow create` does not assign by default. Use `--assign <user>` only when ownership is
    explicit, or run `fizzyx flow assign <card> <user>` after creation.
 
+When editing an existing card, keep the same contract:
+
+1. Edit from a standard draft containing `## Steps`, not from an ad hoc description.
+2. Run `fizzyx flow edit <card> --desc <draft-file>` to synchronize the description, tags,
+   metadata, and Fizzy steps. Add `--title "<title>"` when the title also changes.
+3. Use `fizzyx flow edit <card> --title "<title>"` for a title-only change.
+4. Use `flow repair` only to normalize legacy or malformed cards; it is not the normal edit path.
+
 ## What to do
 
 1. If working from a card, run `fizzyx flow show <card>` and keep the card number attached

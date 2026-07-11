@@ -41,6 +41,8 @@ export const formatStandardizingBoardMessage = (): string => "Standardizing boar
 
 export const formatCreatingCardMessage = (): string => "Creating card...";
 
+export const formatEditingCardMessage = (): string => "Editing card...";
+
 export const formatSyncingDoneWhenStepsMessage = (): string => "Syncing Done When steps...";
 
 export const formatWritingCardDraftMessage = (): string => "Writing card draft...";

@@ -438,6 +438,83 @@ export const add = (
 		return card.number;
 	});
 
+export const edit = (
+	env: InitializedEnv,
+	number: number,
+	input: { title?: string; description?: string },
+) =>
+	Effect.gen(function* () {
+		const title = input.title?.trim();
+		if (input.title !== undefined && !title) {
+			return yield* new ValidationError({ message: "Card title cannot be empty" });
+		}
+		if (title === undefined && input.description === undefined) {
+			return yield* new ValidationError({
+				message: "Provide --title, --desc, or both",
+			});
+		}
+
+		const parsed =
+			input.description === undefined ? undefined : parseTemplateDescription(input.description);
+		if (parsed && parsed.templateSteps.length === 0) {
+			return yield* new ValidationError({
+				message:
+					'Card description must use the same draft format as `flow create` and include a `## Steps` task list.',
+			});
+		}
+
+		const card = parsed ? yield* env.api.showCard(number) : undefined;
+		const metadata = parsed ? parsePlannerDescription(parsed.cardDescription).metadata : undefined;
+		const legacySkillSuggestions = (parsed?.templateTags ?? [])
+			.map((tag) => tag.trim().toLowerCase())
+			.filter((tag) => tag.startsWith("skill:"))
+			.map((tag) => tag.slice("skill:".length))
+			.filter(Boolean);
+		const cardDescription = parsed
+			? addSuggestedSkills(parsed.cardDescription, legacySkillSuggestions)
+			: undefined;
+
+		yield* env.api.updateCard(number, {
+			...(title === undefined ? {} : { title }),
+			...(cardDescription === undefined
+				? {}
+				: { description: convertDescription(cardDescription) }),
+		});
+
+		if (parsed && metadata) {
+			const tags = mergeTags(
+				parsed.templateTags.filter((tag) => {
+					const normalized = tag.trim().toLowerCase();
+					return !normalized.startsWith("api_status:") && !normalized.startsWith("skill:");
+				}),
+				tagsFromMetadata(metadata),
+			);
+			yield* Effect.forEach(tags, (tag) => env.api.tagCard(number, tag));
+
+			const existingSteps = card?.steps ?? [];
+			const sharedCount = Math.min(existingSteps.length, parsed.templateSteps.length);
+			yield* Effect.forEach(Array.from({ length: sharedCount }, (_, index) => index), (index) => {
+				const existing = existingSteps[index]!;
+				const next = parsed.templateSteps[index]!;
+				if (!existing.id || (existing.content === next.content && existing.completed === next.completed)) {
+					return Effect.succeed(undefined);
+				}
+				return env.api.updateStep(number, existing.id, {
+					content: next.content,
+					completed: next.completed,
+				});
+			});
+			yield* Effect.forEach(parsed.templateSteps.slice(sharedCount), (step) =>
+				env.api.createStep(number, step.content, step.completed),
+			);
+			yield* Effect.forEach(existingSteps.slice(sharedCount), (step) =>
+				step.id ? env.api.deleteStep(number, step.id) : Effect.succeed(undefined),
+			);
+		}
+		yield* syncBoard(env);
+		return number;
+	});
+
 const tagsFromMetadata = (metadata: PlannerMetadata): ReadonlyArray<string> => {
 	const tags: string[] = [];
 	const priority = normalizePriority(metadata.priority);
