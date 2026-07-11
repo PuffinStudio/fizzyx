@@ -165,9 +165,7 @@ test("edit applies the create draft format and replaces remote steps", async () 
 			description: "<h2>Goal</h2>\n<p>Ship it</p>",
 		},
 	]);
-	expect(stepUpdates).toEqual([
-		{ stepId: "step-1", content: "New step", completed: true },
-	]);
+	expect(stepUpdates).toEqual([{ stepId: "step-1", content: "New step", completed: true }]);
 	expect(stepCreates).toEqual([]);
 	expect(stepDeletes).toEqual([[42, "step-2"]]);
 });

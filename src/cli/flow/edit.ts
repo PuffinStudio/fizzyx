@@ -28,10 +28,7 @@ export const flowEditCmd = Command.make(
 			Argument.withDescription("Card number"),
 			Argument.withMetavar("CARD"),
 		),
-		title: Flag.string("title").pipe(
-			Flag.withDescription("New card title"),
-			Flag.optional,
-		),
+		title: Flag.string("title").pipe(Flag.withDescription("New card title"), Flag.optional),
 		desc: Flag.string("desc").pipe(
 			Flag.withDescription("New description file path ('-' for stdin)"),
 			Flag.optional,

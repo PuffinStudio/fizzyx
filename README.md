@@ -2,7 +2,7 @@
 
 > CLI tool for Fizzy board workflow, OSS/S3-compatible storage, and OpenAPI client generation.
 
-> <img src="./docs/images/fizzyx-logo.webp" alt="fizzyx logo" width="120" />
+<img src="./docs/images/fizzyx-logo.webp" alt="fizzyx logo" width="120" />
 
 ## Install
 

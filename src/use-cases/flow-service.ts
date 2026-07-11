@@ -459,7 +459,7 @@ export const edit = (
 		if (parsed && parsed.templateSteps.length === 0) {
 			return yield* new ValidationError({
 				message:
-					'Card description must use the same draft format as `flow create` and include a `## Steps` task list.',
+					"Card description must use the same draft format as `flow create` and include a `## Steps` task list.",
 			});
 		}
 
@@ -493,17 +493,23 @@ export const edit = (
 
 			const existingSteps = card?.steps ?? [];
 			const sharedCount = Math.min(existingSteps.length, parsed.templateSteps.length);
-			yield* Effect.forEach(Array.from({ length: sharedCount }, (_, index) => index), (index) => {
-				const existing = existingSteps[index]!;
-				const next = parsed.templateSteps[index]!;
-				if (!existing.id || (existing.content === next.content && existing.completed === next.completed)) {
-					return Effect.succeed(undefined);
-				}
-				return env.api.updateStep(number, existing.id, {
-					content: next.content,
-					completed: next.completed,
-				});
-			});
+			yield* Effect.forEach(
+				Array.from({ length: sharedCount }, (_, index) => index),
+				(index) => {
+					const existing = existingSteps[index]!;
+					const next = parsed.templateSteps[index]!;
+					if (
+						!existing.id ||
+						(existing.content === next.content && existing.completed === next.completed)
+					) {
+						return Effect.succeed(undefined);
+					}
+					return env.api.updateStep(number, existing.id, {
+						content: next.content,
+						completed: next.completed,
+					});
+				},
+			);
 			yield* Effect.forEach(parsed.templateSteps.slice(sharedCount), (step) =>
 				env.api.createStep(number, step.content, step.completed),
 			);

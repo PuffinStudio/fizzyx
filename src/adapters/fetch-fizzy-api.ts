@@ -388,11 +388,7 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 				}),
 			).pipe(Effect.flatMap(decodeCard)),
 		updateCard: (number, input) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.updateCard({ ...accountParams, cardNumber: number }, input),
-				),
-			),
+			asVoid(runGenerated(FizzyEffect.updateCard({ ...accountParams, cardNumber: number }, input))),
 		updateCardDescription: (number, description) =>
 			asVoid(
 				runGenerated(
@@ -460,9 +456,7 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 		},
 		deleteStep: (number, stepId) =>
 			asVoid(
-				runGenerated(
-					FizzyEffect.deleteStep({ ...accountParams, cardNumber: number, stepId }),
-				),
+				runGenerated(FizzyEffect.deleteStep({ ...accountParams, cardNumber: number, stepId })),
 			),
 	};
 };
