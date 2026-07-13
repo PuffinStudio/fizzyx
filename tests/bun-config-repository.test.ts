@@ -693,13 +693,13 @@ flow:
 		expect(text).toContain("stale_after_days: 30");
 		expect(text).toContain("conventional: true");
 		expect(text).toContain("allow_wip_on_ready: true");
-		expect(text).toContain("feature/card-42-order-ui:");
+		expect(text).not.toContain("feature/card-42-order-ui:");
 
 		const config = await Effect.runPromise(repo.loadProjectConfig());
 		expect(config.dev?.syncStrategy).toBe("rebase");
 		expect(config.dev?.promotion?.strategy).toBe("pr");
 		expect(config.dev?.commit?.allowWipOnReady).toBe(true);
-		expect(config.dev?.branches?.["feature/card-42-order-ui"]?.card).toBe(42);
+		expect(config.dev?.branches).toBeUndefined();
 	} finally {
 		process.chdir(originalCwd);
 		rmSync(root, { recursive: true, force: true });

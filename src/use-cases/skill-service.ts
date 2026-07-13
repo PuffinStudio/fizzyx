@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { applySkillsMigration, inspectSkillsMigration } from "./migrate";
 import {
 	type ConfigContext,
@@ -23,9 +24,10 @@ import tddContent from "../skills/bundled/tdd.md" with { type: "text" };
 import toIssuesContent from "../skills/bundled/to-issues.md" with { type: "text" };
 import toPrdContent from "../skills/bundled/to-prd.md" with { type: "text" };
 import triageContent from "../skills/bundled/triage.md" with { type: "text" };
+import { BUNDLED_OPENAI_METADATA } from "../skills/bundled/openai-metadata";
 
-// Matt-derived content checked against mattpocock/skills@391a270 (2026-07-10).
-const BUILTIN_SKILL_VERSION = "1.1.0";
+// Matt-derived content checked against mattpocock/skills@66898f6 (2026-07-13).
+const BUILTIN_SKILL_VERSION = "1.3.0";
 
 type BuiltinSkill = {
 	name: string;
@@ -193,6 +195,7 @@ export const addSkill = (source: string): SkillSummary => {
 	skills.installed = installed;
 	context.document.skills = skills;
 	writeYaml(context.writePath, context.document);
+	writeBundledSkill(context.rootDir, builtin, true);
 
 	return {
 		name: builtin.name,
@@ -296,24 +299,68 @@ export const runSkill = (name: string): string => {
 
 export const doctorSkillConfig = (): string => {
 	const report = inspectSkillsMigration();
+	const context = loadConfigContext();
+	const installed = parseInstalledSkills(context.document);
+	const missing = Object.keys(installed).filter(
+		(name) => !existsSync(join(context.rootDir, ".agents", "skills", name, "SKILL.md")),
+	);
+	const stale = Object.entries(installed)
+		.filter(
+			([name, metadata]) =>
+				metadata.source === "builtin" &&
+				BUILTIN_BY_NAME.has(name) &&
+				metadata.version !== BUILTIN_SKILL_VERSION,
+		)
+		.map(([name]) => name);
 	const versionLine = report.skillsVersion === 1 ? "project pins: ready" : "project pins: optional";
-	return `${versionLine}\nbundled skills: ready`;
+	const filesLine =
+		missing.length === 0
+			? "project skill files: ready"
+			: `project skill files: missing ${missing.join(", ")} (run fizzyx skill update)`;
+	const pinVersionLine =
+		stale.length === 0
+			? "project pin versions: ready"
+			: `project pin versions: stale ${stale.join(", ")} (run fizzyx skill update)`;
+	return `${versionLine}\n${pinVersionLine}\n${filesLine}\nbundled skills: ready`;
 };
 
-export const updateSkills = (name?: string): string => {
+export type SkillInstallScope = "project" | "global";
+
+const skillRoot = (scope: SkillInstallScope, context: ConfigContext): string =>
+	scope === "global" ? process.env.HOME || homedir() : context.rootDir;
+
+export const initSkills = (scope: SkillInstallScope): string => {
 	const context = loadConfigContext();
+	const root = skillRoot(scope, context);
+	let changed = 0;
+	for (const skill of BUILTIN_SKILLS) {
+		if (writeBundledSkill(root, skill, false)) changed += 1;
+	}
+	const location = scope === "global" ? "~/.agents/skills" : ".agents/skills";
+	return `initialized ${changed} bundled skill(s) in ${location}; ${BUILTIN_SKILLS.length - changed} already present.`;
+};
+
+export const updateSkills = (name?: string, scope: SkillInstallScope = "project"): string => {
+	const context = loadConfigContext();
+	const root = skillRoot(scope, context);
 
 	if (!name) {
 		for (const skill of BUILTIN_SKILLS) {
-			writeBundledSkill(context, skill);
+			writeBundledSkill(root, skill, true);
 		}
-		return `refreshed ${BUILTIN_SKILLS.length} bundled skills from this fizzyx release.`;
+		if (scope === "project")
+			refreshProjectPins(
+				context,
+				BUILTIN_SKILLS.map((skill) => skill.name),
+			);
+		return `refreshed ${BUILTIN_SKILLS.length} bundled skills in ${scope} scope from this fizzyx release.`;
 	}
 
 	const builtin = resolveBuiltinSkill(name);
 	if (builtin) {
-		writeBundledSkill(context, builtin);
-		return `refreshed bundled skill ${builtin.name} at ${BUILTIN_SKILL_VERSION}.`;
+		writeBundledSkill(root, builtin, true);
+		if (scope === "project") refreshProjectPins(context, [builtin.name]);
+		return `refreshed bundled skill ${builtin.name} at ${BUILTIN_SKILL_VERSION} in ${scope} scope.`;
 	}
 
 	const info = getSkillInfo(name);
@@ -347,10 +394,42 @@ const resolveBuiltinSkill = (source: string): BuiltinSkill | undefined => {
 	return BUILTIN_BY_NAME.get(MATT_POCOCK_ALIASES[mattPreset[1]] ?? mattPreset[1]);
 };
 
-const writeBundledSkill = (context: ConfigContext, skill: BuiltinSkill): void => {
-	const skillDir = join(context.rootDir, ".agents", "skills", skill.name);
+const writeBundledSkill = (root: string, skill: BuiltinSkill, overwrite: boolean): boolean => {
+	const skillDir = join(root, ".agents", "skills", skill.name);
+	const skillPath = join(skillDir, "SKILL.md");
+	const openaiMetadata = BUNDLED_OPENAI_METADATA[skill.name];
+	const metadataPath = join(skillDir, "agents", "openai.yaml");
+	let changed = false;
 	mkdirSync(skillDir, { recursive: true });
-	writeFileSync(join(skillDir, "SKILL.md"), skill.content);
+	if (overwrite || !existsSync(skillPath)) {
+		writeFileSync(skillPath, skill.content);
+		changed = true;
+	}
+	if (openaiMetadata) {
+		mkdirSync(join(skillDir, "agents"), { recursive: true });
+		if (overwrite || !existsSync(metadataPath)) {
+			writeFileSync(metadataPath, openaiMetadata);
+			changed = true;
+		}
+	}
+	return changed;
+};
+
+const refreshProjectPins = (context: ConfigContext, names: ReadonlyArray<string>): void => {
+	const skills = ensureSkillsSection(context.document);
+	const installed = objectValue(skills.installed);
+	let changed = false;
+	for (const name of names) {
+		const item = objectValue(installed[name]);
+		if (stringValue(item.source) !== "builtin") continue;
+		if (stringValue(item.version) === BUILTIN_SKILL_VERSION) continue;
+		installed[name] = { ...item, version: BUILTIN_SKILL_VERSION };
+		changed = true;
+	}
+	if (!changed) return;
+	skills.installed = installed;
+	context.document.skills = skills;
+	writeYaml(context.writePath, context.document);
 };
 
 const parseInstalledSkills = (

@@ -173,13 +173,6 @@ const renderDevConfig = (dev: DevConfig): YamlObject => {
 		}
 	}
 
-	if (dev.branches) {
-		const branches = renderDevBranches(dev.branches);
-		if (Object.keys(branches).length > 0) {
-			result.branches = branches;
-		}
-	}
-
 	return result;
 };
 
@@ -250,32 +243,6 @@ const renderDevCommitConfig = (commit: DevCommitConfig): YamlObject => {
 	const result: YamlObject = {};
 	if (commit.conventional) result.conventional = true;
 	if (commit.allowWipOnReady) result.allow_wip_on_ready = true;
-	return result;
-};
-
-const renderDevBranches = (branches: Record<string, DevBranchMetadata>): YamlObject => {
-	const result: YamlObject = {};
-
-	for (const [name, branch] of Object.entries(branches)) {
-		const entry: YamlObject = {};
-		if (branch.card !== undefined) {
-			entry.card = branch.card;
-		}
-		if (branch.kind) {
-			entry.kind = branch.kind;
-		}
-		if (branch.base) {
-			entry.base = branch.base;
-		}
-		if (branch.createdAt) {
-			entry.created_at = branch.createdAt;
-		}
-
-		if (Object.keys(entry).length > 0) {
-			result[name] = entry;
-		}
-	}
-
 	return result;
 };
 

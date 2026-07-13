@@ -54,6 +54,7 @@ test("skill help lists 1.0 subcommands", async () => {
 	const text = stripAnsi(stdout);
 
 	expect(exitCode).toBe(0);
+	expect(text).toContain("init");
 	expect(text).toContain("list");
 	expect(text).toContain("add");
 	expect(text).toContain("remove");
@@ -130,7 +131,58 @@ openapi:
 		expect(yaml).toContain("installed:");
 		expect(yaml).toContain("tdd:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.1.0");
+		expect(yaml).toContain("version: 1.3.0");
+		expect(readFileSync(join(root, ".agents", "skills", "tdd", "SKILL.md"), "utf8")).toContain(
+			"name: tdd",
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("skill init requires an explicit project or global scope", async () => {
+	const result = await runCli(["skill", "init"]);
+
+	expect(result.exitCode).not.toBe(0);
+	expect(result.stdout + result.stderr).toContain("Choose exactly one");
+});
+
+test("skill init --project materializes bundled skills and Codex metadata", async () => {
+	const root = makeTempDir();
+	try {
+		writeFileSync(join(root, ".fizzyx.yaml"), "api_url: https://example.com\n");
+		const result = await runCli(["skill", "init", "--project"], { cwd: root });
+
+		expect(result.exitCode).toBe(0);
+		expect(readFileSync(join(root, ".agents", "skills", "tdd", "SKILL.md"), "utf8")).toContain(
+			"name: tdd",
+		);
+		expect(
+			readFileSync(join(root, ".agents", "skills", "tdd", "agents", "openai.yaml"), "utf8"),
+		).toContain('display_name: "TDD"');
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("skill init --global writes outside the repository", async () => {
+	const root = makeTempDir();
+	const home = join(root, "home");
+	const project = join(root, "project");
+	try {
+		mkdirSync(home, { recursive: true });
+		mkdirSync(project, { recursive: true });
+		writeFileSync(join(project, ".fizzyx.yaml"), "api_url: https://example.com\n");
+		const result = await runCli(["skill", "init", "--global"], {
+			cwd: project,
+			env: { HOME: home },
+		});
+
+		expect(result.exitCode).toBe(0);
+		expect(readFileSync(join(home, ".agents", "skills", "tdd", "SKILL.md"), "utf8")).toContain(
+			"name: tdd",
+		);
+		expect(existsSync(join(project, ".agents", "skills", "tdd", "SKILL.md"))).toBe(false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -151,7 +203,7 @@ test("skill add mattpocock/tdd pins bundled Matt Pocock skill without downloadin
 		expect(text).toContain("Pinned bundled skill tdd");
 		expect(yaml).toContain("tdd:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.1.0");
+		expect(yaml).toContain("version: 1.3.0");
 		expect(yaml).not.toContain("github.com/mattpocock/skills");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -197,7 +249,7 @@ test("skill add git-workflow maps to bundled dev-workflow", async () => {
 		expect(text).toContain("Pinned bundled skill dev-workflow");
 		expect(yaml).toContain("dev-workflow:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.1.0");
+		expect(yaml).toContain("version: 1.3.0");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -218,7 +270,7 @@ test("skill add agent-git maps to bundled dev-workflow", async () => {
 		expect(text).toContain("Pinned bundled skill dev-workflow");
 		expect(yaml).toContain("dev-workflow:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.1.0");
+		expect(yaml).toContain("version: 1.3.0");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -386,6 +438,9 @@ skills:
 
 		expect(exitCode).toBe(0);
 		expect(text).toContain("project pins: ready");
+		expect(text).toContain("project pin versions: stale tdd");
+		expect(text).toContain("project skill files: missing tdd");
+		expect(text).toContain("fizzyx skill update");
 		expect(text).toContain("bundled skills: ready");
 		expect(text).not.toContain("skills.lock");
 	} finally {
@@ -416,8 +471,12 @@ test("skill update tdd refreshes bundled skill content locally", async () => {
 		expect(text).toContain("tdd");
 		expect(text).toContain("refreshed");
 		expect(readFileSync(skillPath, "utf-8")).toContain("name: tdd");
+		expect(
+			readFileSync(join(root, ".agents", "skills", "tdd", "agents", "openai.yaml"), "utf-8"),
+		).toContain('display_name: "TDD"');
 		expect(readFileSync(skillPath, "utf-8")).toContain("Test-driven development");
 		expect(readFileSync(skillPath, "utf-8")).toContain("The TDD Cycle");
+		expect(readFileSync(join(root, ".fizzyx.yaml"), "utf8")).toContain("version: 1.3.0");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -446,6 +505,33 @@ test("skill update alias refreshes dev-workflow skill content", async () => {
 		expect(text).toContain("refreshed bundled skill dev-workflow");
 		expect(readFileSync(skillPath, "utf-8")).toContain("name: dev-workflow");
 		expect(readFileSync(skillPath, "utf-8")).toContain("Dev Workflow");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("skill update --global refreshes only the global copy", async () => {
+	const root = makeTempDir();
+	const home = join(root, "home");
+	const project = join(root, "project");
+
+	try {
+		mkdirSync(home, { recursive: true });
+		mkdirSync(project, { recursive: true });
+		writeFileSync(join(project, ".fizzyx.yaml"), "api_url: https://example.com\n");
+
+		const { stdout, exitCode } = await runCli(["skill", "update", "tdd", "--global"], {
+			cwd: project,
+			env: { HOME: home },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stripAnsi(stdout)).toContain("global scope");
+		expect(readFileSync(join(home, ".agents", "skills", "tdd", "SKILL.md"), "utf8")).toContain(
+			"name: tdd",
+		);
+		expect(existsSync(join(project, ".agents", "skills", "tdd", "SKILL.md"))).toBe(false);
+		expect(readFileSync(join(project, ".fizzyx.yaml"), "utf8")).not.toContain("skills:");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

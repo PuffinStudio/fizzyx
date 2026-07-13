@@ -1,13 +1,7 @@
 import { Effect } from "effect";
 import type { BoardColumn } from "../domain/models";
 import type { Env, InitializedEnv } from "./flow-env";
-import {
-	BACKLOG_COLUMN_ALIASES,
-	IN_PROGRESS_COLUMN_ALIASES,
-	READY_COLUMN_ALIASES,
-	REVIEW_COLUMN_ALIASES,
-	normalizeColumnName,
-} from "./flow-workflow";
+import { normalizeColumnName } from "./flow-workflow";
 import { ensureFlowConfig } from "./flow-bootstrap";
 
 export interface DoctorResult {
@@ -22,13 +16,6 @@ export interface DoctorResult {
 	fixes: string[];
 }
 
-const expectedColumns: ReadonlyArray<{ name: string; aliases: ReadonlyArray<string> }> = [
-	{ name: "BACKLOG", aliases: BACKLOG_COLUMN_ALIASES },
-	{ name: "READY", aliases: READY_COLUMN_ALIASES },
-	{ name: "IN PROGRESS", aliases: IN_PROGRESS_COLUMN_ALIASES },
-	{ name: "REVIEW", aliases: REVIEW_COLUMN_ALIASES },
-];
-
 export const analyzeDoctor = (env: Env): Effect.Effect<DoctorResult, unknown> =>
 	Effect.gen(function* () {
 		const config = env.config;
@@ -41,30 +28,29 @@ export const analyzeDoctor = (env: Env): Effect.Effect<DoctorResult, unknown> =>
 		info.push("Skill pins are checked by `fizzyx skill doctor`");
 		const columnsData = yield* env.api.listColumns();
 
-		const columns: DoctorResult["columns"] = [];
-
-		for (const expectedColumn of expectedColumns) {
-			const aliases = new Set(expectedColumn.aliases.map(normalizeColumnName));
-			const match = columnsData.find((column) => aliases.has(normalizeColumnName(column.name)));
-			if (!match) {
-				columns.push({ name: expectedColumn.name, id: "", found: false });
-				fixes.push(`Missing expected column "${expectedColumn.name}"`);
-				continue;
-			}
-
-			columns.push({ name: expectedColumn.name, id: match.id, found: true });
-		}
-
-		const todoId = columns[0]!.id;
-		const inProgressId = columns[2]!.id;
-
 		if (!config.flow) {
 			fixes.push("Flow config missing (run `fizzyx init` or `fizzyx flow doctor --apply`)");
-		} else if (
-			config.flow.columns.todo !== todoId ||
-			config.flow.columns.inProgress !== inProgressId
-		) {
-			fixes.push("Flow column IDs in config are out of sync");
+		}
+
+		const configuredColumns = config.flow
+			? [
+					{ name: "DEFAULT", id: config.flow.columns.todo },
+					{ name: "IN PROGRESS", id: config.flow.columns.inProgress },
+				]
+			: [];
+		const columns = configuredColumns.map((configured) => {
+			const match = columnsData.find((column) => column.id === configured.id);
+			if (!match)
+				fixes.push(`Configured ${configured.name} column id '${configured.id}' was not found`);
+			return {
+				name: match?.name ?? configured.name,
+				id: configured.id,
+				found: Boolean(match),
+			};
+		});
+		const presetColumns = new Set(columnsData.map((column) => normalizeColumnName(column.name)));
+		if (presetColumns.has("ready") || presetColumns.has("review")) {
+			info.push("Detected optional Fizzyx preset columns");
 		}
 
 		return {
@@ -106,7 +92,7 @@ export const repairDoctor = (env: Env): Effect.Effect<DoctorResult, unknown> =>
 			configRepo: env.configRepo,
 			api: env.api,
 			config: env.config,
-			repairWorkflowColumns: true,
+			repairWorkflowColumns: !env.config.flow,
 		});
 		const repairedEnv = {
 			configRepo: env.configRepo,

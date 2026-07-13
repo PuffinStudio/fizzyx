@@ -3,6 +3,19 @@ import { ConfigError, FileError, ValidationError } from "../domain/errors";
 import type { DevBranchMetadata, DevConfig, ProjectConfig } from "../domain/models";
 import type { ConfigRepository } from "../ports/config-repository";
 import { ConfigRepo } from "../ports/config-repository";
+import {
+	partitionWorktree,
+	readBaseline,
+	readBranchMetadata,
+	readReadyReceipt,
+	removeBranchState,
+	removeReadyReceipt,
+	snapshotWorktree,
+	writeBaseline,
+	writeBranchMetadata,
+	writeReadyReceipt,
+	type DevBaseline,
+} from "../adapters/git-dev-state";
 
 export type BranchRole = "protected" | "environment" | "feature" | "maintenance" | "unknown";
 
@@ -12,6 +25,8 @@ export interface DevStatus {
 	baseBranch: string;
 	dirty: boolean;
 	dirtyFiles: ReadonlyArray<string>;
+	baselineFiles: ReadonlyArray<string>;
+	baselineAvailable: boolean;
 	ahead: number;
 	behind: number;
 	hasUpstream: boolean;
@@ -117,13 +132,21 @@ const runGitNoThrow = (
 			}),
 	});
 
+export const resolveDevShellCommand = (
+	command: string,
+	platform: NodeJS.Platform = process.platform,
+): string[] =>
+	platform === "win32"
+		? [process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", command]
+		: ["bash", "-c", command];
+
 const runShell = (
 	command: string,
 ): Effect.Effect<{ stdout: string; exitCode: number }, ValidationError> =>
 	Effect.tryPromise({
 		try: async () => {
 			const proc = Bun.spawn({
-				cmd: ["bash", "-c", command],
+				cmd: resolveDevShellCommand(command),
 				stdout: "pipe",
 				stderr: "pipe",
 			});
@@ -177,7 +200,17 @@ const classifyBranch = (branch: string, config: DevConfig | undefined): BranchRo
 const getBranchMetadata = (
 	branch: string,
 	config: DevConfig | undefined,
-): DevBranchMetadata | undefined => config?.branches?.[branch];
+): DevBranchMetadata | undefined => {
+	const configured = config?.branches?.[branch];
+	if (configured) return configured;
+	const card = branch.match(/(?:^|\/)card-(\d+)(?:-|$)/)?.[1];
+	if (!card) return undefined;
+	return {
+		card: Number(card),
+		kind: getBranchNameKind(branch, config),
+		base: config?.defaultBase ?? config?.productionBranch ?? "main",
+	};
+};
 
 const kindLabel = (role: BranchRole): string => {
 	switch (role) {
@@ -220,16 +253,26 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
 	Effect.gen(function* () {
 		const currentBranch = yield* getCurrentBranch();
 
-		const dirtyOutput = yield* runGit(["status", "--porcelain"]);
-		const dirtyFiles = dirtyOutput
-			? dirtyOutput
-					.split("\n")
-					.map((l) => l.trim())
-					.filter(Boolean)
-			: [];
+		const entries = yield* snapshotWorktree();
+		const baseline = yield* readBaseline(currentBranch);
+		const partitioned = partitionWorktree(entries, baseline);
+		const dirtyFiles = partitioned.blocking.map((entry) => `${entry.status} ${entry.path}`);
+		const baselineFiles = partitioned.baseline.map((entry) => `${entry.status} ${entry.path}`);
 		const dirty = dirtyFiles.length > 0;
 
 		const devConfig = config?.dev;
+		if (devConfig?.branches) {
+			yield* Effect.forEach(
+				Object.entries(devConfig.branches),
+				([branch, legacy]) =>
+					readBranchMetadata(branch).pipe(
+						Effect.flatMap((local) =>
+							local ? Effect.succeed(undefined) : writeBranchMetadata(branch, legacy),
+						),
+					),
+				{ discard: true },
+			);
+		}
 		const baseBranch = devConfig?.defaultBase ?? devConfig?.productionBranch ?? "main";
 
 		const aheadStr = yield* runGit(["rev-list", "--count", "@{u}..HEAD"]).pipe(
@@ -259,7 +302,8 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
 		);
 
 		const role = classifyBranch(currentBranch, devConfig);
-		const meta = getBranchMetadata(currentBranch, devConfig);
+		const meta =
+			(yield* readBranchMetadata(currentBranch)) ?? getBranchMetadata(currentBranch, devConfig);
 
 		const nextAction = computeNextAction(role, dirty, ahead, behind, currentBranch, baseBranch);
 		const promotionReady = role !== "protected" && role !== "unknown" && !dirty && behind === 0;
@@ -270,6 +314,8 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
 			baseBranch,
 			dirty,
 			dirtyFiles,
+			baselineFiles,
+			baselineAvailable: baseline !== undefined,
 			ahead,
 			behind,
 			hasUpstream,
@@ -315,6 +361,7 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
 			`behind: ${status.behind}`,
 			`has_upstream: ${status.hasUpstream ? "yes" : "no"}`,
 			`dirty_policy: ${AGENT_DIRTY_POLICY}`,
+			`baseline: ${status.baselineAvailable ? "available" : "missing"}`,
 		];
 		if (status.card) lines.push(`card: ${status.card}`);
 		if (status.nextAction) lines.push(`next_action: ${status.nextAction}`);
@@ -326,6 +373,10 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
 			for (const f of status.dirtyFiles) {
 				lines.push(`  - ${f}`);
 			}
+		}
+		if (status.baselineFiles.length > 0) {
+			lines.push("baseline_files:");
+			for (const f of status.baselineFiles) lines.push(`  - ${f}`);
 		}
 		return lines.join("\n");
 	}
@@ -351,8 +402,8 @@ export const getProductionBranch = (config?: ProjectConfig): string =>
 
 export type StartBranchResult = {
 	branchName: string;
-	configUpdated: boolean;
-	configPath?: string;
+	created: boolean;
+	metadataRecorded: boolean;
 };
 
 export const startBranch = (
@@ -385,6 +436,23 @@ export const startBranch = (
 			options.kind;
 		const cardPart = options.card ? `card-${options.card}-` : "";
 		const branchName = `${prefix}/${cardPart}${slug}`;
+		const exists = yield* branchExists(branchName);
+
+		if (exists) {
+			if (status.currentBranch !== branchName) yield* runGit(["checkout", branchName]);
+			let metadataRecorded = false;
+			if (options.card && !(yield* readBranchMetadata(branchName))) {
+				yield* writeBranchMetadata(branchName, {
+					card: Number(options.card),
+					kind: options.kind,
+					base,
+					createdAt: new Date().toISOString(),
+				});
+				metadataRecorded = true;
+			}
+			if (!status.dirty && !(yield* readBaseline(branchName))) yield* writeBaseline(branchName);
+			return { branchName, created: false, metadataRecorded };
+		}
 
 		if (status.currentBranch !== base && !options.fromCurrent) {
 			yield* runGit(["checkout", base]);
@@ -392,26 +460,20 @@ export const startBranch = (
 
 		yield* runGit(["checkout", "-b", branchName]);
 
-		let configUpdated = false;
-		let configPath: string | undefined;
+		let metadataRecorded = false;
 		if (options.card) {
-			const currentBranches = devConfig?.branches ?? {};
 			const metadata: DevBranchMetadata = {
 				card: Number(options.card),
 				kind: options.kind,
 				base,
 				createdAt: new Date().toISOString(),
 			};
-			const updatedConfig: ProjectConfig = {
-				...projectConfig,
-				dev: { ...projectConfig.dev, branches: { ...currentBranches, [branchName]: metadata } },
-			};
-			yield* configRepo.saveProjectConfig(updatedConfig);
-			configUpdated = true;
-			configPath = projectConfig.configPath;
+			yield* writeBranchMetadata(branchName, metadata);
+			metadataRecorded = true;
 		}
+		yield* writeBaseline(branchName);
 
-		return { branchName, configUpdated, configPath };
+		return { branchName, created: true, metadataRecorded };
 	});
 
 export const isOnCompatibleBranch = (
@@ -624,6 +686,24 @@ export const ready = (full?: boolean, squash?: boolean): DevEffect<DevReadyResul
 				? `fizzyx dev promote ${status.currentBranch} --to <target> --dry-run`
 				: undefined;
 
+		if (blockedReasons.length === 0) {
+			const [head, base] = yield* Effect.all([
+				runGit(["rev-parse", "HEAD"]),
+				runGit(["rev-parse", status.baseBranch]),
+			]);
+			yield* writeReadyReceipt({
+				version: 1,
+				branch: status.currentBranch,
+				head,
+				base,
+				mode: full ? "full" : "ready",
+				checks: checkCommands,
+				createdAt: new Date().toISOString(),
+			});
+		} else {
+			yield* removeReadyReceipt(status.currentBranch);
+		}
+
 		return {
 			ready: blockedReasons.length === 0,
 			blockedReasons,
@@ -695,9 +775,17 @@ const getBranchNameKind = (branch: string, config?: DevConfig): string | undefin
 	return undefined;
 };
 
-const getChangedFileList = (): Effect.Effect<ReadonlyArray<string>, ValidationError> =>
+const getChangedFileList = (
+	sourceBranch: string,
+	targetBranch: string,
+): Effect.Effect<ReadonlyArray<string>, ValidationError> =>
 	Effect.gen(function* () {
-		const stdout = yield* runGit(["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]);
+		const stdout = yield* runGit([
+			"diff",
+			"--name-only",
+			"--diff-filter=ACMR",
+			`${targetBranch}...${sourceBranch}`,
+		]);
 		return stdout
 			? stdout
 					.split("\n")
@@ -763,15 +851,30 @@ export const checkPromotion = (
 
 		const requireReady = devConfig?.promotion?.requireReadyForProduction ?? false;
 		if (requireReady && targetRole === "protected") {
+			const [receipt, sourceHead, targetHead] = yield* Effect.all([
+				readReadyReceipt(sourceBranch),
+				runGit(["rev-parse", sourceBranch]),
+				runGit(["rev-parse", targetBranch]),
+			]);
+			const expectedChecks = devConfig?.checks?.full ?? devConfig?.checks?.ready ?? [];
+			const receiptValid =
+				receipt?.branch === sourceBranch &&
+				receipt.head === sourceHead &&
+				receipt.base === targetHead &&
+				receipt.mode === "full" &&
+				JSON.stringify(receipt.checks) === JSON.stringify(expectedChecks);
 			checks.push({
-				passed: false,
-				reason:
-					"Branch has not passed 'fizzyx dev ready' checks (requireReadyForProduction is enabled). Run 'fizzyx dev ready --full' first.",
+				passed: receiptValid,
+				reason: receiptValid
+					? `Source HEAD ${sourceHead.slice(0, 12)} has a valid full readiness receipt`
+					: "Source HEAD has no valid full readiness receipt. Run 'fizzyx dev ready --full' first.",
 			});
 		}
 
 		const sourceKind = getBranchNameKind(sourceBranch, devConfig);
-		const changedFiles = yield* getChangedFileList().pipe(Effect.catch(() => Effect.succeed([])));
+		const changedFiles = yield* getChangedFileList(sourceBranch, targetBranch).pipe(
+			Effect.catch(() => Effect.succeed([])),
+		);
 		const unrelated = sourceKind ? changedFiles.filter((f) => isUnrelatedFile(f, sourceKind)) : [];
 		checks.push({
 			passed: unrelated.length === 0,
@@ -794,15 +897,27 @@ export const checkPromotion = (
 		return checks;
 	});
 
+export const acceptBaseline = (): Effect.Effect<DevBaseline, ValidationError> =>
+	Effect.gen(function* () {
+		const branch = yield* getCurrentBranch();
+		return yield* writeBaseline(branch);
+	});
+
+export const showBaseline = () =>
+	Effect.gen(function* () {
+		const branch = yield* getCurrentBranch();
+		return { branch, baseline: yield* readBaseline(branch), current: yield* snapshotWorktree() };
+	});
+
 const isUnrelatedFile = (filePath: string, branchKind: string): boolean => {
 	if (branchKind === "docs") return false;
 	if (branchKind === "chore") return false;
 	if (branchKind === "ops")
-		return (
+		return !(
 			filePath.startsWith("deploy/") ||
 			filePath.startsWith("infra/") ||
 			filePath.startsWith("ops/") ||
-			filePath.endsWith(".github/workflows/")
+			filePath.startsWith(".github/workflows/")
 		);
 	if (branchKind === "fix" || branchKind === "hotfix") return false;
 	return false;
@@ -986,20 +1101,22 @@ export const cleanup = (options?: {
 		}
 
 		const currentBranch = status.currentBranch;
-		yield* runGit(["checkout", productionBranch]);
-
 		const mergedBranches = yield* getMergedBranches(productionBranch, projectConfig ?? undefined);
 		if (!options?.confirmDelete) {
 			const pending = mergedBranches.length > 0 ? ` ${mergedBranches.join(", ")}` : " none";
 			return `Cleanup preview: ${mergedBranches.length} merged branch(es) pending deletion:${pending}. No branches deleted. Add --confirm-delete to delete local branches.`;
 		}
 
+		yield* runGit(["checkout", productionBranch]);
 		let deleted = 0;
 		for (const branch of mergedBranches) {
 			const result = yield* runGit(["branch", "-d", branch]).pipe(
 				Effect.catch(() => Effect.succeed("")),
 			);
-			if (result) deleted++;
+			if (result) {
+				deleted++;
+				yield* removeBranchState(branch).pipe(Effect.catch(() => Effect.succeed(undefined)));
+			}
 		}
 
 		if (
@@ -1010,7 +1127,10 @@ export const cleanup = (options?: {
 			const result = yield* runGit(["branch", "-D", currentBranch]).pipe(
 				Effect.catch(() => Effect.succeed("")),
 			);
-			if (result) deleted++;
+			if (result) {
+				deleted++;
+				yield* removeBranchState(currentBranch).pipe(Effect.catch(() => Effect.succeed(undefined)));
+			}
 		}
 
 		yield* runGit(["remote", "prune", "origin"]).pipe(Effect.catch(() => Effect.succeed("")));

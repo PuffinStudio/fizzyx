@@ -1,7 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
+import { resolveUserStateRoot } from "../src/adapters/git-dev-state";
+import { resolveDevShellCommand } from "../src/use-cases/dev-service";
 
 type CliResult = {
 	stdout: string;
@@ -55,7 +57,7 @@ const createWorkflowRepo = (): string => {
 
 	writeFileSync(
 		join(root, ".fizzyx.yaml"),
-		`api_url: https://example.com\naccount: 1\nboard: board-1\n\ndev:\n  production_branch: main\n  default_base: main\n  protected_branches:\n    - main\n    - master\n  environment_branches:\n    dev:\n      aggregate: true\n    staging:\n      aggregate: true\n  branch_prefixes:\n    feature: feature\n    fix: fix\n    hotfix: hotfix\n    ops: ops\n    chore: chore\n    docs: docs\n  checks:\n    ready:\n      - bun run check\n  promotion:\n    strategy: pr\n    block_environment_to_production: true\n    require_confirm_production: true\n`,
+		`api_url: https://example.com\naccount: 1\nboard: board-1\n\ndev:\n  production_branch: main\n  default_base: main\n  protected_branches:\n    - main\n    - master\n  environment_branches:\n    dev:\n      aggregate: true\n    staging:\n      aggregate: true\n  branch_prefixes:\n    feature: feature\n    fix: fix\n    hotfix: hotfix\n    ops: ops\n    chore: chore\n    docs: docs\n  checks:\n    ready:\n      - git diff --check\n  promotion:\n    strategy: pr\n    block_environment_to_production: true\n    require_confirm_production: true\n`,
 	);
 
 	writeFileSync(join(root, "README.md"), "# Workflow fixture\n");
@@ -106,6 +108,19 @@ const hasDevCommand = await (async () => {
 })();
 
 const devTest = hasDevCommand ? test : test.skip;
+
+test("dev shell command uses cmd.exe semantics on Windows", () => {
+	const command = resolveDevShellCommand("bun run check", "win32");
+
+	expect(command.slice(1)).toEqual(["/d", "/s", "/c", "bun run check"]);
+	expect(command[0]?.toLowerCase()).toContain("cmd");
+});
+
+test("local state uses LOCALAPPDATA on Windows", () => {
+	expect(
+		resolveUserStateRoot("win32", { LOCALAPPDATA: "C:\\Users\\dev\\AppData\\Local" }, "unused"),
+	).toBe("C:\\Users\\dev\\AppData\\Local");
+});
 
 devTest("top-level help includes dev and dev --help lists subcommands", async () => {
 	const top = await runCli(["--help"]);
@@ -222,6 +237,22 @@ devTest("dev promote feature branch to production requires production confirmati
 	}
 });
 
+devTest("dev promote apply to production exits non-zero without confirmation", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/demo"]);
+		const promote = await runCli(["dev", "promote", "feature/demo", "--to", "main", "--apply"], {
+			cwd: root,
+		});
+
+		expect(promote.exitCode).not.toBe(0);
+		expect(normalizeOutput(promote)).toContain("confirm-production");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 devTest("dev start creates feature branch from main", async () => {
 	const root = createWorkflowRepo();
 
@@ -245,6 +276,7 @@ devTest("dev start with --card saves metadata and names branch with card prefix"
 
 	try {
 		runGit(root, ["checkout", "main"]);
+		const configBefore = readFileSync(join(root, ".fizzyx.yaml"), "utf8");
 		const result = await runCli(
 			["dev", "start", "pay-coupon", "--kind", "feature", "--card", "42"],
 			{ cwd: root },
@@ -256,6 +288,52 @@ devTest("dev start with --card saves metadata and names branch with card prefix"
 
 		const branch = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: root });
 		expect(branch.stdout.toString().trim()).toBe("feature/card-42-pay-coupon");
+		expect(readFileSync(join(root, ".fizzyx.yaml"), "utf8")).toBe(configBefore);
+		const card = Bun.spawnSync(
+			["git", "config", "--local", "--get", "branch.feature/card-42-pay-coupon.fizzyx-card"],
+			{ cwd: root },
+		);
+		expect(card.stdout.toString().trim()).toBe("42");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev status migrates legacy YAML branch metadata into local Git config", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		const configPath = join(root, ".fizzyx.yaml");
+		const legacyConfig = readFileSync(configPath, "utf8").replace(
+			"    require_confirm_production: true\n",
+			"    require_confirm_production: true\n  branches:\n    feature/foo:\n      card: 73\n      kind: feature\n      base: main\n      created_at: 2026-07-14T00:00:00.000Z\n",
+		);
+		writeFileSync(configPath, legacyConfig);
+		runGit(root, ["checkout", "feature/foo"]);
+
+		const result = await runCli(["dev", "status", "--agent"], { cwd: root });
+		expect(result.exitCode).toBe(0);
+		const card = Bun.spawnSync(
+			["git", "config", "--local", "--get", "branch.feature/foo.fizzyx-card"],
+			{ cwd: root },
+		);
+		expect(card.stdout.toString().trim()).toBe("73");
+		expect(readFileSync(configPath, "utf8")).toBe(legacyConfig);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev status recovers the card number from a standard branch name", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		runGit(root, ["checkout", "-b", "feature/card-91-recovered"]);
+
+		const result = await runCli(["dev", "status", "--agent"], { cwd: root });
+		expect(result.exitCode).toBe(0);
+		expect(normalizeOutput(result)).toContain("card: 91");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -271,6 +349,22 @@ devTest("dev start on compatible branch skips creation", async () => {
 
 		expect(result.exitCode).toBe(0);
 		expect(output).toMatch(/already|compatible|no new branch/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev start enters an existing matching branch", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		const result = await runCli(["dev", "start", "foo", "--kind", "feature"], { cwd: root });
+
+		expect(result.exitCode).toBe(0);
+		expect(normalizeOutput(result)).toContain("existing branch 'feature/foo'");
+		const branch = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: root });
+		expect(branch.stdout.toString().trim()).toBe("feature/foo");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -368,6 +462,7 @@ devTest("dev ready blocked by dirty worktree", async () => {
 		const result = await runCli(["dev", "ready"], { cwd: root });
 		const output = normalizeOutput(result);
 
+		expect(result.exitCode).not.toBe(0);
 		expect(output).toMatch(/not ready|dirty|uncommitted|blocked/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -399,11 +494,62 @@ devTest("dev ready --agent tells agents how to handle their own dirty changes", 
 		const result = await runCli(["dev", "ready", "--agent"], { cwd: root });
 		const output = normalizeOutput(result);
 
-		expect(result.exitCode).toBe(0);
+		expect(result.exitCode).not.toBe(0);
 		expect(output).toContain("ready: no");
 		expect(output).toContain("next_action:");
 		expect(output).toContain("only changes made in this task");
 		expect(output).toContain("pre-existing user changes");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev baseline accepts unchanged pre-existing files but blocks later edits", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		writeFileSync(join(root, "user-note.txt"), "pre-existing\n");
+		const accepted = await runCli(["dev", "baseline", "accept"], { cwd: root });
+		expect(accepted.exitCode).toBe(0);
+
+		const unchanged = await runCli(["dev", "status", "--agent"], { cwd: root });
+		expect(normalizeOutput(unchanged)).toContain("baseline_files:");
+		expect(normalizeOutput(unchanged)).toContain("dirty: no");
+
+		writeFileSync(join(root, "user-note.txt"), "changed during task\n");
+		const changed = await runCli(["dev", "ready", "--agent"], { cwd: root });
+		expect(changed.exitCode).not.toBe(0);
+		expect(normalizeOutput(changed)).toContain("ready: no");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev baseline handles staged renames and paths with spaces", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		writeFileSync(join(root, "old file.txt"), "pre-existing\n");
+		runGit(root, ["add", "old file.txt"]);
+		runGit(root, [
+			"-c",
+			"user.email=dev-workflow@example.com",
+			"-c",
+			"user.name=Dev Workflow",
+			"commit",
+			"-m",
+			"test: add rename fixture",
+		]);
+		runGit(root, ["mv", "old file.txt", "new file.txt"]);
+
+		const accepted = await runCli(["dev", "baseline", "accept"], { cwd: root });
+		expect(accepted.exitCode).toBe(0);
+		const status = await runCli(["dev", "status", "--agent"], { cwd: root });
+		expect(status.exitCode).toBe(0);
+		expect(normalizeOutput(status)).toContain("new file.txt");
+		expect(normalizeOutput(status)).toContain("dirty: no");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -427,6 +573,97 @@ devTest("dev promote feature to staging --dry-run shows command preview", async 
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+devTest("dev promote checks committed branch changes against ops scope", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		runGit(root, ["checkout", "-b", "ops/card-88-deploy"]);
+		mkdirSync(join(root, "src"), { recursive: true });
+		writeFileSync(join(root, "src", "runtime.ts"), "export const changed = true;\n");
+		runGit(root, ["add", "src/runtime.ts"]);
+		runGit(root, [
+			"-c",
+			"user.email=dev-workflow@example.com",
+			"-c",
+			"user.name=Dev Workflow",
+			"commit",
+			"-m",
+			"ops: change runtime code",
+		]);
+
+		const result = await runCli(
+			["dev", "promote", "ops/card-88-deploy", "--to", "staging", "--dry-run"],
+			{ cwd: root },
+		);
+		expect(result.exitCode).not.toBe(0);
+		expect(normalizeOutput(result)).toContain("unrelated file");
+		expect(normalizeOutput(result)).toContain("src/runtime.ts");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest(
+	"production promotion accepts only a full receipt for the current source HEAD",
+	async () => {
+		const root = createWorkflowRepo();
+
+		try {
+			runGit(root, ["checkout", "feature/foo"]);
+			const configPath = join(root, ".fizzyx.yaml");
+			const config = readFileSync(configPath, "utf8")
+				.replace(
+					"  checks:\n    ready:\n      - bun run check\n",
+					"  checks:\n    ready:\n      - git diff --check\n    full:\n      - git diff --check\n",
+				)
+				.replace(
+					"    require_confirm_production: true\n",
+					"    require_confirm_production: true\n    require_ready_for_production: true\n",
+				);
+			writeFileSync(configPath, config);
+			runGit(root, ["add", ".fizzyx.yaml"]);
+			runGit(root, [
+				"-c",
+				"user.email=dev-workflow@example.com",
+				"-c",
+				"user.name=Dev Workflow",
+				"commit",
+				"-m",
+				"chore: require ready receipt",
+			]);
+
+			const ready = await runCli(["dev", "ready", "--full", "--agent"], { cwd: root });
+			expect(ready.exitCode).toBe(0);
+
+			const valid = await runCli(
+				["dev", "promote", "feature/foo", "--to", "main", "--dry-run", "--confirm-production"],
+				{ cwd: root },
+			);
+			expect(normalizeOutput(valid)).toContain("valid full readiness receipt");
+
+			writeFileSync(join(root, "after-ready.txt"), "new commit\n");
+			runGit(root, ["add", "after-ready.txt"]);
+			runGit(root, [
+				"-c",
+				"user.email=dev-workflow@example.com",
+				"-c",
+				"user.name=Dev Workflow",
+				"commit",
+				"-m",
+				"chore: invalidate receipt",
+			]);
+			const stale = await runCli(
+				["dev", "promote", "feature/foo", "--to", "main", "--dry-run", "--confirm-production"],
+				{ cwd: root },
+			);
+			expect(normalizeOutput(stale)).toContain("no valid full readiness receipt");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	},
+);
 
 devTest("dev promote blocks card-scoped WIP checkpoint commits", async () => {
 	const root = createWorkflowRepo();
@@ -459,7 +696,7 @@ devTest("dev promote blocks card-scoped WIP checkpoint commits", async () => {
 	}
 });
 
-devTest("dev cleanup switches to safe base after cleaning merged branches", async () => {
+devTest("dev cleanup preview does not switch branches", async () => {
 	const root = createWorkflowRepo();
 
 	try {
@@ -468,6 +705,8 @@ devTest("dev cleanup switches to safe base after cleaning merged branches", asyn
 		const output = normalizeOutput(result);
 
 		expect(output).toMatch(/clean|main|branches/);
+		const branch = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: root });
+		expect(branch.stdout.toString().trim()).toBe("feature/foo");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -500,6 +739,8 @@ devTest("dev cleanup deletes merged branches only with explicit confirmation", a
 		const output = normalizeOutput(result);
 
 		expect(output).toMatch(/deleted|cleaned/);
+		const branch = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: root });
+		expect(branch.stdout.toString().trim()).toBe("main");
 		const branchList = Bun.spawnSync(["git", "branch", "--list", "feature/foo"], {
 			cwd: root,
 		});

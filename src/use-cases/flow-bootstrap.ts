@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { ConfigError, FileError } from "../domain/errors";
+import { ConfigError, FileError, ValidationError } from "../domain/errors";
 import type {
 	BoardColumn,
 	InitializedProjectConfig,
@@ -242,6 +242,12 @@ const applyFlowConfig = (
 		}
 
 		if (!args.config.flow || !analysis.hasFlowConfig || analysis.hasLegacyFlowFields) {
+			if (args.repairWorkflowColumns === false) {
+				return yield* new ValidationError({
+					message:
+						"Flow config is missing. Run 'fizzyx init' to install the Fizzyx column preset, or configure flow.columns with existing column ids.",
+				});
+			}
 			const ensuredColumns = yield* ensureWorkflowColumns(args.api);
 			return yield* args.configRepo.setupProjectConfig({
 				account: args.config.account,

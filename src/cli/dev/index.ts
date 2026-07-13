@@ -7,6 +7,7 @@ import { devReadyCmd } from "./ready";
 import { devPromoteCmd } from "./promote";
 import { devCleanupCmd } from "./cleanup";
 import { devDoctorCmd } from "./doctor";
+import { devBaselineCmd } from "./baseline";
 
 export const devCmd = Command.make("dev").pipe(
 	Command.withDescription("Git workflow commands for daily development"),
@@ -19,5 +20,6 @@ export const devCmd = Command.make("dev").pipe(
 		devPromoteCmd,
 		devCleanupCmd,
 		devDoctorCmd,
+		devBaselineCmd,
 	]),
 );

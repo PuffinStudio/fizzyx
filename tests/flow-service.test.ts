@@ -19,9 +19,12 @@ import {
 	getStandardizedCommentTemplate,
 	done,
 	edit,
+	move,
 	start,
 	resolveDoneRefFromGit,
 	block,
+	bootstrapFlowConfig,
+	analyzeDoctor,
 	standardizeBoard,
 	standardizeCard,
 	stepsFromDescription,
@@ -168,6 +171,84 @@ test("edit applies the create draft format and replaces remote steps", async () 
 	expect(stepUpdates).toEqual([{ stepId: "step-1", content: "New step", completed: true }]);
 	expect(stepCreates).toEqual([]);
 	expect(stepDeletes).toEqual([[42, "step-2"]]);
+});
+
+test("move targets a custom column by exact name", async () => {
+	const api = defaultApi();
+	const moves: Array<{ number: number; columnId: string }> = [];
+	api.listColumns = () =>
+		Effect.succeed([
+			{ id: "ideas-id", name: "Ideas" },
+			{ id: "building-id", name: "Building Now" },
+		]);
+	api.moveCard = (number, columnId) => {
+		moves.push({ number, columnId });
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(move(makeEnv(api), 42, "Building Now"));
+
+	expect(result).toEqual({ number: 42, column: "Building Now", columnId: "building-id" });
+	expect(moves).toEqual([{ number: 42, columnId: "building-id" }]);
+});
+
+test("normal flow bootstrap preserves configured custom columns", async () => {
+	const api = defaultApi();
+	let createdColumns = 0;
+	api.listColumns = () =>
+		Effect.succeed([
+			{ id: "todo-id", name: "Ideas" },
+			{ id: "inprogress-id", name: "Building Now" },
+		]);
+	api.createColumn = () => {
+		createdColumns += 1;
+		return Effect.succeed({ id: "unexpected", name: "Unexpected" });
+	};
+
+	const result = await Effect.runPromise(
+		bootstrapFlowConfig(makeEnv(api), { repairWorkflowColumns: false }),
+	);
+
+	expect(result.flow.columns).toEqual(baseConfig.flow.columns);
+	expect(createdColumns).toBe(0);
+});
+
+test("normal flow bootstrap does not provision preset columns when config is missing", async () => {
+	const api = defaultApi();
+	let createdColumns = 0;
+	api.listColumns = () => Effect.succeed([{ id: "ideas-id", name: "Ideas" }]);
+	api.createColumn = () => {
+		createdColumns += 1;
+		return Effect.succeed({ id: "unexpected", name: "Unexpected" });
+	};
+	const env = {
+		...makeEnv(api),
+		config: { ...baseConfig, flow: undefined },
+	};
+
+	const error = await Effect.runPromise(
+		bootstrapFlowConfig(env, { repairWorkflowColumns: false }).pipe(Effect.flip),
+	);
+
+	expect(error).toBeInstanceOf(ValidationError);
+	expect(createdColumns).toBe(0);
+});
+
+test("flow doctor accepts valid configured ids with custom column names", async () => {
+	const api = defaultApi();
+	api.listColumns = () =>
+		Effect.succeed([
+			{ id: "todo-id", name: "Ideas" },
+			{ id: "inprogress-id", name: "Building Now" },
+		]);
+
+	const result = await Effect.runPromise(analyzeDoctor(makeEnv(api)));
+
+	expect(result.fixes).toEqual([]);
+	expect(result.columns).toEqual([
+		{ name: "Ideas", id: "todo-id", found: true },
+		{ name: "Building Now", id: "inprogress-id", found: true },
+	]);
 });
 
 test("edit rejects descriptions that do not use the create draft format", async () => {

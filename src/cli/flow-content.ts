@@ -1,6 +1,9 @@
 import { Effect } from "effect";
 import { dirname, join } from "node:path";
 import { ConfigRepo, type ConfigRepository } from "../ports/config-repository";
+import type { Card } from "../domain/models";
+import { resolveDraftDirectory } from "../adapters/git-dev-state";
+import { markdownishText } from "../use-cases/flow-card-content";
 
 export const FLOW_SKILL_FILE_PATH = join(".agents", "skills", "fizzyx", "SKILL.md");
 export const FLOW_WORKFLOW_FILE_PATH = join(".agents", "skills", "fizzyx", "WORKFLOW.md");
@@ -49,7 +52,7 @@ const readOptionalText = (path: string): Effect.Effect<string | undefined, Error
 		});
 	});
 
-const ensureDirectory = (path: string): Effect.Effect<void, any, any> =>
+const ensureDirectory = (path: string): Effect.Effect<void, Error> =>
 	Effect.tryPromise({
 		try: () =>
 			import("node:fs/promises").then((fs) =>
@@ -61,7 +64,7 @@ const ensureDirectory = (path: string): Effect.Effect<void, any, any> =>
 		catch: (cause) => new Error(`failed to create ${dirname(path)}: ${String(cause)}`),
 	});
 
-const writeText = (path: string, text: string): Effect.Effect<void, any, any> =>
+const writeText = (path: string, text: string): Effect.Effect<void, Error> =>
 	Effect.tryPromise({
 		try: () => Bun.write(path, text),
 		catch: (cause) => new Error(`failed to write ${path}: ${String(cause)}`),
@@ -95,14 +98,29 @@ export const createFlowDraft = (
 	input: FlowDraftInput = {},
 ): Effect.Effect<FlowDraftResult, Error, ConfigRepository> =>
 	Effect.gen(function* () {
-		const root = yield* resolveProjectRoot();
 		const template = yield* loadFlowTemplateContent();
 		const content = renderFlowDraft(template, input);
+		return yield* writeDraft("card", content);
+	});
 
+export const createCardEditDraft = (card: Card): Effect.Effect<FlowDraftResult, Error> => {
+	const sections: string[] = [`# ${card.title}`, "## Tags"];
+	if (card.tags?.length) sections.push(...card.tags.map((tag) => `- ${tag}`));
+	const description = markdownishText(card.descriptionHtml || card.description || "");
+	if (description) sections.push(description);
+	sections.push(
+		"## Steps",
+		...(card.steps ?? []).map((step) => `- [${step.completed ? "x" : " "}] ${step.content}`),
+	);
+	return writeDraft(`card-${card.number}`, sections.join("\n\n"));
+};
+
+const writeDraft = (prefix: string, content: string): Effect.Effect<FlowDraftResult, Error> =>
+	Effect.gen(function* () {
+		const directory = yield* resolveDraftDirectory();
 		for (let attempt = 0; attempt < 10; attempt += 1) {
-			const filename = `card-${crypto.randomUUID().slice(0, 8)}.md`;
-			const relativePath = join(".fizzyx", filename);
-			const absolutePath = join(root, relativePath);
+			const filename = `${prefix}-${crypto.randomUUID().slice(0, 8)}.md`;
+			const absolutePath = join(directory, filename);
 			const exists = yield* Effect.tryPromise({
 				try: () => Bun.file(absolutePath).exists(),
 				catch: (cause) => new Error(`failed to check ${absolutePath}: ${String(cause)}`),
@@ -111,7 +129,7 @@ export const createFlowDraft = (
 
 			yield* ensureDirectory(absolutePath);
 			yield* writeText(absolutePath, `${content}\n`);
-			return { path: relativePath };
+			return { path: absolutePath };
 		}
 
 		return yield* Effect.fail(new Error("failed to create unique draft path"));
@@ -217,20 +235,26 @@ const getBuiltinWorkflow = (): string =>
 		"",
 		"## Setup",
 		"- fizzyx init <board-id>",
+		"- init creates or refreshes the FizzyX workflow section in the project AGENTS.md without installing skills",
 		"- fizzyx auth status",
 		"- fizzyx auth login <token>",
 		"",
 		"## Work Entry Point",
 		"- Start each local cycle with `fizzyx flow work`.",
 		"- flow work returns board context, next recommended card, blockers, and the next action.",
-		"- Before code edits, run `fizzyx dev status --agent`; treat dirty files as the baseline.",
+		"- Before code edits, run `fizzyx dev status --agent`; inspect pre-existing files and use `fizzyx dev baseline accept` explicitly when they must remain.",
 		"",
 		"## Card Lifecycle",
+		"- Custom columns are supported; normal flow commands never provision or rename columns.",
+		"- BACKLOG/READY/IN PROGRESS/REVIEW are the optional bundled preset.",
+		"- fizzyx flow columns — discover real column IDs and names",
 		"- fizzyx flow create --draft",
-		'- fill the draft, then run fizzyx flow create "<title>" --desc .fizzyx/card-<random>.md',
-		'- fizzyx flow create "<title>" --assign <user> --desc .fizzyx/card-<random>.md — create and assign when ownership is explicit',
+		'- fill the returned draft path, then run fizzyx flow create "<title>" --desc <draft-path>',
+		'- fizzyx flow create "<title>" --assign <user> --desc <draft-path> — create and assign when ownership is explicit',
+		"- fizzyx flow edit <card> --draft — rebuild a standard draft from the remote card",
 		'- fizzyx flow edit <card> --desc <draft-file> [--title "<title>"] — edit using the same standard draft format and synchronize steps',
 		"- fizzyx flow assign <card> <user> — assign after creation",
+		"- fizzyx flow move <card> <column-id-or-name> — generic transition for custom boards",
 		"- fizzyx flow start <card> — move to IN PROGRESS and self-assign",
 		"- fizzyx flow review <card> — request review-ready state",
 		"- fizzyx flow done <card> — close with execution evidence",
@@ -245,7 +269,7 @@ const getBuiltinWorkflow = (): string =>
 		"- Without a card: use `fizzyx dev status --agent`, `fizzyx dev start <slug> --kind <kind>`, and `fizzyx dev ready --agent`.",
 		"",
 		"## Card Template",
-		"- Use `fizzyx flow create --draft` to create `.fizzyx/card-<random>.md`",
+		"- Use `fizzyx flow create --draft` and edit the returned Git-local or user-state path.",
 		"- Do not create cards from plain text. `flow create --desc` expects this draft-shaped file.",
 		"- The draft must keep `## Steps`; cards without steps are not valid execution cards.",
 		"- `flow create` does not assign by default. Use `--assign <user>` only when ownership is explicit.",
@@ -284,7 +308,9 @@ const getBuiltinSkill = (): string =>
 		"  - fizzyx",
 		"  - /fizzyx",
 		"  - flow work",
+		"  - flow columns",
 		"  - flow create",
+		"  - flow move",
 		"  - flow start",
 		"  - flow review",
 		"  - flow done",
@@ -310,12 +336,15 @@ const getBuiltinSkill = (): string =>
 		"",
 		"### Core loop",
 		"- fizzyx flow work",
+		"- fizzyx flow columns",
 		"- fizzyx dev status --agent",
 		"- fizzyx flow create --draft",
-		'- fizzyx flow create "<title>" --desc .fizzyx/card-<random>.md',
-		'- fizzyx flow edit <card> --desc .fizzyx/card-<random>.md [--title "<title>"]',
+		'- fizzyx flow create "<title>" --desc <draft-path>',
+		"- fizzyx flow edit <card> --draft",
+		'- fizzyx flow edit <card> --desc <draft-path> [--title "<title>"]',
 		"- fizzyx flow assign <card> <user>",
 		"- fizzyx flow show <card>",
+		"- fizzyx flow move <card> <column-id-or-name>",
 		"- fizzyx dev start <slug> --kind <kind> --card <card>",
 		"- fizzyx flow start <card>",
 		"- fizzyx dev ready --agent",
@@ -370,7 +399,10 @@ const getBuiltinSkill = (): string =>
 		"commands:",
 		"fizzyx auth status",
 		"fizzyx flow work",
+		"fizzyx flow columns",
 		"fizzyx dev status --agent",
+		"fizzyx dev baseline show",
+		"fizzyx dev baseline accept",
 		"fizzyx flow start <card>",
 		"fizzyx flow show <card>",
 		"fizzyx dev start <slug> --kind <kind> --card <card>",
@@ -380,6 +412,7 @@ const getBuiltinSkill = (): string =>
 		'fizzyx flow create "<title>" --assign <user> --desc <file|->',
 		'fizzyx flow edit <card> --desc <file|-> [--title "<title>"]',
 		"fizzyx flow assign <card> <user>",
+		"fizzyx flow move <card> <column-id-or-name>",
 		"fizzyx flow repair --apply",
 		'fizzyx flow done <card> "commit <sha>: <subject>"',
 		"fizzyx flow done <card> --complete-steps",
@@ -388,9 +421,11 @@ const getBuiltinSkill = (): string =>
 		"fizzyx planner snapshot",
 		"fizzyx planner start",
 		"fizzyx skill list",
+		"fizzyx skill init --project",
+		"fizzyx skill init --global",
 		"fizzyx skill add <source>",
 		"fizzyx skill remove <name>",
-		"fizzyx skill update [name]",
+		"fizzyx skill update [name] [--global]",
 		"fizzyx skill info <name>",
 		"fizzyx skill run <name>",
 		"fizzyx skill doctor",
@@ -398,10 +433,12 @@ const getBuiltinSkill = (): string =>
 		"",
 		"## Cards",
 		"- fizzyx flow create --draft",
-		'- fizzyx flow create "<title>" --desc .fizzyx/card-<random>.md',
-		'- fizzyx flow edit <card> --desc .fizzyx/card-<random>.md [--title "<title>"]',
+		'- fizzyx flow create "<title>" --desc <draft-path>',
+		"- fizzyx flow edit <card> --draft",
+		'- fizzyx flow edit <card> --desc <draft-path> [--title "<title>"]',
 		"- fizzyx flow assign <card> <user>",
 		"- fizzyx flow show <card>",
+		"- fizzyx flow move <card> <column-id-or-name>",
 		"- fizzyx flow repair [--apply]",
 		'- fizzyx flow block <card> "<reason>"',
 	].join("\n");

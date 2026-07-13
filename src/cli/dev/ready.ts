@@ -1,6 +1,7 @@
 import { Console, Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { ready, formatReady } from "../../use-cases/dev-service";
+import { ValidationError } from "../../domain/errors";
 
 const handle = (config: {
 	full: boolean;
@@ -10,6 +11,9 @@ const handle = (config: {
 	Effect.gen(function* () {
 		const result = yield* ready(config.full, config.squash);
 		yield* Console.log(formatReady(result, config.agent));
+		if (!result.ready) {
+			return yield* new ValidationError({ message: "Branch is not ready" });
+		}
 	});
 
 export const devReadyCmd = Command.make(

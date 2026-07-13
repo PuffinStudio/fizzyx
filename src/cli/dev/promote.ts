@@ -9,6 +9,7 @@ import {
 	formatPromotionChecks,
 } from "../../use-cases/dev-service";
 import { ui } from "../ui";
+import { ValidationError } from "../../domain/errors";
 
 const handle = (config: {
 	branch: string;
@@ -41,7 +42,7 @@ const handle = (config: {
 				yield* Console.log(formatPromotionChecks(checks, true, config.branch, config.to));
 			}
 			yield* Console.log(ui.error("Some checks failed. Fix the issues and try again."));
-			return;
+			return yield* new ValidationError({ message: "Promotion checks failed" });
 		}
 
 		const commands = getPromotionCommands(config.branch, config.to, projectConfig);
@@ -60,7 +61,9 @@ const handle = (config: {
 		} else if (config.apply) {
 			if (isProduction && !config.confirmProduction) {
 				yield* Console.log(ui.error("Production promotion requires --confirm-production."));
-				return;
+				return yield* new ValidationError({
+					message: "Production promotion confirmation is required",
+				});
 			}
 			yield* Console.log(ui.info(`Executing promotion: ${config.branch} -> ${config.to}`));
 			yield* Console.log("");
@@ -87,13 +90,16 @@ const handle = (config: {
 				yield* Console.log(
 					ui.error("Promotion stopped: a command failed. Resolve the issue and re-run."),
 				);
+				return yield* new ValidationError({ message: "Promotion command failed" });
 			} else {
 				yield* Console.log(ui.success(`Promoted ${config.branch} -> ${config.to}.`));
 			}
 		} else {
 			if (isProduction && !config.confirmProduction) {
 				yield* Console.log(ui.error("Production promotion requires --confirm-production."));
-				return;
+				return yield* new ValidationError({
+					message: "Production promotion confirmation is required",
+				});
 			}
 			yield* Console.log(ui.info("Use --dry-run to preview or --apply to execute."));
 		}

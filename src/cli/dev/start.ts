@@ -43,11 +43,13 @@ const handle = (config: {
 			fromCurrent: config.fromCurrent,
 		});
 
-		yield* logSuccess(`Created and switched to branch '${result.branchName}'`);
-		if (result.configUpdated) {
-			yield* logInfo(
-				`Updated .fizzyx.yaml with branch metadata${result.configPath ? ` (${result.configPath})` : ""}`,
-			);
+		yield* logSuccess(
+			result.created
+				? `Created and switched to branch '${result.branchName}'`
+				: `Switched to existing branch '${result.branchName}'`,
+		);
+		if (result.metadataRecorded) {
+			yield* logInfo("Recorded card association in local Git config");
 		}
 	});
 

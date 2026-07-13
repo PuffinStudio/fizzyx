@@ -21,4 +21,4 @@ export const flowReviewCmd = Command.make(
 		),
 	},
 	handleReview,
-).pipe(Command.withDescription("Move a card to REVIEW"));
+).pipe(Command.withDescription("Move a card to the preset REVIEW column"));

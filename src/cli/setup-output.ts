@@ -8,3 +8,8 @@ export const formatSetupUsage = (): string =>
 export const formatInitializingWorkflowMessage = (): string => "Initializing Fizzy workflow...";
 
 export const formatSetupCreatedConfig = (configPath: string): string => `created ${configPath}`;
+
+export const formatAgentInstructionsSynced = (
+	action: "created" | "updated" | "unchanged",
+	path: string,
+): string => `AGENTS.md ${action}: ${path}`;

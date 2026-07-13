@@ -7,6 +7,10 @@ description: Apply branch-first, guard-railed delivery with fizzyx dev commands.
 
 Use this when making code changes. Prefer safe sequencing and explicit handoff.
 
+`fizzyx init` maintains a compact, marker-delimited version of this workflow in the project
+`AGENTS.md`. It preserves all instructions outside that section. Skill materialization remains
+separate and explicit through `fizzyx skill init --project` or `--global`.
+
 ## Card workflow
 
 When creating a Fizzy card, do not pass plain text directly to `flow create`.
@@ -15,7 +19,7 @@ When creating a Fizzy card, do not pass plain text directly to `flow create`.
 2. Fill the draft sections, especially `## Goal`, `## Acceptance Criteria`, `## Suggested Skills`,
    `## Plan`, and `## Steps`.
 3. Create the card from the filled draft with
-   `fizzyx flow create "<title>" --desc .fizzyx/card-<id>.md`.
+   `fizzyx flow create "<title>" --desc <draft-path>`.
 4. Keep mutable execution state in Fizzy steps, `## Inputs Needed`, and blocker comments.
 5. Never create a card that has no `## Steps` task list.
 6. `flow create` does not assign by default. Use `--assign <user>` only when ownership is
@@ -24,17 +28,28 @@ When creating a Fizzy card, do not pass plain text directly to `flow create`.
 When editing an existing card, keep the same contract:
 
 1. Edit from a standard draft containing `## Steps`, not from an ad hoc description.
-2. Run `fizzyx flow edit <card> --desc <draft-file>` to synchronize the description, tags,
+2. Rebuild the current remote state with `fizzyx flow edit <card> --draft` when no local draft exists.
+3. Run `fizzyx flow edit <card> --desc <draft-file>` to synchronize the description, tags,
    metadata, and Fizzy steps. Add `--title "<title>"` when the title also changes.
-3. Use `fizzyx flow edit <card> --title "<title>"` for a title-only change.
-4. Use `flow repair` only to normalize legacy or malformed cards; it is not the normal edit path.
+4. Use `fizzyx flow edit <card> --title "<title>"` for a title-only change.
+5. Use `flow repair` only to normalize legacy or malformed cards; it is not the normal edit path.
+
+## Custom Fizzy columns
+
+BACKLOG, READY, IN PROGRESS, and REVIEW are the bundled Fizzyx preset, not mandatory Fizzy
+column names. Use `fizzyx flow columns` to discover real IDs and
+`fizzyx flow move <card> <column-id-or-name>` as the generic transition on
+custom boards. `flow start` targets the configured `in_progress` ID. Use `flow review` only
+when the board uses the preset REVIEW column; otherwise use `flow move`. Normal flow commands
+must not create, rename, or repair board columns; preset provisioning is an explicit init action.
 
 ## What to do
 
 1. If working from a card, run `fizzyx flow show <card>` and keep the card number attached
    to branch work with `fizzyx dev start <slug> --kind <kind> --card <card>`.
 2. Run `fizzyx dev status --agent` before editing.
-   Treat the reported `dirty_files` as the baseline for pre-existing user changes.
+   If pre-existing changes must remain, inspect them and explicitly record them with
+   `fizzyx dev baseline accept` before task edits.
 3. Classify work type: feature, fix, hotfix, ops, chore, docs, or tiny follow-up.
 4. Use a new branch only when the current branch is unsuitable for the classification.
 5. Start branch work with `fizzyx dev start <slug> --kind <kind> [--card <id>]`.
@@ -68,10 +83,10 @@ When editing an existing card, keep the same contract:
 
 ## Dirty Work Ownership
 
-`fizzyx dev status --agent` is the baseline. If files are dirty before you edit, treat them as
-user-owned and leave them out of your commits. If files become dirty because of your current
-task, they are your responsibility: stage only those paths, create an appropriate commit or
-`fizzyx dev checkpoint`, then run `fizzyx dev ready --agent` again.
+The baseline is stored under `.git/fizzyx/`, never in `.fizzyx.yaml`. Unchanged baseline files
+are reported separately and do not block readiness. If the baseline is missing, do not guess
+ownership: inspect the worktree and use `fizzyx dev baseline accept` explicitly. Task changes
+remain the agent's responsibility and must be committed before `fizzyx dev ready --agent`.
 
 ## When reporting
 

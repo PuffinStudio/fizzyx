@@ -64,7 +64,7 @@ export const makeFlowRuntimeEnv = Effect.gen(function* () {
 
 export const makeFlowEnv = Effect.gen(function* () {
 	const env = yield* makeFlowRuntimeEnv;
-	const initializedConfig = yield* bootstrapFlowConfig(env, { repairWorkflowColumns: true });
+	const initializedConfig = yield* bootstrapFlowConfig(env, { repairWorkflowColumns: false });
 	return { ...env, config: initializedConfig } satisfies InitializedEnv;
 });
 

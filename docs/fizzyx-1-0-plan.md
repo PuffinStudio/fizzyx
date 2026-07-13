@@ -27,34 +27,45 @@ fizzyx planner <command>
 
 ```sh
 fizzyx flow work
+fizzyx flow columns
 fizzyx flow create
 fizzyx flow edit <card>
 fizzyx flow show <card>
+fizzyx flow move <card> <column-id-or-name>
 fizzyx flow start <card>
 fizzyx flow review <card>
 fizzyx flow done <card>
 fizzyx flow block <card> <reason>
-fizzyx flow improve
 fizzyx flow doctor
 fizzyx flow repair
 ```
 
 `flow` owns the development lifecycle. It may recommend skills, but it must not install, update, or remove skills.
+Generic card commands must work with custom Fizzy columns. BACKLOG/READY/IN PROGRESS/REVIEW
+are a bundled preset, not a requirement imposed on every board. `flow move` is the generic
+transition; role-named convenience commands use configured IDs or preset aliases.
+Normal flow commands never provision columns. Only explicit initialization may install the
+bundled preset when no flow mapping exists.
 
 ### Skill
 
 ```sh
 fizzyx skill list
+fizzyx skill init --project
+fizzyx skill init --global
 fizzyx skill add <source>
 fizzyx skill remove <name>
-fizzyx skill update [name]
+fizzyx skill update [name] [--global]
 fizzyx skill info <name>
 fizzyx skill run <name>
 fizzyx skill doctor
 fizzyx skill migrate
 ```
 
-Bundled skills are always available. Adding a skill records a project pin.
+Bundled skills are always available from the release. Top-level `fizzyx init` does not
+materialize them. It creates or updates a marker-delimited FizzyX section in the project
+`AGENTS.md` while preserving other instructions. `skill init` requires an explicit project or global scope. Adding a
+skill records a project pin and materializes that skill under `.agents/skills`.
 
 ### Planner
 
@@ -71,7 +82,8 @@ fizzyx planner snapshot
 - `flow mine` -> `flow work`
 - `flow status` -> `flow work` / `flow doctor`
 - `flow health` -> `flow work` / `flow doctor`
-- `flow ready` -> remove unless scheduling via CLI becomes a clear requirement
+- `flow ready` -> remove; custom scheduling uses `flow move`, and the preset name conflicts with `dev ready`
+- `flow improve` -> deprecate; use `skill run improve-codebase`
 - `flow complete-steps` -> `flow done --complete-steps`
 - `flow repair-markdown` -> `flow repair`
 - `flow repair-metadata` -> `flow repair`
@@ -184,11 +196,15 @@ area:design
 
 - Skills are managed only by `fizzyx skill`.
 - `flow` consumes and recommends skills, but does not manage them.
-- Bundled skills are always available.
-- Adding a skill records a project pin.
+- Bundled skills are always available from the installed fizzyx release.
+- `fizzyx init` maintains the project `AGENTS.md` FizzyX workflow section but does not modify
+  project or global skill directories.
+- `skill init --project` writes missing files under `.agents/skills`.
+- `skill init --global` writes missing files under `~/.agents/skills`.
+- Adding a skill records a project pin and materializes its project copy.
 - Do not create `skills.lock.json`.
 - Project skill config lives in `.fizzyx.yaml`.
-- Cache directories may be deleted and rebuilt; config remains in YAML.
+- Materialized skill files may be rebuilt from the pinned bundled version; config remains in YAML.
 - Skills do not need to be Fizzy tags.
 
 ### Built-In Core Skills
@@ -231,10 +247,10 @@ skills:
   installed:
     tdd:
       source: builtin
-      version: 1.1.0
+      version: 1.3.0
     improve-codebase:
       source: builtin
-      version: 1.1.0
+      version: 1.3.0
   defaults:
     feature:
       - tdd
@@ -348,6 +364,8 @@ Combines:
 - Synchronizes standard tags, metadata tags, and the `## Steps` task list.
 - Keeps steps as Fizzy step resources instead of embedding them in the description.
 - Leaves `flow repair` responsible for legacy normalization rather than routine edits.
+- Supports `--draft` to rebuild the editable standard draft from remote card state.
+- Stores local drafts outside the Git worktree.
 
 ### `flow done`
 
@@ -381,12 +399,8 @@ Checks:
 
 ### `flow improve`
 
-Architecture improvement workflow:
-
-- scans codebase
-- reports improvement candidates
-- can create cards
-- defaults to `improve-codebase` and `codebase-design`
+Deprecated compatibility alias. Codebase analysis belongs to `skill run improve-codebase`;
+actionable findings return to flow through `flow create --draft`.
 
 ## Planner
 
@@ -416,8 +430,7 @@ Responsibilities:
 
 - upgrade `.fizzyx.yaml`
 - add or upgrade `skills:` config
-- refresh local copies of bundled skills
-- update `.agents/skills/fizzyx/*`
+- report missing project skill files without silently materializing them
 - migrate old command docs
 - migrate hidden metadata
 - report old `api_status` tags

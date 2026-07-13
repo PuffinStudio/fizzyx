@@ -16,17 +16,19 @@ Use `.fizzyx.yaml` as the project config file for board and workflow settings.
 
 ```sh
 fizzyx flow work
+fizzyx flow columns
 fizzyx flow create --draft
-fizzyx flow create "<title>" --desc .fizzyx/card-<random>.md
-fizzyx flow create "<title>" --assign <user> --desc .fizzyx/card-<random>.md
+fizzyx flow create "<title>" --desc <draft-path>
+fizzyx flow create "<title>" --assign <user> --desc <draft-path>
+fizzyx flow edit <card> --draft
 fizzyx flow edit <card> [--title "<title>"] [--desc <file|->]
 fizzyx flow assign <card> <user>
 fizzyx flow show <card>
+fizzyx flow move <card> <column-id-or-name>
 fizzyx flow start <card>
 fizzyx flow review <card>
 fizzyx flow done <card> "commit <sha>: <subject>"
 fizzyx flow block <card> "<reason>"
-fizzyx flow improve
 fizzyx flow doctor
 fizzyx flow repair
 ```
@@ -34,7 +36,15 @@ fizzyx flow repair
 `flow done` requires all steps to be complete and closes the card into Done.
 `flow create` expects the standard draft shape with a `## Steps` task list; generate it with `flow create --draft` instead of passing plain text.
 `flow create` does not assign by default. Use `--assign <user>` while creating or `flow assign <card> <user>` afterwards.
+Drafts are stored outside the worktree in Git-local state (or the user state directory outside a Git repository). `flow edit <card> --draft` rebuilds one from the remote card.
 `flow edit` updates the title, description, or both. Description input accepts a standard card draft file or `-` for stdin and synchronizes its `## Steps` task list.
+`flow columns` lists the real columns and IDs on the configured board. `flow move` is the column-agnostic primitive for custom Fizzy boards. `flow start` uses the configured `in_progress` column; `flow review` is a convenience command for the built-in REVIEW preset.
+Normal flow commands never create or rename board columns. When `flow:` is missing, explicit `fizzyx init` installs the bundled preset; custom boards can map their existing default and in-progress column IDs in `.fizzyx.yaml` and use `flow move` for all other transitions.
+`flow improve` is retained as a deprecated compatibility alias; use `fizzyx skill run improve-codebase` for the actual codebase workflow.
+
+On successful initialization, `fizzyx init` also creates `AGENTS.md` when it is missing or
+updates a marker-delimited FizzyX development workflow section in the existing file. Other
+project instructions are preserved, and repeated initialization does not duplicate the section.
 
 Agent loop for card-backed code work:
 
@@ -63,11 +73,14 @@ fizzyx dev status --agent
 fizzyx dev start <slug> --kind <feature|fix|hotfix|ops|chore|docs> [--card <id>]
 fizzyx dev sync
 fizzyx dev checkpoint [--message <message>]
+fizzyx dev baseline <show|accept>
 fizzyx dev ready [--agent] [--full]
 fizzyx dev promote <source> --to <environment|main> --dry-run
 fizzyx dev cleanup [--confirm-delete]
 fizzyx dev doctor
 ```
+
+Branch/card associations live in local Git config. Unchanged pre-existing worktree files may be accepted with `dev baseline accept`; readiness receipts are stored under `.git/fizzyx/` and are invalidated when HEAD changes. `.fizzyx.yaml` remains shared project policy only.
 
 Production promotions stay guarded:
 
@@ -80,9 +93,11 @@ fizzyx dev promote <source> --to main --apply --confirm-production
 
 ```sh
 fizzyx skill list
+fizzyx skill init --project
+fizzyx skill init --global
 fizzyx skill add <source>
 fizzyx skill remove <name>
-fizzyx skill update [name]
+fizzyx skill update [name] [--global]
 fizzyx skill info <name>
 fizzyx skill run <name>
 fizzyx skill doctor
@@ -90,7 +105,12 @@ fizzyx skill migrate --check
 fizzyx skill migrate --apply
 ```
 
-Built-in skills are bundled. `skill update [name]` refreshes the local copy from the current fizzyx release.
+Built-in skills remain available from the fizzyx release without installation. Top-level
+`fizzyx init` maintains the project's `AGENTS.md` instructions but does not copy skills. Use `skill init --project` for `.agents/skills`, or
+`skill init --global` for `~/.agents/skills`; initialization preserves existing files.
+`skill add <source>` records a project pin and materializes that skill in the project.
+`skill update [name]` refreshes project files by default; pass `--global` explicitly for
+the global copy.
 
 ![Skill command workflow](./docs/images/skill-workflow.webp)
 

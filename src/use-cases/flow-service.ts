@@ -191,6 +191,24 @@ export const show = (env: Env, number: number) =>
 		return { card, comments: comments.slice(-3) };
 	});
 
+export const move = (env: Env, number: number, columnRef: string) =>
+	Effect.gen(function* () {
+		const columns = yield* env.api.listColumns();
+		const normalized = columnRef.trim().toLowerCase();
+		const column = columns.find(
+			(item) => item.id === columnRef || item.name.trim().toLowerCase() === normalized,
+		);
+		if (!column) {
+			const available = columns.map((item) => `${item.name} (${item.id})`).join(", ");
+			return yield* new ValidationError({
+				message: `Unknown column '${columnRef}'. Available columns: ${available || "none"}`,
+			});
+		}
+		yield* env.api.moveCard(number, column.id);
+		yield* syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined)));
+		return { number, column: column.name, columnId: column.id };
+	});
+
 export const next = (env: InitializedEnv, options: { fresh: boolean }) =>
 	Effect.gen(function* () {
 		const cache = yield* ensureCache(env, options.fresh);

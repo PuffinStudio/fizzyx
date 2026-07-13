@@ -4,12 +4,14 @@ import {
 	addSkill,
 	doctorSkillConfig,
 	getSkillInfo,
+	initSkills,
 	listSkills,
 	migrateSkills,
 	removeSkill,
 	runSkill,
 	updateSkills,
 } from "../use-cases/skill-service";
+import { ValidationError } from "../domain/errors";
 
 const skillListCmd = Command.make("list", {}, () =>
 	Effect.gen(function* () {
@@ -59,12 +61,41 @@ const skillUpdateCmd = Command.make(
 			Argument.withMetavar("NAME"),
 			Argument.optional,
 		),
+		global: Flag.boolean("global").pipe(
+			Flag.withDescription("Refresh skills in ~/.agents/skills instead of the project"),
+		),
 	},
-	({ name }) =>
+	({ name, global }) =>
 		Effect.gen(function* () {
-			yield* Console.log(updateSkills(Option.getOrElse(name, () => undefined)));
+			yield* Console.log(
+				updateSkills(
+					Option.getOrElse(name, () => undefined),
+					global ? "global" : "project",
+				),
+			);
 		}),
 ).pipe(Command.withDescription("Refresh bundled skill files"));
+
+const skillInitCmd = Command.make(
+	"init",
+	{
+		project: Flag.boolean("project").pipe(
+			Flag.withDescription("Initialize bundled skills in this repository"),
+		),
+		global: Flag.boolean("global").pipe(
+			Flag.withDescription("Initialize bundled skills in ~/.agents/skills"),
+		),
+	},
+	({ project, global }) =>
+		Effect.gen(function* () {
+			if (project === global) {
+				return yield* new ValidationError({
+					message: "Choose exactly one of --project or --global",
+				});
+			}
+			yield* Console.log(initSkills(global ? "global" : "project"));
+		}),
+).pipe(Command.withDescription("Explicitly materialize bundled skills"));
 
 const skillInfoCmd = Command.make(
 	"info",
@@ -121,6 +152,7 @@ const skillMigrateCmd = Command.make(
 export const skillCmd = Command.make("skill").pipe(
 	Command.withDescription("Manage Fizzyx skills"),
 	Command.withSubcommands([
+		skillInitCmd,
 		skillListCmd,
 		skillAddCmd,
 		skillRemoveCmd,

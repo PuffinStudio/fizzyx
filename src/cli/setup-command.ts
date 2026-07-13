@@ -3,10 +3,12 @@ import { Command, Flag, Argument } from "effect/unstable/cli";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bootstrapFlowConfig, listBoards, setup } from "../use-cases/flow-service";
+import { syncAgentInstructions } from "../use-cases/agent-instructions";
 import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../ports/config-repository";
 import { renderTable } from "./render";
 import {
 	formatInitializingWorkflowMessage,
+	formatAgentInstructionsSynced,
 	formatLoadingBoardsMessage,
 	formatNoBoards,
 	formatSetupCreatedConfig,
@@ -71,6 +73,8 @@ const handleSetup = (config: {
 						initialized.initializedConfig.flow.columns.inProgress,
 					),
 				);
+				const agents = syncAgentInstructions(initialized.initializedConfig.rootDir);
+				yield* Console.log(formatAgentInstructionsSynced(agents.action, agents.path));
 				return;
 			}
 
@@ -83,6 +87,8 @@ const handleSetup = (config: {
 			setup({ board: config.boardId.value }),
 		);
 		yield* logSuccess(formatSetupCreatedConfig(configResult.configPath));
+		const agents = syncAgentInstructions(configResult.rootDir);
+		yield* Console.log(formatAgentInstructionsSynced(agents.action, agents.path));
 	});
 
 const hasProjectConfig = (): boolean => {
@@ -108,4 +114,4 @@ export const setupCmd = Command.make(
 		),
 	},
 	handleSetup,
-).pipe(Command.withDescription("Initialize or list Fizzy workspace"));
+).pipe(Command.withDescription("Initialize Fizzy workspace and project agent instructions"));

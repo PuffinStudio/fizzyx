@@ -21,10 +21,8 @@ export const formatNoCurrentWork = (): string => "no active cards assigned in wo
 
 export const formatImproveGuidance = (): string =>
 	[
-		"# flow improve",
-		"default skills: improve-codebase, codebase-design",
-		"start by reviewing current work with `fizzyx flow work`.",
-		"capture improvement candidates, then create a card with `fizzyx flow create` when one is actionable.",
+		"flow improve is deprecated; it does not inspect the codebase.",
+		"Run `fizzyx skill run improve-codebase` and use `fizzyx flow create --draft` for actionable work.",
 	].join("\n");
 
 export const formatNotNowSection = (count: number): string => `\n# not_now (${count})`;

@@ -4,13 +4,28 @@ import { edit } from "../../use-cases/flow-service";
 import { readDescription } from "../flow-input";
 import { formatEditingCardMessage } from "../flow-output";
 import { runWithFlowEnv } from "../flow-workflow";
+import { createCardEditDraft } from "../flow-content";
+import { ValidationError } from "../../domain/errors";
 
 const handleEdit = (config: {
 	card: number;
 	title: Option.Option<string>;
 	desc: Option.Option<string>;
+	draft: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
+		if (config.draft) {
+			if (Option.isSome(config.title) || Option.isSome(config.desc)) {
+				return yield* new ValidationError({
+					message: "--draft cannot be combined with --title or --desc",
+				});
+			}
+			const draft = yield* runWithFlowEnv(formatEditingCardMessage(), (env) =>
+				env.api.showCard(config.card).pipe(Effect.flatMap(createCardEditDraft)),
+			);
+			yield* Console.log(draft.path);
+			return;
+		}
 		const title = Option.getOrUndefined(config.title);
 		const description = Option.isSome(config.desc)
 			? yield* readDescription(config.desc.value)
@@ -32,6 +47,9 @@ export const flowEditCmd = Command.make(
 		desc: Flag.string("desc").pipe(
 			Flag.withDescription("New description file path ('-' for stdin)"),
 			Flag.optional,
+		),
+		draft: Flag.boolean("draft").pipe(
+			Flag.withDescription("Rebuild a standard edit draft from the remote card"),
 		),
 	},
 	handleEdit,

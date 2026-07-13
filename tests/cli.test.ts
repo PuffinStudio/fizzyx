@@ -201,9 +201,11 @@ test("prints flow help", async () => {
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("flow");
 	expect(stdout).toContain("work");
+	expect(stdout).toContain("columns");
 	expect(stdout).toContain("create");
 	expect(stdout).toContain("assign");
 	expect(stdout).toContain("show");
+	expect(stdout).toContain("move");
 	expect(stdout).toContain("start");
 	expect(stdout).toContain("review");
 	expect(stdout).toContain("done");
@@ -462,6 +464,7 @@ test("flow edit exposes title and description options", async () => {
 	expect(stdout).toContain("Edit a card title or description");
 	expect(stdout).toContain("--title");
 	expect(stdout).toContain("--desc");
+	expect(stdout).toContain("--draft");
 });
 
 test("flow create --draft writes a local card draft", async () => {
@@ -474,12 +477,14 @@ test("flow create --draft writes a local card draft", async () => {
 
 		const { stdout, exitCode } = await runCli(["flow", "create", "--draft"], {
 			cwd: projectDir,
+			env: { XDG_STATE_HOME: join(root, "state") },
 		});
 		const draftPath = stdout.trim();
-		const draft = readFileSync(join(projectDir, draftPath), "utf8");
+		const draft = readFileSync(draftPath, "utf8");
 
 		expect(exitCode).toBe(0);
-		expect(draftPath).toMatch(/^\.fizzyx\/card-.+\.md$/);
+		expect(draftPath).toContain("/fizzyx/drafts/");
+		expect(draftPath).toMatch(/card-.+\.md$/);
 		expect(draft).toContain("## Suggested Skills");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -507,13 +512,15 @@ test("flow create --draft pre-fills title, assignee, and requested skills", asyn
 			],
 			{
 				cwd: projectDir,
+				env: { XDG_STATE_HOME: join(root, "state") },
 			},
 		);
 		const draftPath = stdout.trim();
-		const draft = readFileSync(join(projectDir, draftPath), "utf8");
+		const draft = readFileSync(draftPath, "utf8");
 
 		expect(exitCode).toBe(0);
-		expect(draftPath).toMatch(/^\.fizzyx\/card-.+\.md$/);
+		expect(draftPath).toContain("/fizzyx/drafts/");
+		expect(draftPath).toMatch(/card-.+\.md$/);
 		expect(draft).toContain("# 测试卡-勿动");
 		expect(draft).toContain("## Assignee\n- Ellen");
 		expect(draft).toContain("## Suggested Skills\n- diagnosing-bugs");
@@ -1021,6 +1028,10 @@ test("init bootstraps missing flow in legacy config", async () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("flow config missing; initializing...");
 		expect(result.stdout).toContain("flow configured:");
+		expect(result.stdout).toContain("AGENTS.md created:");
+		const agentsPath = join(projectDir, "AGENTS.md");
+		expect(readFileSync(agentsPath, "utf8")).toContain("fizzyx dev status --agent");
+		writeFileSync(agentsPath, `# Existing project rules\n\n${readFileSync(agentsPath, "utf8")}`);
 
 		const second = await runCli(["init"], {
 			cwd: projectDir,
@@ -1030,6 +1041,13 @@ test("init bootstraps missing flow in legacy config", async () => {
 		expect(second.exitCode).toBe(0);
 		expect(second.stdout).not.toContain("flow config missing; initializing...");
 		expect(second.stdout).toContain("flow configured:");
+		expect(second.stdout).toContain("AGENTS.md unchanged:");
+		expect(readFileSync(agentsPath, "utf8")).toStartWith("# Existing project rules\n\n");
+		expect(
+			readFileSync(join(projectDir, "AGENTS.md"), "utf8").match(
+				/<!-- fizzyx:dev-workflow:start -->/g,
+			),
+		).toHaveLength(1);
 		expect(readFileSync(configPath, "utf8")).toContain("flow:");
 		expect(readFileSync(configPath, "utf8")).toContain("todo: todo-id");
 		expect(readFileSync(configPath, "utf8")).toContain("in_progress: inprogress-id");

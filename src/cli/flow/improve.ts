@@ -8,5 +8,5 @@ const handleImprove = (): Effect.Effect<void, any, any> =>
 	});
 
 export const flowImproveCmd = Command.make("improve", {}, handleImprove).pipe(
-	Command.withDescription("Review improvement candidates"),
+	Command.withDescription("Deprecated alias for improve-codebase skill guidance"),
 );
