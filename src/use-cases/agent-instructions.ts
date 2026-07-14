@@ -12,6 +12,7 @@ export const AGENT_INSTRUCTIONS_SECTION = [
 	"## FizzyX development workflow",
 	"",
 	"- Read this section before card-backed development. If `.agents/skills/dev-workflow/SKILL.md` exists, read it for the complete workflow.",
+	"- If `.agents/skills/coding-standards/SKILL.md` exists, apply it while implementing or reviewing code.",
 	"- Use `fizzyx flow` for remote Fizzy card and board state. Use `fizzyx dev` for local Git branches, checks, promotion, and cleanup.",
 	"- Start by running `fizzyx flow work` (or `fizzyx flow show <card>`) and `fizzyx dev status --agent`.",
 	"- Treat the initial dirty files as user-owned. Run `fizzyx dev baseline accept` only after inspecting them.",

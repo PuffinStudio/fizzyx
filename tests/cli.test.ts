@@ -954,6 +954,7 @@ test("flow work suggests default skills from card type without skill config", as
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("git guardrail: fizzyx dev status --agent");
 		expect(stdout).toContain("suggested skills: dev-workflow, diagnosing-bugs, tdd");
+		expect(stdout).toContain("coding-standards");
 
 		api.stop();
 	} finally {

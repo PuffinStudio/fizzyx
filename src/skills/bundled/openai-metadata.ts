@@ -7,6 +7,11 @@ export const BUNDLED_OPENAI_METADATA: Readonly<Record<string, string>> = {
   display_name: "Codebase Design"
   short_description: "Vocabulary for deep-module design"
 `,
+	"coding-standards": `interface:
+  display_name: "Coding Standards"
+  short_description: "Apply style, quality, naming, and tool rules"
+  default_prompt: "Use $coding-standards to implement this change according to the repository's conventions and required checks."
+`,
 	"diagnosing-bugs": `interface:
   display_name: "Diagnosing Bugs"
   short_description: "Diagnose hard bugs and regressions"

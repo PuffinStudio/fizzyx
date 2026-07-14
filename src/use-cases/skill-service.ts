@@ -11,6 +11,7 @@ import {
 } from "../_shared/config-utils";
 import { ValidationError } from "../domain/errors";
 import codebaseDesignContent from "../skills/bundled/codebase-design.md" with { type: "text" };
+import codingStandardsContent from "../skills/bundled/coding-standards.md" with { type: "text" };
 import devWorkflowContent from "../skills/bundled/dev-workflow.md" with { type: "text" };
 import codeReviewContent from "../skills/bundled/code-review.md" with { type: "text" };
 import diagnoseContent from "../skills/bundled/diagnosing-bugs.md" with { type: "text" };
@@ -27,7 +28,8 @@ import triageContent from "../skills/bundled/triage.md" with { type: "text" };
 import { BUNDLED_OPENAI_METADATA } from "../skills/bundled/openai-metadata";
 
 // Matt-derived content checked against mattpocock/skills@66898f6 (2026-07-13).
-const BUILTIN_SKILL_VERSION = "1.3.0";
+// The bundle version also covers FizzyX-authored skills.
+const BUILTIN_SKILL_VERSION = "1.4.0";
 
 type BuiltinSkill = {
 	name: string;
@@ -50,6 +52,13 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		runHint:
 			"Run `codebase-design` by reading the skill instructions before changing architecture.",
 		content: codebaseDesignContent,
+	},
+	{
+		name: "coding-standards",
+		description: "Apply repository-aware style, quality, naming, and tool-use standards.",
+		runHint:
+			"Run `coding-standards` while implementing or reviewing code: inspect repository rules first, then verify naming, quality, tool use, and required checks.",
+		content: codingStandardsContent,
 	},
 	{
 		name: "dev-workflow",
@@ -139,6 +148,10 @@ const BUILTIN_BY_NAME = new Map(BUILTIN_SKILLS.map((skill) => [skill.name, skill
 const BUNDLE_ALIASES: Readonly<Record<string, string>> = {
 	"git-workflow": "dev-workflow",
 	"agent-git": "dev-workflow",
+	"code-style": "coding-standards",
+	"code-quality": "coding-standards",
+	naming: "coding-standards",
+	"tool-usage": "coding-standards",
 	diagnose: "diagnosing-bugs",
 	diagnosing: "diagnosing-bugs",
 };

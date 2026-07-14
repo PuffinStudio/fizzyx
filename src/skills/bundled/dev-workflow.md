@@ -100,6 +100,7 @@ When a dev workflow step finishes, report:
 
 ## Companion skills
 
+- `coding-standards` for repository-aware style, quality, naming, and tool use.
 - `diagnose` for bug analysis.
 - `tdd` for build/test-first implementation.
 - `security-review` for auth, secrets, payment, and input-handling risk.

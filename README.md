@@ -105,6 +105,11 @@ fizzyx skill migrate --check
 fizzyx skill migrate --apply
 ```
 
+The bundled `coding-standards` skill covers repository-aware code style, code quality,
+naming, and safe tool usage. The aliases `code-style`, `code-quality`, `naming`, and
+`tool-usage` all resolve to that single skill. It includes a conditional TypeScript, React,
+Bun/pnpm, and OXC profile while leaving exact scripts and framework policy to each project.
+
 Built-in skills remain available from the fizzyx release without installation. Top-level
 `fizzyx init` maintains the project's `AGENTS.md` instructions but does not copy skills. Use `skill init --project` for `.agents/skills`, or
 `skill init --global` for `~/.agents/skills`; initialization preserves existing files.

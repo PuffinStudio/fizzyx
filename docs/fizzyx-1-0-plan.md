@@ -215,6 +215,7 @@ Default built-ins for 1.0.0:
 tdd
 diagnose
 codebase-design
+coding-standards
 improve-codebase
 to-prd
 to-issues
@@ -222,6 +223,10 @@ triage
 handoff
 security-review
 ```
+
+`coding-standards` provides the shared implementation baseline, including a conditional
+TypeScript/React and Bun/pnpm/OXC profile. Repository-local instructions, scripts, lockfiles, and
+tool configuration remain authoritative.
 
 ### Skill Sources
 
@@ -247,17 +252,19 @@ skills:
   installed:
     tdd:
       source: builtin
-      version: 1.3.0
+      version: 1.4.0
     improve-codebase:
       source: builtin
-      version: 1.3.0
+      version: 1.4.0
   defaults:
     feature:
       - tdd
       - codebase-design
+      - coding-standards
     bug:
       - diagnose
       - tdd
+      - coding-standards
     blocker:
       - diagnose
     architecture:
