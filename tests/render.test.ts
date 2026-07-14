@@ -44,6 +44,16 @@ test("printCardDetail renders markdown-like detail output", () => {
 	expect(result).toContain("- 2026-01-02 Bot: Implemented update");
 });
 
+test("printCardDetail renders Fizzy system states without a real column", () => {
+	expect(printCardDetail({ number: 1, title: "Closed", closed: true }, [])).toContain(
+		"column: DONE",
+	);
+	expect(printCardDetail({ number: 2, title: "Later", postponed: true }, [])).toContain(
+		"column: NOT_NOW",
+	);
+	expect(printCardDetail({ number: 3, title: "Triage" }, [])).toContain("column: MAYBE");
+});
+
 test("renderTable keeps width stable with ANSI and wide characters", () => {
 	const ansiRed = Bun.color("red", "ansi") || "";
 	const ansiReset = "\x1b[0m";

@@ -1,10 +1,8 @@
-import { Console, Effect, Option } from "effect";
+import { Console, Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { DEFAULT_PLANNER_PORT } from "../planner/index";
 import { loadPlannerSnapshot } from "../use-cases/planner-service";
 import { formatPlannerSnapshotJson } from "./planner-output";
-import { savePlannerChatSignalServer } from "../adapters/app-config";
-import { resolveAppConfigPath } from "../adapters/app-paths";
 
 const handlePlannerStart = ({
 	port,
@@ -55,53 +53,7 @@ const plannerSnapshotCommand = Command.make("snapshot", {}, () =>
 	}),
 ).pipe(Command.withDescription("Print planner snapshot JSON"));
 
-const handlePlannerChatConfig = (config: {
-	readonly host: string;
-	readonly port: Option.Option<number>;
-	readonly path: Option.Option<string>;
-	readonly insecure: boolean;
-	readonly key: Option.Option<string>;
-}): Effect.Effect<void, Error, never> =>
-	Effect.gen(function* () {
-		const server = {
-			host: config.host,
-			...(Option.isSome(config.port) ? { port: config.port.value } : {}),
-			path: Option.isSome(config.path) ? config.path.value : "/",
-			secure: !config.insecure,
-			...(Option.isSome(config.key) ? { key: config.key.value } : {}),
-		};
-
-		yield* Effect.tryPromise({
-			try: () => savePlannerChatSignalServer(server),
-			catch: (cause) =>
-				new Error(
-					`failed to save planner chat config: ${
-						cause instanceof Error ? cause.message : String(cause)
-					}`,
-				),
-		});
-		yield* Console.log(`Planner chat PeerServer saved to ${resolveAppConfigPath()}`);
-	});
-
-const plannerChatConfigCommand = Command.make(
-	"chat-config",
-	{
-		host: Flag.string("host").pipe(Flag.withDescription("PeerServer host")),
-		port: Flag.optional(
-			Flag.integer("port").pipe(Flag.withDescription("PeerServer port, for example 9000")),
-		),
-		path: Flag.optional(
-			Flag.string("path").pipe(Flag.withDescription("PeerServer path, for example /peerjs")),
-		),
-		insecure: Flag.boolean("insecure").pipe(
-			Flag.withDescription("Use ws/http instead of wss/https"),
-		),
-		key: Flag.optional(Flag.string("key").pipe(Flag.withDescription("PeerServer key"))),
-	},
-	handlePlannerChatConfig,
-).pipe(Command.withDescription("Configure the global planner team chat PeerServer"));
-
 export const plannerCmd = Command.make("planner").pipe(
 	Command.withDescription("Planner dashboard and maintenance tools"),
-	Command.withSubcommands([plannerStartCommand, plannerSnapshotCommand, plannerChatConfigCommand]),
+	Command.withSubcommands([plannerStartCommand, plannerSnapshotCommand]),
 );

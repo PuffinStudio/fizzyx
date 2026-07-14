@@ -1,91 +1,25 @@
 import type { ReactNode } from "react";
+import type {
+	PlannerBoard as DomainPlannerBoard,
+	PlannerCard as DomainPlannerCard,
+	PlannerContext as DomainPlannerContext,
+	PlannerHealthIssue,
+	PlannerLane as DomainPlannerLane,
+	PlannerRecommendation as DomainPlannerRecommendation,
+	PlannerSnapshot as DomainPlannerSnapshot,
+	PlannerUser as DomainPlannerUser,
+} from "../../domain/planner-model";
 
-export type PlannerLane = "todo" | "ready" | "in_progress" | "review" | "done" | "blocked";
+export type PlannerLane = DomainPlannerLane;
+export type PlannerUser = DomainPlannerUser;
+export type PlannerCard = DomainPlannerCard;
+export type PlannerIssue = PlannerHealthIssue;
+export type PlannerRecommendation = DomainPlannerRecommendation;
+export type PlannerSnapshot = DomainPlannerSnapshot;
+export type PlannerBoard = DomainPlannerBoard;
+export type PlannerContext = DomainPlannerContext;
+
 export type PlannerView = "overview" | "roadmap" | "calendar" | "my" | "board" | "health";
-
-export type PlannerUser = { id: string; name: string; avatarUrl?: string };
-
-export type PlannerCard = {
-	number: number;
-	title: string;
-	lane: PlannerLane;
-	closed: boolean;
-	postponed: boolean;
-	tags: string[];
-	createdAt: string;
-	lastActiveAt: string;
-	url: string;
-	column?: { id: string; name: string };
-	parsedTags: {
-		priority: string[];
-		type: string[];
-		area: string[];
-		phase: string[];
-		dependsOn: number[];
-		blocks: number[];
-	};
-	metadata: {
-		priority?: string;
-		type?: string;
-		owner?: string;
-		deadline?: string;
-		impact?: string;
-		effort?: string;
-		depends_on: number[];
-		blocks: number[];
-		phase?: string;
-	};
-	body: string;
-	assignees: PlannerUser[];
-	steps: Array<{ id?: string; content: string; completed: boolean }>;
-	comments: Array<{ id: string; createdAt: string; body: string; creator: PlannerUser }>;
-	stepProgress: { completed: number; total: number };
-};
-
-export type PlannerIssue = {
-	cardNumber: number;
-	title: string;
-	severity: "info" | "warning" | "critical";
-	code: string;
-	message: string;
-};
-export type PlannerRecommendation = {
-	cardNumber: number;
-	title: string;
-	reason: string;
-	score: number;
-};
-
-export type PlannerSnapshot = {
-	generatedAt: string;
-	cache?: "fresh" | "stale";
-	account: string;
-	board: string;
-	boardName: string;
-	identity?: PlannerUser;
-	users: PlannerUser[];
-	cards: PlannerCard[];
-	summary: {
-		total: number;
-		lanes: Record<PlannerLane, number>;
-		priorities: Record<"p0" | "p1" | "p2", number>;
-		healthIssues: number;
-	};
-	health: PlannerIssue[];
-	recommendations: PlannerRecommendation[];
-};
-
-export type PlannerBoard = {
-	id: string;
-	name: string;
-};
-
-export type PlannerContext = {
-	account: string;
-	defaultBoard?: string;
-	boards: PlannerBoard[];
-};
-
 export type SelectCard = (card: PlannerCard) => void;
 
 export type ViewDefinition = {

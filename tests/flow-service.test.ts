@@ -19,10 +19,16 @@ import {
 	getStandardizedCommentTemplate,
 	done,
 	edit,
+	addComment,
+	listFlowCards,
 	move,
+	reopen,
+	searchFlowCards,
 	start,
 	resolveDoneRefFromGit,
 	block,
+	unblock,
+	untriage,
 	bootstrapFlowConfig,
 	analyzeDoctor,
 	standardizeBoard,
@@ -80,6 +86,7 @@ const defaultApi = () =>
 		listColumns: () => Effect.succeed([]),
 		listBoards: () => Effect.fail(new ApiError({ message: "listBoards not mocked" })),
 		listCards: () => Effect.fail(new ApiError({ message: "listCards not mocked" })),
+		searchCards: () => Effect.fail(new ApiError({ message: "searchCards not mocked" })),
 		showCard: () => Effect.fail(new ApiError({ message: "showCard not mocked" })),
 		listComments: () => Effect.fail(new ApiError({ message: "listComments not mocked" })),
 		createColumn: () => Effect.fail(new ApiError({ message: "createColumn not mocked" })),
@@ -91,6 +98,7 @@ const defaultApi = () =>
 		untriageCard: () => Effect.fail(new ApiError({ message: "untriageCard not mocked" })),
 		comment: () => Effect.fail(new ApiError({ message: "comment not mocked" })),
 		closeCard: () => Effect.fail(new ApiError({ message: "closeCard not mocked" })),
+		reopenCard: () => Effect.fail(new ApiError({ message: "reopenCard not mocked" })),
 		postponeCard: () => Effect.fail(new ApiError({ message: "postponeCard not mocked" })),
 		updateCardDescription: () =>
 			Effect.fail(new ApiError({ message: "updateCardDescription not mocked" })),
@@ -185,11 +193,117 @@ test("move targets a custom column by exact name", async () => {
 		moves.push({ number, columnId });
 		return Effect.succeed(undefined);
 	};
+	api.showCard = () =>
+		Effect.succeed({
+			number: 42,
+			title: "Custom workflow card",
+			column: { id: "building-id", name: "Building Now" },
+		});
 
 	const result = await Effect.runPromise(move(makeEnv(api), 42, "Building Now"));
 
 	expect(result).toEqual({ number: 42, column: "Building Now", columnId: "building-id" });
 	expect(moves).toEqual([{ number: 42, columnId: "building-id" }]);
+});
+
+test("move supports Fizzy system states but preserves the done guardrail", async () => {
+	const api = defaultApi();
+	const calls: string[] = [];
+	api.untriageCard = () => {
+		calls.push("maybe");
+		return Effect.succeed(undefined);
+	};
+	api.postponeCard = () => {
+		calls.push("not_now");
+		return Effect.succeed(undefined);
+	};
+	api.identity = () => Effect.succeed({ userId: "user-1" });
+	api.listCards = () => Effect.succeed([]);
+	api.listColumns = () => Effect.succeed([]);
+	api.showCard = () =>
+		Effect.succeed({ number: 7, title: "Unblocked", column: { id: "todo-id", name: "TODO" } });
+
+	expect(await Effect.runPromise(move(makeEnv(api), 42, "maybe"))).toEqual({
+		number: 42,
+		column: "MAYBE",
+		columnId: "maybe",
+	});
+	expect(await Effect.runPromise(move(makeEnv(api), 42, "not-now"))).toEqual({
+		number: 42,
+		column: "NOT_NOW",
+		columnId: "not_now",
+	});
+	const closed = await Effect.runPromise(move(makeEnv(api), 42, "done").pipe(Effect.flip));
+
+	expect(calls).toEqual(["maybe", "not_now"]);
+	expect(closed).toBeInstanceOf(ValidationError);
+	if (closed instanceof ValidationError) expect(closed.message).toContain("flow done 42");
+});
+
+test("list and search keep project board semantics", async () => {
+	const api = defaultApi();
+	let listOptions: Parameters<FizzyApi["listCards"]>[0];
+	api.listCards = (options) => {
+		listOptions = options;
+		return Effect.succeed([{ number: 1, title: "Login bug" }]);
+	};
+	api.searchCards = () =>
+		Effect.succeed([
+			{ number: 1, title: "Local", board: { id: "board-1", name: "Project" } },
+			{ number: 2, title: "Other", board: { id: "board-2", name: "Other" } },
+		]);
+
+	const listed = await Effect.runPromise(
+		listFlowCards(makeEnv(api), { indexedBy: "closed", all: true, search: "login bug" }),
+	);
+	const projectResults = await Effect.runPromise(searchFlowCards(makeEnv(api), "bug"));
+	const accountResults = await Effect.runPromise(
+		searchFlowCards(makeEnv(api), "bug", { allBoards: true }),
+	);
+
+	expect(listed).toHaveLength(1);
+	expect(listOptions).toEqual({ indexedBy: "closed", all: true, terms: ["login", "bug"] });
+	expect(projectResults.map((card) => card.number)).toEqual([1]);
+	expect(accountResults.map((card) => card.number)).toEqual([1, 2]);
+});
+
+test("comment, unblock, reopen, and untriage expose symmetric lifecycle actions", async () => {
+	const api = defaultApi();
+	const calls: string[] = [];
+	api.comment = (number, body) => {
+		calls.push(`comment:${number}:${body}`);
+		return Effect.succeed(undefined);
+	};
+	api.moveCard = (number, columnId) => {
+		calls.push(`move:${number}:${columnId}`);
+		return Effect.succeed(undefined);
+	};
+	api.reopenCard = (number) => {
+		calls.push(`reopen:${number}`);
+		return Effect.succeed(undefined);
+	};
+	api.untriageCard = (number) => {
+		calls.push(`untriage:${number}`);
+		return Effect.succeed(undefined);
+	};
+	api.identity = () => Effect.succeed({ userId: "user-1" });
+	api.listCards = () => Effect.succeed([]);
+	api.listColumns = () => Effect.succeed([]);
+	api.showCard = () =>
+		Effect.succeed({ number: 7, title: "Unblocked", column: { id: "todo-id", name: "TODO" } });
+
+	await Effect.runPromise(addComment(makeEnv(api), 7, "ready <now>"));
+	await Effect.runPromise(unblock(makeEnv(api), 7, "dependency ready"));
+	await Effect.runPromise(reopen(makeEnv(api), 8));
+	await Effect.runPromise(untriage(makeEnv(api), 9));
+
+	expect(calls).toEqual([
+		"comment:7:<p>note: ready &lt;now&gt;</p>",
+		"move:7:todo-id",
+		"comment:7:<p>unblocked: dependency ready</p>",
+		"reopen:8",
+		"untriage:9",
+	]);
 });
 
 test("normal flow bootstrap preserves configured custom columns", async () => {

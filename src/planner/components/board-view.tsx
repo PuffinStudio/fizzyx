@@ -13,7 +13,13 @@ const lanes = [
 	{ key: "blocked", label: "Blocked" },
 ] as const;
 
-export function BoardView({ cards, onSelect }: { cards: PlannerCard[]; onSelect: SelectCard }) {
+export function BoardView({
+	cards,
+	onSelect,
+}: {
+	cards: ReadonlyArray<PlannerCard>;
+	onSelect: SelectCard;
+}) {
 	return (
 		<motion.div
 			initial={{ opacity: 0 }}
@@ -48,7 +54,7 @@ function LaneColumn({
 	onSelect,
 }: {
 	title: string;
-	cards: PlannerCard[];
+	cards: ReadonlyArray<PlannerCard>;
 	onSelect: SelectCard;
 }) {
 	return (

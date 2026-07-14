@@ -8,7 +8,9 @@ export interface FizzyApi {
 	listCards: (options?: {
 		indexedBy?: string;
 		all?: boolean;
+		terms?: ReadonlyArray<string>;
 	}) => Effect.Effect<ReadonlyArray<Card>, ApiError>;
+	searchCards: (query: string) => Effect.Effect<ReadonlyArray<Card>, ApiError>;
 	showCard: (number: CardNumber) => Effect.Effect<Card, ApiError>;
 	listComments: (number: CardNumber) => Effect.Effect<ReadonlyArray<Comment>, ApiError>;
 	listColumns: () => Effect.Effect<ReadonlyArray<BoardColumn>, ApiError>;
@@ -26,6 +28,7 @@ export interface FizzyApi {
 	untriageCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	comment: (number: CardNumber, body: string) => Effect.Effect<void, ApiError>;
 	closeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
+	reopenCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	postponeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	updateCard: (
 		number: CardNumber,

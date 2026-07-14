@@ -13,9 +13,6 @@ const CREDENTIALS_DIR = "credentials";
 /** Cache subdirectory */
 const CACHE_DIR = "cache";
 
-/** Global fizzyx app config file */
-const APP_CONFIG_FILE = "config.yaml";
-
 const resolveHome = (): string => {
 	const home = homedir();
 	if (!home) throw new Error("HOME is not set");
@@ -24,10 +21,6 @@ const resolveHome = (): string => {
 
 /** ~/.config/fizzyx */
 export const resolveFizzyxConfigDir = (): string => `${resolveHome()}/${FIZZYX_CONFIG_DIR}`;
-
-/** ~/.config/fizzyx/config.yaml */
-export const resolveAppConfigPath = (): string =>
-	`${resolveHome()}/${FIZZYX_CONFIG_DIR}/${APP_CONFIG_FILE}`;
 
 /** ~/.config/fizzyx/credentials/<safeName>.json */
 export const resolveCredentialPath = (profile: string): string =>

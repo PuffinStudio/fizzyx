@@ -15,7 +15,6 @@ export type ShortcutAction =
 	| "refresh"
 	| "showShortcuts"
 	| "focusSearch"
-	| "toggleChat"
 	| "showBoards"
 	| "previousBoard"
 	| "nextBoard"
@@ -33,7 +32,6 @@ export const SHORTCUTS: Shortcut[] = [
 	{ key: "b", description: "Open board switcher", action: "showBoards" },
 	{ key: "[", description: "Previous board", action: "previousBoard" },
 	{ key: "]", description: "Next board", action: "nextBoard" },
-	{ key: "c", description: "Toggle team chat", action: "toggleChat" },
 	{ key: "/", description: "Focus search", action: "focusSearch" },
 	{ key: "?", description: "Show keyboard shortcuts", action: "showShortcuts" },
 	// { key: "n", description: "Create new card (when available)", action: "newCard" },
@@ -43,7 +41,6 @@ export function useKeyboardShortcuts(
 	onRefresh: () => void,
 	onToggleTheme: () => void,
 	onFocusSearch?: () => void,
-	onToggleChat?: () => void,
 	onShowBoards?: () => void,
 	onPreviousBoard?: () => void,
 	onNextBoard?: () => void,
@@ -69,9 +66,6 @@ export function useKeyboardShortcuts(
 			} else if (key === "?") {
 				event.preventDefault();
 				setShowShortcuts(true);
-			} else if (key === "c" && onToggleChat) {
-				event.preventDefault();
-				onToggleChat();
 			} else if (key === "b" && onShowBoards) {
 				event.preventDefault();
 				onShowBoards();
@@ -91,15 +85,7 @@ export function useKeyboardShortcuts(
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [
-		onRefresh,
-		onToggleTheme,
-		onToggleChat,
-		onFocusSearch,
-		onShowBoards,
-		onPreviousBoard,
-		onNextBoard,
-	]);
+	}, [onRefresh, onToggleTheme, onFocusSearch, onShowBoards, onPreviousBoard, onNextBoard]);
 
 	return { showShortcuts, setShowShortcuts };
 }

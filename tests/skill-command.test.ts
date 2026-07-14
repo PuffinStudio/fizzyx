@@ -132,7 +132,7 @@ openapi:
 		expect(yaml).toContain("installed:");
 		expect(yaml).toContain("tdd:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.4.0");
+		expect(yaml).toContain("version: 1.5.0");
 		expect(readFileSync(join(root, ".agents", "skills", "tdd", "SKILL.md"), "utf8")).toContain(
 			"name: tdd",
 		);
@@ -170,6 +170,15 @@ test("skill init --project materializes bundled skills and Codex metadata", asyn
 				"utf8",
 			),
 		).toContain("$coding-standards");
+		expect(
+			readFileSync(join(root, ".agents", "skills", "improve-codebase", "HTML-REPORT.md"), "utf8"),
+		).toContain("HTML Report Format");
+		expect(
+			readFileSync(join(root, ".agents", "skills", "prototype", "LOGIC.md"), "utf8"),
+		).toContain("Logic Prototype");
+		expect(
+			readFileSync(join(root, ".agents", "skills", "triage", "AGENT-BRIEF.md"), "utf8"),
+		).toContain("Writing Agent Briefs");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -213,7 +222,7 @@ test("skill add mattpocock/tdd pins bundled Matt Pocock skill without downloadin
 		expect(text).toContain("Pinned bundled skill tdd");
 		expect(yaml).toContain("tdd:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.4.0");
+		expect(yaml).toContain("version: 1.5.0");
 		expect(yaml).not.toContain("github.com/mattpocock/skills");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -259,7 +268,7 @@ test("skill add git-workflow maps to bundled dev-workflow", async () => {
 		expect(text).toContain("Pinned bundled skill dev-workflow");
 		expect(yaml).toContain("dev-workflow:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.4.0");
+		expect(yaml).toContain("version: 1.5.0");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -280,7 +289,7 @@ test("skill add agent-git maps to bundled dev-workflow", async () => {
 		expect(text).toContain("Pinned bundled skill dev-workflow");
 		expect(yaml).toContain("dev-workflow:");
 		expect(yaml).toContain("source: builtin");
-		expect(yaml).toContain("version: 1.4.0");
+		expect(yaml).toContain("version: 1.5.0");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -512,7 +521,36 @@ test("skill update tdd refreshes bundled skill content locally", async () => {
 		).toContain('display_name: "TDD"');
 		expect(readFileSync(skillPath, "utf-8")).toContain("Test-driven development");
 		expect(readFileSync(skillPath, "utf-8")).toContain("The TDD Cycle");
-		expect(readFileSync(join(root, ".fizzyx.yaml"), "utf8")).toContain("version: 1.4.0");
+		expect(readFileSync(join(root, ".fizzyx.yaml"), "utf8")).toContain("version: 1.5.0");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("skill doctor and update treat companion files as part of the bundled artifact", async () => {
+	const root = makeTempDir();
+	const skillDir = join(root, ".agents", "skills", "improve-codebase");
+
+	try {
+		mkdirSync(skillDir, { recursive: true });
+		writeFileSync(join(skillDir, "SKILL.md"), "# Improve codebase\n");
+		writeFileSync(
+			join(root, ".fizzyx.yaml"),
+			`skills:
+  version: 1
+  installed:
+    improve-codebase:
+      source: builtin
+      version: 1.5.0
+`,
+		);
+
+		const doctor = await runCli(["skill", "doctor"], { cwd: root });
+		expect(stripAnsi(doctor.stdout)).toContain("project skill files: missing improve-codebase");
+
+		const update = await runCli(["skill", "update", "improve-codebase"], { cwd: root });
+		expect(update.exitCode).toBe(0);
+		expect(readFileSync(join(skillDir, "HTML-REPORT.md"), "utf8")).toContain("HTML Report Format");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

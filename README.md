@@ -16,6 +16,8 @@ Use `.fizzyx.yaml` as the project config file for board and workflow settings.
 
 ```sh
 fizzyx flow work
+fizzyx flow list [--indexed-by <lane>] [--search <terms>] [--json]
+fizzyx flow search "<query>" [--all-boards] [--json]
 fizzyx flow columns
 fizzyx flow create --draft
 fizzyx flow create "<title>" --desc <draft-path>
@@ -23,12 +25,16 @@ fizzyx flow create "<title>" --assign <user> --desc <draft-path>
 fizzyx flow edit <card> --draft
 fizzyx flow edit <card> [--title "<title>"] [--desc <file|->]
 fizzyx flow assign <card> <user>
+fizzyx flow comment <card> "<body>"
 fizzyx flow show <card>
 fizzyx flow move <card> <column-id-or-name>
 fizzyx flow start <card>
 fizzyx flow review <card>
 fizzyx flow done <card> "commit <sha>: <subject>"
+fizzyx flow reopen <card>
 fizzyx flow block <card> "<reason>"
+fizzyx flow unblock <card> "<reason>"
+fizzyx flow untriage <card>
 fizzyx flow doctor
 fizzyx flow repair
 ```
@@ -39,6 +45,10 @@ fizzyx flow repair
 Drafts are stored outside the worktree in Git-local state (or the user state directory outside a Git repository). `flow edit <card> --draft` rebuilds one from the remote card.
 `flow edit` updates the title, description, or both. Description input accepts a standard card draft file or `-` for stdin and synchronizes its `## Steps` task list.
 `flow columns` lists the real columns and IDs on the configured board. `flow move` is the column-agnostic primitive for custom Fizzy boards. `flow start` uses the configured `in_progress` column; `flow review` is a convenience command for the built-in REVIEW preset.
+`flow move` also accepts the Fizzy system targets `maybe`/`triage` and `not-now`; closing remains guarded by `flow done`.
+`flow list` filters cards on the configured board, while `flow search` uses Fizzy full-text search and filters results back to the project board unless `--all-boards` is passed. `flow comment` records a standardized note.
+`flow reopen`, `flow unblock`, and `flow untriage` provide the inverse lifecycle actions. Unblock returns the card to the configured default column; untriage returns it to Fizzy's system Maybe state.
+High-frequency flow commands accept `--json` and return an `ok`/`data`/`summary` envelope with next-action breadcrumbs for agents.
 Normal flow commands never create or rename board columns. When `flow:` is missing, explicit `fizzyx init` installs the bundled preset; custom boards can map their existing default and in-progress column IDs in `.fizzyx.yaml` and use `flow move` for all other transitions.
 `flow improve` is retained as a deprecated compatibility alias; use `fizzyx skill run improve-codebase` for the actual codebase workflow.
 
@@ -126,14 +136,11 @@ Start a local planner dashboard backed directly by the Fizzy API:
 ```sh
 fizzyx planner start
 fizzyx planner snapshot
-fizzyx planner chat-config --host peer.example.com --port 443 --path /peerjs
 ```
 
 ![Planner dashboard workflow](./docs/images/planner-workflow.webp)
 
 `planner snapshot` prints the same JSON used by the web dashboard. Project workflow uses `BACKLOG → READY → IN PROGRESS → REVIEW → DONE`, with `DONE` coming from closed cards and `BLOCKED` from Not Now/postponed cards.
-
-`planner chat-config` stores the Team Chat signaling server globally in `~/.config/fizzyx/config.yaml`. Use `--insecure` for local HTTP/ws PeerServer instances.
 
 Planner conventions use tags for filtering:
 

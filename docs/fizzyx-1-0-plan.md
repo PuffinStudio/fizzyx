@@ -27,15 +27,21 @@ fizzyx planner <command>
 
 ```sh
 fizzyx flow work
+fizzyx flow list
+fizzyx flow search <query>
 fizzyx flow columns
 fizzyx flow create
 fizzyx flow edit <card>
+fizzyx flow comment <card> <body>
 fizzyx flow show <card>
 fizzyx flow move <card> <column-id-or-name>
 fizzyx flow start <card>
 fizzyx flow review <card>
 fizzyx flow done <card>
+fizzyx flow reopen <card>
 fizzyx flow block <card> <reason>
+fizzyx flow unblock <card> <reason>
+fizzyx flow untriage <card>
 fizzyx flow doctor
 fizzyx flow repair
 ```
@@ -44,8 +50,12 @@ fizzyx flow repair
 Generic card commands must work with custom Fizzy columns. BACKLOG/READY/IN PROGRESS/REVIEW
 are a bundled preset, not a requirement imposed on every board. `flow move` is the generic
 transition; role-named convenience commands use configured IDs or preset aliases.
+The generic move command also supports Fizzy system states `maybe`/`triage` and `not-now`;
+closing remains behind the guarded `flow done` command.
 Normal flow commands never provision columns. Only explicit initialization may install the
 bundled preset when no flow mapping exists.
+High-frequency read and lifecycle commands support `--json` with a stable success envelope:
+`ok`, `data`, `summary`, and optional next-action `breadcrumbs`.
 
 ### Skill
 
@@ -252,10 +262,10 @@ skills:
   installed:
     tdd:
       source: builtin
-      version: 1.4.0
+      version: 1.5.0
     improve-codebase:
       source: builtin
-      version: 1.4.0
+      version: 1.5.0
   defaults:
     feature:
       - tdd

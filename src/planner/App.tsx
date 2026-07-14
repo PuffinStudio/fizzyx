@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { TeamChat } from "./components/chat/team-chat";
 import {
 	Calendar,
 	HeartPulse,
@@ -32,7 +31,7 @@ import type {
 	PlannerView,
 	ViewDefinition,
 } from "./components/planner-types";
-import type { SignalServerConfig } from "../ports/chat-signal";
+import { decodePlannerSnapshot } from "../domain/planner-model";
 import { ProjectOverview } from "./components/project-overview";
 import { RoadmapView } from "./components/roadmap-view";
 import "./styles/globals.css";
@@ -78,20 +77,12 @@ const views: ViewDefinition[] = [
 	},
 ];
 
-type PlannerClientConfig = {
-	readonly chat?: {
-		readonly signalServer?: SignalServerConfig;
-	};
-};
-
 export function App() {
 	const [snapshot, setSnapshot] = useState<PlannerSnapshot | null>(null);
 	const [plannerContext, setPlannerContext] = useState<PlannerContext | null>(null);
-	const [plannerConfig, setPlannerConfig] = useState<PlannerClientConfig>({});
 	const [error, setError] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [chatOpen, setChatOpen] = useState(false);
 	const [boardPickerOpen, setBoardPickerOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useQueryState("q", parseAsString.withDefault(""));
 	const [selectedBoard, setSelectedBoard] = useQueryState("board", parseAsString);
@@ -133,13 +124,14 @@ export function App() {
 			const response = await fetch(buildSnapshotUrl(fresh, boardId));
 			const data = await response.json();
 			if (!response.ok) throw new Error(data.error || "Failed to load planner snapshot");
-			setSnapshot(data);
-			if (!fresh && data.cache === "stale") {
+			const decoded = decodePlannerSnapshot(data);
+			setSnapshot(decoded);
+			if (!fresh && decoded.cache === "stale") {
 				try {
 					const freshResponse = await fetch(buildSnapshotUrl(true, boardId));
 					const freshData = await freshResponse.json();
 					if (freshResponse.ok) {
-						setSnapshot(freshData);
+						setSnapshot(decodePlannerSnapshot(freshData));
 					}
 				} catch {
 					// Keep the cached snapshot visible when the network is unavailable.
@@ -152,18 +144,6 @@ export function App() {
 		} finally {
 			setIsRefreshing(false);
 			setIsLoading(false);
-		}
-	};
-
-	const loadPlannerConfig = async () => {
-		try {
-			const response = await fetch("/api/planner/config");
-			const data = await response.json();
-			if (response.ok) {
-				setPlannerConfig(data);
-			}
-		} catch {
-			// Team chat falls back to the public PeerJS signaling server.
 		}
 	};
 
@@ -207,7 +187,6 @@ export function App() {
 	};
 
 	useEffect(() => {
-		void loadPlannerConfig();
 		void loadPlannerContext();
 	}, []);
 
@@ -245,7 +224,6 @@ export function App() {
 			searchInputRef.current?.focus();
 			searchInputRef.current?.select();
 		},
-		() => setChatOpen((v) => !v),
 		openBoardPicker,
 		() => switchBoardByOffset(-1),
 		() => switchBoardByOffset(1),
@@ -360,8 +338,6 @@ export function App() {
 			boardPickerOpen={boardPickerOpen}
 			onBoardPickerOpenChange={setBoardPickerOpen}
 			onBoardChange={handleBoardChange}
-			onToggleChat={() => setChatOpen((v) => !v)}
-			chatOpen={chatOpen}
 		>
 			{snapshot ? (
 				<PlannerHeader
@@ -396,20 +372,6 @@ export function App() {
 				}}
 			/>
 			<ShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
-			{snapshot &&
-			chatOpen &&
-			snapshot.identity &&
-			snapshot.users.some((u) => u.id === snapshot.identity!.id) ? (
-				<TeamChat
-					open={chatOpen}
-					account={snapshot.account}
-					board={snapshot.board}
-					identity={snapshot.identity}
-					members={snapshot.users}
-					signalServer={plannerConfig.chat?.signalServer}
-					onClose={() => setChatOpen(false)}
-				/>
-			) : null}
 		</PlannerShell>
 	);
 }
@@ -424,7 +386,7 @@ function PlannerViewRenderer({
 }: {
 	snapshot: PlannerSnapshot;
 	view: PlannerView;
-	health: PlannerIssue[];
+	health: ReadonlyArray<PlannerIssue>;
 	onSelect: (card: PlannerCard) => void;
 	onViewChange: (next: PlannerView) => void;
 	onRefreshFresh: () => Promise<void>;
@@ -526,7 +488,10 @@ function PlannerHeader({
 	);
 }
 
-const filterCardsBySearch = (cards: PlannerCard[], query: string): PlannerCard[] => {
+const filterCardsBySearch = (
+	cards: ReadonlyArray<PlannerCard>,
+	query: string,
+): ReadonlyArray<PlannerCard> => {
 	if (!query) return cards;
 	return cards.filter((card) => {
 		if (String(card.number).includes(query) || `#${card.number}`.includes(query)) return true;

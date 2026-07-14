@@ -62,7 +62,7 @@ function LaneColumn({
 	onSelect,
 }: {
 	title: string;
-	cards: PlannerCard[];
+	cards: ReadonlyArray<PlannerCard>;
 	onSelect: SelectCard;
 }) {
 	return (

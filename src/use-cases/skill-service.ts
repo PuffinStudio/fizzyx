@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { applySkillsMigration, inspectSkillsMigration } from "./migrate";
 import {
@@ -25,17 +25,25 @@ import tddContent from "../skills/bundled/tdd.md" with { type: "text" };
 import toIssuesContent from "../skills/bundled/to-issues.md" with { type: "text" };
 import toPrdContent from "../skills/bundled/to-prd.md" with { type: "text" };
 import triageContent from "../skills/bundled/triage.md" with { type: "text" };
+import contextFormatContent from "../skills/bundled/resources/domain-modeling/CONTEXT-FORMAT.md" with { type: "text" };
+import adrFormatContent from "../skills/bundled/resources/domain-modeling/ADR-FORMAT.md" with { type: "text" };
+import htmlReportContent from "../skills/bundled/resources/improve-codebase/HTML-REPORT.md" with { type: "text" };
+import logicPrototypeContent from "../skills/bundled/resources/prototype/LOGIC.md" with { type: "text" };
+import uiPrototypeContent from "../skills/bundled/resources/prototype/UI.md" with { type: "text" };
+import agentBriefContent from "../skills/bundled/resources/triage/AGENT-BRIEF.md" with { type: "text" };
+import outOfScopeContent from "../skills/bundled/resources/triage/OUT-OF-SCOPE.md" with { type: "text" };
 import { BUNDLED_OPENAI_METADATA } from "../skills/bundled/openai-metadata";
 
 // Matt-derived content checked against mattpocock/skills@66898f6 (2026-07-13).
 // The bundle version also covers FizzyX-authored skills.
-const BUILTIN_SKILL_VERSION = "1.4.0";
+const BUILTIN_SKILL_VERSION = "1.5.0";
 
 type BuiltinSkill = {
 	name: string;
 	description: string;
 	runHint: string;
 	content: string;
+	resources?: Readonly<Record<string, string>>;
 };
 
 export type SkillSummary = {
@@ -87,6 +95,10 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		runHint:
 			"Run `domain-modeling` to establish shared language and capture architectural decisions.",
 		content: domainModelingContent,
+		resources: {
+			"CONTEXT-FORMAT.md": contextFormatContent,
+			"ADR-FORMAT.md": adrFormatContent,
+		},
 	},
 	{
 		name: "handoff",
@@ -99,6 +111,7 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		description: "Build a throwaway prototype to answer a design question.",
 		runHint: "Run `prototype` to build throwaway code that answers a question about logic or UI.",
 		content: prototypeContent,
+		resources: { "LOGIC.md": logicPrototypeContent, "UI.md": uiPrototypeContent },
 	},
 	{
 		name: "research",
@@ -111,6 +124,7 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		description: "Identify pragmatic improvements in the existing codebase.",
 		runHint: "Run `improve-codebase` by auditing hotspots before proposing changes.",
 		content: improveCodebaseContent,
+		resources: { "HTML-REPORT.md": htmlReportContent },
 	},
 	{
 		name: "security-review",
@@ -141,6 +155,10 @@ const BUILTIN_SKILLS: ReadonlyArray<BuiltinSkill> = [
 		description: "Sort incoming issues and route them to the right workflow state.",
 		runHint: "Run `triage` to classify the issue before implementation starts.",
 		content: triageContent,
+		resources: {
+			"AGENT-BRIEF.md": agentBriefContent,
+			"OUT-OF-SCOPE.md": outOfScopeContent,
+		},
 	},
 ];
 
@@ -314,9 +332,12 @@ export const doctorSkillConfig = (): string => {
 	const report = inspectSkillsMigration();
 	const context = loadConfigContext();
 	const installed = parseInstalledSkills(context.document);
-	const missing = Object.keys(installed).filter(
-		(name) => !existsSync(join(context.rootDir, ".agents", "skills", name, "SKILL.md")),
-	);
+	const missing = Object.keys(installed).filter((name) => {
+		const builtin = BUILTIN_BY_NAME.get(name);
+		return builtin
+			? !isBundledSkillComplete(context.rootDir, builtin)
+			: !existsSync(join(context.rootDir, ".agents", "skills", name, "SKILL.md"));
+	});
 	const stale = Object.entries(installed)
 		.filter(
 			([name, metadata]) =>
@@ -409,23 +430,52 @@ const resolveBuiltinSkill = (source: string): BuiltinSkill | undefined => {
 
 const writeBundledSkill = (root: string, skill: BuiltinSkill, overwrite: boolean): boolean => {
 	const skillDir = join(root, ".agents", "skills", skill.name);
-	const skillPath = join(skillDir, "SKILL.md");
 	const openaiMetadata = BUNDLED_OPENAI_METADATA[skill.name];
-	const metadataPath = join(skillDir, "agents", "openai.yaml");
+	const files: Record<string, string> = {
+		"SKILL.md": skill.content,
+		...skill.resources,
+		...(openaiMetadata ? { "agents/openai.yaml": openaiMetadata } : {}),
+	};
 	let changed = false;
-	mkdirSync(skillDir, { recursive: true });
-	if (overwrite || !existsSync(skillPath)) {
-		writeFileSync(skillPath, skill.content);
+	for (const [relativePath, content] of Object.entries(files)) {
+		const outputPath = resolveArtifactPath(skillDir, relativePath);
+		if (!overwrite && existsSync(outputPath)) continue;
+		mkdirSync(dirname(outputPath), { recursive: true });
+		const temporaryPath = `${outputPath}.tmp-${process.pid}`;
+		writeFileSync(temporaryPath, content);
+		renameSync(temporaryPath, outputPath);
 		changed = true;
 	}
-	if (openaiMetadata) {
-		mkdirSync(join(skillDir, "agents"), { recursive: true });
-		if (overwrite || !existsSync(metadataPath)) {
-			writeFileSync(metadataPath, openaiMetadata);
-			changed = true;
-		}
-	}
 	return changed;
+};
+
+const bundledSkillPaths = (skill: BuiltinSkill): ReadonlyArray<string> => [
+	"SKILL.md",
+	...Object.keys(skill.resources ?? {}),
+	...(BUNDLED_OPENAI_METADATA[skill.name] ? ["agents/openai.yaml"] : []),
+];
+
+const isBundledSkillComplete = (root: string, skill: BuiltinSkill): boolean => {
+	const skillDir = join(root, ".agents", "skills", skill.name);
+	return bundledSkillPaths(skill).every((relativePath) =>
+		existsSync(resolveArtifactPath(skillDir, relativePath)),
+	);
+};
+
+const resolveArtifactPath = (skillDir: string, relativePath: string): string => {
+	if (isAbsolute(relativePath)) {
+		throw new ValidationError({
+			message: `Bundled skill artifact path must be relative: ${relativePath}`,
+		});
+	}
+	const root = resolve(skillDir);
+	const outputPath = resolve(root, relativePath);
+	if (outputPath !== root && !outputPath.startsWith(`${root}${sep}`)) {
+		throw new ValidationError({
+			message: `Bundled skill artifact escapes its skill directory: ${relativePath}`,
+		});
+	}
+	return outputPath;
 };
 
 const refreshProjectPins = (context: ConfigContext, names: ReadonlyArray<string>): void => {

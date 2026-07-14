@@ -34,6 +34,10 @@ When editing an existing card, keep the same contract:
 4. Use `fizzyx flow edit <card> --title "<title>"` for a title-only change.
 5. Use `flow repair` only to normalize legacy or malformed cards; it is not the normal edit path.
 
+Use `fizzyx flow list` for structured filters on the project board and `fizzyx flow search` for
+full-text search. Add execution notes with `fizzyx flow comment <card> <body>`. For agent parsing,
+prefer `--json` where offered and follow the returned breadcrumbs instead of guessing command names.
+
 ## Custom Fizzy columns
 
 BACKLOG, READY, IN PROGRESS, and REVIEW are the bundled Fizzyx preset, not mandatory Fizzy
@@ -42,6 +46,8 @@ column names. Use `fizzyx flow columns` to discover real IDs and
 custom boards. `flow start` targets the configured `in_progress` ID. Use `flow review` only
 when the board uses the preset REVIEW column; otherwise use `flow move`. Normal flow commands
 must not create, rename, or repair board columns; preset provisioning is an explicit init action.
+`flow move` also accepts `maybe`/`triage` and `not-now` for Fizzy system states. Never use a
+generic move to bypass the guarded `flow done` completion checks.
 
 ## What to do
 
@@ -65,6 +71,8 @@ must not create, rename, or repair board columns; preset provisioning is an expl
 13. For movement between environments or release, use `fizzyx dev promote --dry-run` first.
 14. Use `fizzyx dev cleanup` only as a cleanup preview, then report pending branch deletions.
 15. When blocked by config/guardrail checks, report the blocker and next safe step.
+16. Use `flow unblock` to return a blocked card to the configured default column, `flow reopen` for
+    a closed card, and `flow untriage` only when intentionally returning a card to Fizzy Maybe.
 
 ## Must not do
 

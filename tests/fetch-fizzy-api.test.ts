@@ -118,6 +118,46 @@ test("listCards unwraps { data: [...] } and decodes card fields", async () => {
 	]);
 });
 
+test("listCards sends official lane and term filters", async () => {
+	const response = jsonResponse({ data: [] });
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(
+			makeFetchFizzyApi(makeConfig(), "token").listCards({
+				indexedBy: "closed",
+				terms: ["login", "bug"],
+			}),
+		),
+	);
+
+	const url = new URL(calls[0]!.input);
+	expect(url.pathname).toBe("/acme/cards.json");
+	expect(url.searchParams.get("indexed_by")).toBe("closed");
+	expect(url.searchParams.getAll("terms[]")).toEqual(["login", "bug"]);
+	expect(url.searchParams.getAll("board_ids[]")).toEqual(["board-1"]);
+});
+
+test("searchCards uses full-text search endpoint and decodes board context", async () => {
+	const response = jsonResponse({
+		data: [
+			{
+				id: "card-1",
+				number: 42,
+				title: "Login bug",
+				closed: false,
+				board: { id: "board-1", name: "Project" },
+			},
+		],
+	});
+	const { calls, result } = await withMockFetch(response, () =>
+		Effect.runPromise(makeFetchFizzyApi(makeConfig(), "token").searchCards("login bug")),
+	);
+
+	const url = new URL(calls[0]!.input);
+	expect(url.pathname).toBe("/acme/search.json");
+	expect(url.searchParams.get("q")).toBe("login bug");
+	expect(result[0]?.board).toEqual({ id: "board-1", name: "Project" });
+});
+
 test("invalid card payload fails with ApiError", async () => {
 	const config = makeConfig();
 	const response = jsonResponse({ data: [{ number: Number.NaN, title: "Oops" }] });
@@ -294,6 +334,20 @@ test("closeCard uses official closure endpoint", async () => {
 	expect(calls).toHaveLength(1);
 	const summary = await getFetchCallSummary(calls[0]!);
 	expect(summary.method).toBe("POST");
+	expect(summary.url).toContain("/acme/cards/42/closure.json");
+});
+
+test("reopenCard deletes the official closure resource", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(makeFetchFizzyApi(config, "token").reopenCard(42)),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("DELETE");
 	expect(summary.url).toContain("/acme/cards/42/closure.json");
 });
 

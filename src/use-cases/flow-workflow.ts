@@ -1,6 +1,4 @@
-import { Effect } from "effect";
 import type { BoardColumn } from "../domain/models";
-import { ValidationError } from "../domain/errors";
 
 export const BACKLOG_COLUMN_ALIASES = ["BACKLOG", "TODO"] as const;
 export const READY_COLUMN_ALIASES = ["READY"] as const;
@@ -102,30 +100,3 @@ export const isReviewColumn = (name?: string): boolean => {
 
 	return REVIEW_COLUMN_NAME_SET.has(normalizeColumnName(name));
 };
-
-export interface WorkflowMoveContext {
-	listColumns: () => Effect.Effect<ReadonlyArray<BoardColumn>, unknown>;
-	moveCard: (number: number, columnId: string) => Effect.Effect<unknown, unknown>;
-}
-
-export const moveToWorkflowColumn = (
-	context: WorkflowMoveContext,
-	number: number,
-	aliases: ReadonlyArray<string>,
-	label: string,
-	reload: () => Effect.Effect<unknown, unknown>,
-): Effect.Effect<{ number: number; column: string }, ValidationError | unknown> =>
-	Effect.gen(function* () {
-		const columns = yield* context.listColumns();
-		const column = columns.find((item) =>
-			aliases.some((alias) => normalizeColumnName(item.name) === normalizeColumnName(alias)),
-		);
-		if (!column) {
-			return yield* new ValidationError({
-				message: `Missing ${label} column. I will try repairing flow configuration on next command run.`,
-			});
-		}
-		yield* context.moveCard(number, column.id);
-		yield* reload();
-		return { number, column: column.name };
-	});

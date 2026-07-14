@@ -16,6 +16,7 @@ import {
 	writeReadyReceipt,
 	type DevBaseline,
 } from "../adapters/git-dev-state";
+import { gitCommand, requireGitCommand } from "../adapters/git-command";
 
 export type BranchRole = "protected" | "environment" | "feature" | "maintenance" | "unknown";
 
@@ -83,54 +84,19 @@ const runGit = (
 	args: ReadonlyArray<string>,
 	cwd?: string,
 ): Effect.Effect<string, ValidationError> =>
-	Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn({
-				cmd: ["git", ...args],
-				cwd: cwd ?? process.cwd(),
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const [stdout, stderr, exitCode] = await Promise.all([
-				new Response(proc.stdout).text(),
-				new Response(proc.stderr).text(),
-				proc.exited,
-			]);
-			if (exitCode !== 0) {
-				throw new Error(stderr.trim() || `git ${args.join(" ")} failed`);
-			}
-			return stdout.trim();
-		},
-		catch: (cause) =>
-			new ValidationError({
-				message: `Git command failed: git ${args.join(" ")} — ${String(cause)}`,
-			}),
-	});
+	requireGitCommand(args, { cwd, errorPrefix: `Git command failed: git ${args.join(" ")}` });
 
 const runGitNoThrow = (
 	args: ReadonlyArray<string>,
 	cwd?: string,
 ): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, ValidationError> =>
-	Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn({
-				cmd: ["git", ...args],
-				cwd: cwd ?? process.cwd(),
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const [stdout, stderr, exitCode] = await Promise.all([
-				new Response(proc.stdout).text(),
-				new Response(proc.stderr).text(),
-				proc.exited,
-			]);
-			return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
-		},
-		catch: (cause) =>
-			new ValidationError({
-				message: `Git command failed: git ${args.join(" ")} — ${String(cause)}`,
-			}),
-	});
+	gitCommand.run(args, { cwd }).pipe(
+		Effect.map((result) => ({
+			stdout: result.stdout.trim(),
+			stderr: result.stderr.trim(),
+			exitCode: result.exitCode,
+		})),
+	);
 
 export const resolveDevShellCommand = (
 	command: string,
@@ -185,11 +151,18 @@ const classifyBranch = (branch: string, config: DevConfig | undefined): BranchRo
 		}
 	}
 
-	if (/^(feature|fix|hotfix|ops|chore|docs|maintenance)\//.test(branch)) {
+	if (
+		/^(feature|feat|fix|bugfix|hotfix|ops|chore|docs|doc|maintenance|refactor|test|ci|build)\//.test(
+			branch,
+		)
+	) {
 		return branch.startsWith("fix/") ||
+			branch.startsWith("bugfix/") ||
 			branch.startsWith("feature/") ||
+			branch.startsWith("feat/") ||
 			branch.startsWith("hotfix/") ||
-			branch.startsWith("docs/")
+			branch.startsWith("docs/") ||
+			branch.startsWith("doc/")
 			? "feature"
 			: "maintenance";
 	}

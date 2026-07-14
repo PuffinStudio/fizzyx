@@ -220,10 +220,9 @@ export const buildKeyTree = (objects: { key: string; size?: number }[]): string[
 
 const columnName = (card: Card, systemColumn?: string): string => {
 	if (systemColumn) return systemColumn;
-	if (!card.column?.name) {
-		throw new Error(`Card #${card.number} is missing a workflow column`);
-	}
-	return card.column.name;
+	if (card.closed) return "DONE";
+	if (card.postponed) return "NOT_NOW";
+	return card.column?.name || "MAYBE";
 };
 
 const assignees = (card: Card): string => {

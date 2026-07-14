@@ -201,15 +201,21 @@ test("prints flow help", async () => {
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("flow");
 	expect(stdout).toContain("work");
+	expect(stdout).toContain("list");
+	expect(stdout).toContain("search");
 	expect(stdout).toContain("columns");
 	expect(stdout).toContain("create");
 	expect(stdout).toContain("assign");
+	expect(stdout).toContain("comment");
 	expect(stdout).toContain("show");
 	expect(stdout).toContain("move");
 	expect(stdout).toContain("start");
 	expect(stdout).toContain("review");
 	expect(stdout).toContain("done");
+	expect(stdout).toContain("reopen");
 	expect(stdout).toContain("block");
+	expect(stdout).toContain("unblock");
+	expect(stdout).toContain("untriage");
 	expect(stdout).toContain("improve");
 	expect(stdout).toContain("doctor");
 	expect(stdout).toContain("repair");
@@ -228,13 +234,21 @@ test("prints flow help", async () => {
 	expect(stdout).not.toContain("\n  init");
 });
 
+test("high-frequency flow commands expose structured JSON output", async () => {
+	for (const command of ["work", "list", "search", "columns", "show", "move"] as const) {
+		const { stdout, exitCode } = await runCli(["flow", command, "--help"]);
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("--json");
+	}
+});
+
 test("planner --help lists planner commands", async () => {
 	const { stdout, exitCode } = await runCli(["planner", "--help"]);
 
 	expect(exitCode).toBe(0);
 	expect(stdout).toContain("start");
 	expect(stdout).toContain("snapshot");
-	expect(stdout).toContain("chat-config");
+	expect(stdout).not.toContain("chat-config");
 	expect(stdout).not.toContain("health");
 	expect(stdout).not.toContain("repair-metadata");
 	expect(stdout).not.toContain("auto-fix");

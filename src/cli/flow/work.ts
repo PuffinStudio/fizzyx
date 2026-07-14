@@ -15,6 +15,7 @@ import {
 	formatWorkHeader,
 	formatWorkSection,
 } from "../flow-output";
+import { flowJson } from "../flow-json";
 
 type WorkHealth = {
 	tagIssues: number;
@@ -32,6 +33,7 @@ const DEFAULT_SKILLS_BY_TYPE: Record<string, ReadonlyArray<string>> = {
 const handleWork = (config: {
 	fresh: boolean;
 	user: Option.Option<string>;
+	json: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const resolvedUser = Option.isSome(config.user) ? config.user.value : undefined;
@@ -51,6 +53,23 @@ const handleWork = (config: {
 				};
 			}),
 		);
+		if (config.json) {
+			yield* Console.log(
+				flowJson(result, `work summary for ${result.mineResult.name}`, [
+					{
+						action: "show",
+						cmd: "fizzyx flow show <card>",
+						description: "View the selected card",
+					},
+					{
+						action: "start",
+						cmd: "fizzyx flow start <card>",
+						description: "Start the selected card",
+					},
+				]),
+			);
+			return;
+		}
 
 		yield* Console.log(formatWorkHeader(result.mineResult.name, result.mineResult.userId));
 		yield* Console.log(
@@ -176,6 +195,7 @@ export const flowWorkCmd = Command.make(
 			Argument.withDescription("Configured Fizzy user to summarize"),
 			Argument.optional,
 		),
+		json: Flag.boolean("json").pipe(Flag.withDescription("Print work summary as JSON")),
 	},
 	handleWork,
 ).pipe(Command.withDescription("Show the daily work summary"));

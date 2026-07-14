@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 import { Effect } from "effect";
 import { FileError } from "../domain/errors";
-import type { PlannerSnapshot } from "../domain/planner-model";
+import { decodePlannerSnapshot, type PlannerSnapshot } from "../domain/planner-model";
 import { resolvePlannerSnapshotCachePath } from "../adapters/app-paths";
 
 const readPlannerSnapshotCacheByPath = (
@@ -11,7 +11,7 @@ const readPlannerSnapshotCacheByPath = (
 		try: async () => {
 			const file = Bun.file(path);
 			if (!(await file.exists())) return null;
-			return JSON.parse(await file.text()) as PlannerSnapshot;
+			return decodePlannerSnapshot(JSON.parse(await file.text()));
 		},
 		catch: (cause) => new FileError({ message: `Failed to read planner cache: ${String(cause)}` }),
 	});

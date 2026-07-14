@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
-import { ApiError } from "../domain/errors";
+import { ApiError, FileError } from "../domain/errors";
 import type {
 	Assignee,
 	Board,
@@ -13,7 +13,7 @@ import type {
 	Step,
 } from "../domain/models";
 import { FizzyApi } from "../ports/fizzy-api";
-import { ConfigRepo } from "../ports/config-repository";
+import { ConfigRepo, type ConfigRepository } from "../ports/config-repository";
 import * as FizzyEffect from "../fizzy-effect/effect-client";
 import type { EffectHttpClientError } from "../fizzy-effect/effect-client";
 import type { UpdateStepRequestContent } from "../fizzy-effect/types";
@@ -29,30 +29,82 @@ export const Live = Layer.effect(FizzyApi)(
 					Effect.fail(new ApiError({ message: "Not logged in. Run: fizzyx auth login" })),
 				),
 			);
-		return makeFetchFizzyApi(config, credentials.token);
+		return makeAuthenticatedFetchFizzyApi({ configRepo, config, initialToken: credentials.token });
 	}),
 );
 
 type JsonObject = Record<string, unknown>;
 type JsonValue = unknown;
 
-export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyApi => {
-	const configureGeneratedClient = (): void => {
+interface FetchFizzyApiOptions {
+	refreshToken?: () => Effect.Effect<string, ApiError>;
+}
+
+export interface AuthenticatedFetchFizzyApiOptions {
+	configRepo: ConfigRepository;
+	config: ProjectConfig;
+	initialToken: string;
+}
+
+export const makeAuthenticatedFetchFizzyApi = ({
+	configRepo,
+	config,
+	initialToken,
+}: AuthenticatedFetchFizzyApiOptions): FizzyApi =>
+	makeFetchFizzyApi(config, initialToken, {
+		refreshToken: () =>
+			Effect.gen(function* () {
+				const migrated = yield* configRepo
+					.migrateCredentialsFromOfficial(config.account)
+					.pipe(Effect.mapError((cause) => new ApiError({ message: cause.message, status: 401 })));
+				yield* configRepo.saveCredentials(config.account, migrated).pipe(
+					Effect.mapError(
+						(cause) =>
+							new ApiError({
+								message: `Failed to persist migrated credentials: ${cause instanceof FileError ? cause.message : String(cause)}`,
+							}),
+					),
+				);
+				return migrated.token;
+			}),
+	});
+
+export const makeFetchFizzyApi = (
+	config: ProjectConfig,
+	initialToken: string,
+	options: FetchFizzyApiOptions = {},
+): FizzyApi => {
+	let token = initialToken;
+	const configureGeneratedClient = (activeToken: string): void => {
 		FizzyEffect.configure({
 			baseUrl: config.apiUrl.replace(/\/+$/, ""),
 			responseExtractor: envelopeData,
 		});
-		FizzyEffect.setToken(token);
+		FizzyEffect.setToken(activeToken);
 	};
 
 	const runGenerated = <A>(
 		effect: Effect.Effect<A, EffectHttpClientError, HttpClient.HttpClient>,
-	): Effect.Effect<A, ApiError> =>
-		Effect.sync(configureGeneratedClient).pipe(
-			Effect.flatMap(() => effect),
-			Effect.provide(FizzyEffect.FetchLayer),
-			Effect.mapError(toApiError),
+	): Effect.Effect<A, ApiError> => {
+		const runOnce = () =>
+			Effect.sync(() => configureGeneratedClient(token)).pipe(
+				Effect.flatMap(() => effect),
+				Effect.provide(FizzyEffect.FetchLayer),
+				Effect.mapError(toApiError),
+			);
+		return Effect.suspend(runOnce).pipe(
+			Effect.catch((failure) => {
+				if (failure.status !== 401 || !options.refreshToken) return Effect.fail(failure);
+				return options.refreshToken().pipe(
+					Effect.catch((refreshFailure) =>
+						refreshFailure.status === 401 ? Effect.fail(failure) : Effect.fail(refreshFailure),
+					),
+					Effect.tap((refreshedToken) => Effect.sync(() => void (token = refreshedToken))),
+					Effect.flatMap(() => runOnce()),
+				);
+			}),
 		);
+	};
 
 	const toApiError = (cause: unknown): ApiError => {
 		if (cause instanceof ApiError) return cause;
@@ -115,6 +167,8 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 
 				const descriptionHtml = readString(obj.description_html);
 				const tags = decodeTags(obj.tags);
+				const board = decodeCardBoard(obj.board);
+				const postponed = readBoolean(obj.postponed);
 				return {
 					id: readString(obj.id),
 					number,
@@ -123,8 +177,10 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 					...(descriptionHtml ? { descriptionHtml } : {}),
 					...(tags.length > 0 ? { tags } : {}),
 					column: decodeColumnRef(obj.column),
+					...(board ? { board } : {}),
 					assignees: decodeAssignees(obj.assignees),
 					closed: readBoolean(obj.closed),
+					...(postponed !== undefined ? { postponed } : {}),
 					golden: readBoolean(obj.golden),
 					steps: decodeSteps(obj.steps),
 				};
@@ -257,6 +313,14 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 		};
 	};
 
+	const decodeCardBoard = (value: JsonValue): Board | undefined => {
+		const obj = toRecord(value);
+		if (!obj) return undefined;
+		const id = readString(obj.id);
+		if (!id) return undefined;
+		return { id, name: readString(obj.name) || "" };
+	};
+
 	const decodeAssignees = (value: JsonValue): ReadonlyArray<Assignee> => {
 		if (!Array.isArray(value)) return [];
 
@@ -366,10 +430,15 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 			}
 			if (options?.indexedBy) query.indexed_by = options.indexedBy;
 			if (options?.all) query.all = true;
+			if (options?.terms?.length) query["terms[]"] = [...options.terms];
 			return runGenerated(FizzyEffect.listCards(accountParams, query)).pipe(
 				Effect.flatMap(decodeCards),
 			);
 		},
+		searchCards: (query) =>
+			runGenerated(FizzyEffect.searchCards(accountParams, { q: query })).pipe(
+				Effect.flatMap(decodeCards),
+			),
 		showCard: (number) =>
 			runGenerated(FizzyEffect.getCard({ ...accountParams, cardNumber: number })).pipe(
 				Effect.flatMap(decodeCard),
@@ -427,6 +496,8 @@ export const makeFetchFizzyApi = (config: ProjectConfig, token: string): FizzyAp
 			),
 		closeCard: (number) =>
 			asVoid(runGenerated(FizzyEffect.closeCard({ ...accountParams, cardNumber: number }))),
+		reopenCard: (number) =>
+			asVoid(runGenerated(FizzyEffect.reopenCard({ ...accountParams, cardNumber: number }))),
 		postponeCard: (number) =>
 			asVoid(runGenerated(FizzyEffect.postponeCard({ ...accountParams, cardNumber: number }))),
 		createStep: (number, content, completed) =>

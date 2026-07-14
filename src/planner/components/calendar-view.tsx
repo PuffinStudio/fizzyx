@@ -15,7 +15,7 @@ export function CalendarView({
 	onSelect,
 	onNavigateToMyCards,
 }: {
-	cards: PlannerCard[];
+	cards: ReadonlyArray<PlannerCard>;
 	onSelect: SelectCard;
 	onNavigateToMyCards?: () => void;
 }) {

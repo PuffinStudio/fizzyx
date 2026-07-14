@@ -8,7 +8,7 @@ export function HealthView({
 	health,
 	onRepair,
 }: {
-	health: PlannerIssue[];
+	health: ReadonlyArray<PlannerIssue>;
 	onRepair?: () => void;
 }) {
 	const items = health;

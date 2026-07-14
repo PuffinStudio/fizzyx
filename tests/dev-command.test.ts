@@ -81,6 +81,10 @@ const createWorkflowRepo = (): string => {
 	runGit(root, ["checkout", "main"]);
 	runGit(root, ["checkout", "-b", "fix/foo"]);
 	runGit(root, ["checkout", "main"]);
+	runGit(root, ["checkout", "-b", "feat/foo"]);
+	runGit(root, ["checkout", "main"]);
+	runGit(root, ["checkout", "-b", "refactor/foo"]);
+	runGit(root, ["checkout", "main"]);
 	runGit(root, ["checkout", "-b", "feature/demo"]);
 	writeFileSync(join(root, "feature-demo.txt"), "feature demo commit\n");
 	runGit(root, ["add", "feature-demo.txt"]);
@@ -181,7 +185,9 @@ devTest(
 				{ branch: "dev", expectation: /environment/ },
 				{ branch: "staging", expectation: /environment/ },
 				{ branch: "feature/foo", expectation: /feature/ },
+				{ branch: "feat/foo", expectation: /feature/ },
 				{ branch: "fix/foo", expectation: /maintenance|fix/ },
+				{ branch: "refactor/foo", expectation: /maintenance/ },
 			];
 
 			for (const item of cases) {

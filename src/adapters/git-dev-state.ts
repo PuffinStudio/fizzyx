@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { Effect } from "effect";
 import { ValidationError } from "../domain/errors";
 import type { DevBranchMetadata } from "../domain/models";
+import { gitCommand, requireGitCommand } from "./git-command";
 
 export interface WorktreeEntry {
 	status: string;
@@ -30,42 +31,11 @@ export interface DevReadyReceipt {
 	createdAt: string;
 }
 
-const runGitResult = (args: ReadonlyArray<string>) =>
-	Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn(["git", ...args], { stdout: "pipe", stderr: "pipe" });
-			const [stdout, stderr, exitCode] = await Promise.all([
-				new Response(proc.stdout).text(),
-				new Response(proc.stderr).text(),
-				proc.exited,
-			]);
-			return { stdout: stdout.replace(/\r?\n$/, ""), stderr: stderr.trim(), exitCode };
-		},
-		catch: (cause) =>
-			new ValidationError({ message: `Git local state command failed: ${String(cause)}` }),
-	});
+const runGitResult = (args: ReadonlyArray<string>) => gitCommand.run(args);
 
-const requireGit = (args: ReadonlyArray<string>) =>
-	Effect.gen(function* () {
-		const result = yield* runGitResult(args);
-		if (result.exitCode !== 0) {
-			return yield* new ValidationError({
-				message: result.stderr || `git ${args.join(" ")} failed`,
-			});
-		}
-		return result.stdout.trim();
-	});
+const requireGit = (args: ReadonlyArray<string>) => requireGitCommand(args);
 
-const requireGitRaw = (args: ReadonlyArray<string>) =>
-	Effect.gen(function* () {
-		const result = yield* runGitResult(args);
-		if (result.exitCode !== 0) {
-			return yield* new ValidationError({
-				message: result.stderr || `git ${args.join(" ")} failed`,
-			});
-		}
-		return result.stdout;
-	});
+const requireGitRaw = (args: ReadonlyArray<string>) => requireGitCommand(args, { raw: true });
 
 const gitStatePath = (kind: "baselines" | "ready" | "drafts", name?: string) =>
 	Effect.gen(function* () {

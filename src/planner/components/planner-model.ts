@@ -14,7 +14,7 @@ export type ProjectMetrics = {
 	velocity: number;
 	laneProgress: Array<{ lane: PlannerLane; label: string; count: number; percent: number }>;
 	priorityRows: Array<{ label: string; value: number; className: string }>;
-	myCards: PlannerCard[];
+	myCards: ReadonlyArray<PlannerCard>;
 	timelineDays: TimelineDay[];
 	timelineCards: TimelineCard[];
 	calendarDays: CalendarDay[];
@@ -40,7 +40,7 @@ export type CalendarDay = {
 	date: Date;
 	label: string;
 	short: string;
-	cards: PlannerCard[];
+	cards: ReadonlyArray<PlannerCard>;
 	isToday: boolean;
 	isCurrentMonth: boolean;
 };
@@ -149,7 +149,7 @@ export const getCardProgress = (card: PlannerCard): number => {
 export const cardDate = (card: PlannerCard): string | undefined =>
 	card.metadata.deadline || card.createdAt;
 
-const buildTimelineCards = (cards: PlannerCard[]): TimelineCard[] => {
+const buildTimelineCards = (cards: ReadonlyArray<PlannerCard>): TimelineCard[] => {
 	const entries = cards
 		.map((card) => {
 			const date = cardDate(card);
@@ -207,7 +207,7 @@ export const buildTimelineDays = (reference: Date): TimelineDay[] => {
 	return out;
 };
 
-const buildCalendarDays = (cards: PlannerCard[], reference: Date): CalendarDay[] => {
+const buildCalendarDays = (cards: ReadonlyArray<PlannerCard>, reference: Date): CalendarDay[] => {
 	const firstOfMonth = new Date(reference.getFullYear(), reference.getMonth(), 1);
 	const firstCell = new Date(firstOfMonth);
 	firstCell.setDate(firstCell.getDate() - firstOfMonth.getDay());
@@ -243,8 +243,10 @@ const buildCalendarDays = (cards: PlannerCard[], reference: Date): CalendarDay[]
 	return out;
 };
 
-export const buildMonthCalendarDays = (cards: PlannerCard[], reference: Date): CalendarDay[] =>
-	buildCalendarDays(cards, reference);
+export const buildMonthCalendarDays = (
+	cards: ReadonlyArray<PlannerCard>,
+	reference: Date,
+): CalendarDay[] => buildCalendarDays(cards, reference);
 
 const laneWeight = (lane: PlannerLane): number => {
 	if (lane === "todo") return 0;

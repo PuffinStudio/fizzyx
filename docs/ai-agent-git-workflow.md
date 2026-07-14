@@ -252,7 +252,7 @@ Examples:
 
 ```text
 wip: sketch dev workflow commands
-wip(card-123): add planner chat config
+wip(card-123): add planner board filters
 ```
 
 Rules:

@@ -20,14 +20,8 @@ import {
 } from "./flow-env";
 import type { Env, InitializedEnv } from "./flow-env";
 import {
-	READY_COLUMN_ALIASES,
-	REVIEW_COLUMN_ALIASES,
-	isInProgressColumn,
 	isReadyColumn,
-	isReviewColumn,
 	isTodoColumn,
-	moveToWorkflowColumn,
-	resolveInProgressColumnId,
 	resolveReadyColumnId,
 	resolveTodoColumnId,
 } from "./flow-workflow";
@@ -36,6 +30,7 @@ import type { PlannerMetadata } from "./planner-metadata";
 import { parsePlannerDescription } from "./planner-metadata";
 import { normalizePriority } from "./planner-transform";
 import { completeSteps } from "./flow-step";
+import { transitionCard } from "./flow-card-transition";
 export { convertDescription } from "./flow-card-content";
 export { resolveUser } from "./flow-user-resolution";
 export { authLogin, authLogout, authStatus } from "./flow-auth";
@@ -177,14 +172,38 @@ export const status = (env: InitializedEnv, options: { fresh: boolean }) =>
 		return { cache, age };
 	});
 
+export const listFlowCards = (
+	env: Env,
+	options: { indexedBy?: string; all?: boolean; search?: string },
+) => {
+	const terms = options.search?.trim().split(/\s+/).filter(Boolean);
+	return env.api.listCards({
+		indexedBy: options.indexedBy,
+		all: options.all,
+		terms,
+	});
+};
+
+export const searchFlowCards = (env: Env, query: string, options?: { allBoards?: boolean }) =>
+	Effect.gen(function* () {
+		const normalized = query.trim();
+		if (!normalized) return yield* new ValidationError({ message: "Search query is required" });
+		const cards = yield* env.api.searchCards(normalized);
+		if (options?.allBoards || !env.config.board) return cards;
+		return cards.filter((card) => card.board?.id === env.config.board);
+	});
+
+export const addComment = (env: Env, number: number, body: string) =>
+	Effect.gen(function* () {
+		const normalized = body.trim();
+		if (!normalized) return yield* new ValidationError({ message: "Comment body is required" });
+		yield* env.api.comment(number, buildStandardizedCommentBody("note", normalized));
+		return { number, body: normalized };
+	});
+
 export const show = (env: Env, number: number) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);
-		if (!card.column?.name) {
-			return yield* new ValidationError({
-				message: `Card #${number} is not in a workflow column. It is probably still in Fizzy system MAYBE/triage.`,
-			});
-		}
 		const comments = yield* env.api
 			.listComments(number)
 			.pipe(Effect.catch(() => Effect.succeed([])));
@@ -192,22 +211,20 @@ export const show = (env: Env, number: number) =>
 	});
 
 export const move = (env: Env, number: number, columnRef: string) =>
-	Effect.gen(function* () {
-		const columns = yield* env.api.listColumns();
-		const normalized = columnRef.trim().toLowerCase();
-		const column = columns.find(
-			(item) => item.id === columnRef || item.name.trim().toLowerCase() === normalized,
-		);
-		if (!column) {
-			const available = columns.map((item) => `${item.name} (${item.id})`).join(", ");
-			return yield* new ValidationError({
-				message: `Unknown column '${columnRef}'. Available columns: ${available || "none"}`,
-			});
-		}
-		yield* env.api.moveCard(number, column.id);
-		yield* syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined)));
-		return { number, column: column.name, columnId: column.id };
-	});
+	transitionCard(
+		env,
+		number,
+		{ kind: "move", columnRef },
+		{
+			refreshCache: () => syncBoard(env),
+		},
+	).pipe(
+		Effect.map((result) => ({
+			number: result.number,
+			column: result.column!,
+			columnId: result.columnId!,
+		})),
+	);
 
 export const next = (env: InitializedEnv, options: { fresh: boolean }) =>
 	Effect.gen(function* () {
@@ -264,64 +281,38 @@ export const nextOrStart = (env: InitializedEnv, options: { fresh: boolean; auto
 
 export const start = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
-		const cache = yield* ensureCache(env, true);
-		const inProgressColumnId = resolveInProgressColumnId(
-			cache.columns,
-			env.config.flow.columns.inProgress,
+		yield* transitionCard(
+			env,
+			number,
+			{ kind: "start" },
+			{
+				loadFreshCache: () => ensureCache(env, true),
+				refreshCache: () => syncBoard(env),
+			},
 		);
-		const target = cache.cards.find((card) => card.number === number);
-		if (!target) return yield* new ValidationError({ message: `Card #${number} not found` });
-		const userId = cache.identity.userId;
-		const active = cache.cards.filter(
-			(card) =>
-				(card.column?.id === inProgressColumnId || isInProgressColumn(card.column?.name)) &&
-				card.assignees?.some((assignee) => assignee.id === userId),
-		);
-		if (active.length >= env.config.flow.wipLimit) {
-			return yield* new ValidationError({
-				message: `Current user already has ${active.length} INPROGRESS cards`,
-			});
-		}
-		const startColumnId = inProgressColumnId;
-		yield* env.api.moveCard(number, startColumnId);
-		yield* verifyCardColumn(env, number, startColumnId, isInProgressColumn, "IN PROGRESS");
-		if (!target.assignees?.some((assignee) => assignee.id === userId)) {
-			yield* env.api.assignCard(number, userId);
-		}
-		yield* syncBoard(env);
 		return number;
 	});
 
 export const ready = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
-		const result = yield* moveToWorkflowColumn(
-			{
-				listColumns: env.api.listColumns,
-				moveCard: env.api.moveCard,
-			},
+		const result = yield* transitionCard(
+			env,
 			number,
-			READY_COLUMN_ALIASES,
-			"READY",
-			() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
+			{ kind: "ready" },
+			{ refreshCache: () => syncBoard(env) },
 		);
-		yield* verifyCardColumn(env, number, undefined, isReadyColumn, "READY");
-		return result;
+		return { number: result.number, column: result.column! };
 	});
 
 export const review = (env: InitializedEnv, number: number) =>
 	Effect.gen(function* () {
-		const result = yield* moveToWorkflowColumn(
-			{
-				listColumns: env.api.listColumns,
-				moveCard: env.api.moveCard,
-			},
+		const result = yield* transitionCard(
+			env,
 			number,
-			REVIEW_COLUMN_ALIASES,
-			"REVIEW",
-			() => syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined))),
+			{ kind: "review" },
+			{ refreshCache: () => syncBoard(env) },
 		);
-		yield* verifyCardColumn(env, number, undefined, isReviewColumn, "REVIEW");
-		return result;
+		return { number: result.number, column: result.column! };
 	});
 
 export const done = (
@@ -353,11 +344,12 @@ export const done = (
 		}
 
 		const finalRef = ref || "done";
-		yield* env.api.closeCard(number);
-		yield* env.api
-			.comment(number, buildStandardizedCommentBody("done", finalRef))
-			.pipe(Effect.catch(() => Effect.succeed(undefined)));
-		yield* syncBoard(env).pipe(Effect.catch(() => Effect.succeed(undefined)));
+		yield* transitionCard(
+			env,
+			number,
+			{ kind: "close", ref: finalRef },
+			{ refreshCache: () => syncBoard(env) },
+		);
 		return completedSteps ? { number, ref: finalRef, completedSteps } : { number, ref: finalRef };
 	});
 
@@ -388,11 +380,41 @@ export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
 
 export const block = (env: InitializedEnv, number: number, reason: string) =>
 	Effect.gen(function* () {
-		if (!reason.trim()) return yield* new ValidationError({ message: "Block reason is required" });
-		yield* env.api.comment(number, buildStandardizedCommentBody("blocked", reason));
-		yield* env.api.postponeCard(number);
-		yield* syncBoard(env);
-		return { number, reason };
+		const result = yield* transitionCard(
+			env,
+			number,
+			{ kind: "block", reason },
+			{ refreshCache: () => syncBoard(env) },
+		);
+		return { number: result.number, reason: result.reason! };
+	});
+
+export const unblock = (env: InitializedEnv, number: number, reason: string) =>
+	Effect.gen(function* () {
+		const result = yield* transitionCard(
+			env,
+			number,
+			{ kind: "unblock", reason },
+			{ refreshCache: () => syncBoard(env) },
+		);
+		return { number: result.number, reason: result.reason! };
+	});
+
+export const reopen = (env: Env, number: number) =>
+	Effect.gen(function* () {
+		yield* transitionCard(env, number, { kind: "reopen" }, { refreshCache: () => syncBoard(env) });
+		return number;
+	});
+
+export const untriage = (env: Env, number: number) =>
+	Effect.gen(function* () {
+		yield* transitionCard(
+			env,
+			number,
+			{ kind: "untriage" },
+			{ refreshCache: () => syncBoard(env) },
+		);
+		return number;
 	});
 
 export const add = (

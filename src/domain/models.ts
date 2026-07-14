@@ -158,6 +158,7 @@ export interface Card {
 	descriptionHtml?: string;
 	tags?: ReadonlyArray<string>;
 	column?: ColumnRef;
+	board?: Board;
 	assignees?: ReadonlyArray<Assignee>;
 	closed?: boolean;
 	postponed?: boolean;

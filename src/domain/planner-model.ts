@@ -131,3 +131,60 @@ export interface PlannerSnapshotRequest {
 	fresh: boolean;
 	boardId?: string;
 }
+
+const PLANNER_LANES: ReadonlySet<string> = new Set<PlannerLane>([
+	"todo",
+	"ready",
+	"in_progress",
+	"review",
+	"done",
+	"blocked",
+]);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+const requireString = (record: Record<string, unknown>, key: string): void => {
+	if (typeof record[key] !== "string")
+		throw new TypeError(`Planner snapshot.${key} must be a string`);
+};
+
+const requireArray = (record: Record<string, unknown>, key: string): ReadonlyArray<unknown> => {
+	const value = record[key];
+	if (!Array.isArray(value)) throw new TypeError(`Planner snapshot.${key} must be an array`);
+	return value;
+};
+
+export const decodePlannerSnapshot = (value: unknown): PlannerSnapshot => {
+	if (!isRecord(value)) throw new TypeError("Planner snapshot must be an object");
+	for (const key of ["generatedAt", "account", "board", "boardName"]) requireString(value, key);
+	if (value.cache !== undefined && value.cache !== "fresh" && value.cache !== "stale") {
+		throw new TypeError("Planner snapshot.cache must be fresh or stale");
+	}
+	for (const key of ["users", "columns", "tags", "health", "recommendations"]) {
+		requireArray(value, key);
+	}
+	const cards = requireArray(value, "cards");
+	for (const [index, card] of cards.entries()) {
+		if (!isRecord(card)) throw new TypeError(`Planner snapshot.cards[${index}] must be an object`);
+		if (typeof card.number !== "number" || typeof card.title !== "string") {
+			throw new TypeError(`Planner snapshot.cards[${index}] requires number and title`);
+		}
+		if (typeof card.lane !== "string" || !PLANNER_LANES.has(card.lane)) {
+			throw new TypeError(`Planner snapshot.cards[${index}].lane is invalid`);
+		}
+		for (const key of ["tags", "assignees", "steps", "comments", "metadataWarnings"]) {
+			if (!Array.isArray(card[key])) {
+				throw new TypeError(`Planner snapshot.cards[${index}].${key} must be an array`);
+			}
+		}
+	}
+	if (
+		!isRecord(value.summary) ||
+		!isRecord(value.summary.lanes) ||
+		!isRecord(value.summary.priorities)
+	) {
+		throw new TypeError("Planner snapshot.summary is invalid");
+	}
+	return value as unknown as PlannerSnapshot;
+};
