@@ -1,6 +1,83 @@
 import { expect, test } from "bun:test";
 import { parseSpec } from "../src/use-cases/openapi-parser";
 
+test("parseSpec preserves security contracts and validated admin auth configuration", async () => {
+	const spec = await parseSpec({
+		openapi: "3.0.0",
+		info: { title: "Secure API", version: "1.0.0" },
+		components: {
+			securitySchemes: {
+				bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+			},
+		},
+		security: [{ bearerAuth: [] }],
+		"x-fizzyx-admin": {
+			auth: {
+				mode: "server-cookie",
+				loginOperationId: "authLogin",
+				accessTokenPath: "data.access_token",
+			},
+		},
+		paths: {
+			"/auth/login": {
+				post: {
+					operationId: "authLogin",
+					security: [],
+					responses: { "200": { description: "ok" } },
+				},
+			},
+		},
+	});
+
+	expect(spec.securitySchemes).toEqual([
+		expect.objectContaining({ name: "bearerAuth", type: "http", scheme: "bearer" }),
+	]);
+	expect(spec.security).toEqual([["bearerAuth"]]);
+	expect(spec.endpoints[0]?.security).toEqual([]);
+	expect(spec.admin?.auth).toMatchObject({
+		mode: "server-cookie",
+		loginOperationId: "authLogin",
+		accessTokenPath: "data.access_token",
+		routes: { login: "/login", afterLogin: "/" },
+	});
+});
+
+test("parseSpec rejects a protected or unknown configured login operation", async () => {
+	await expect(
+		parseSpec({
+			openapi: "3.0.0",
+			info: { title: "Secure API", version: "1.0.0" },
+			security: [{ bearerAuth: [] }],
+			"x-fizzyx-admin": {
+				auth: {
+					mode: "server-cookie",
+					loginOperationId: "authLogin",
+					accessTokenPath: "access_token",
+				},
+			},
+			paths: {
+				"/auth/login": {
+					post: {
+						operationId: "authLogin",
+						responses: { "200": { description: "ok" } },
+					},
+				},
+			},
+		}),
+	).rejects.toThrow("inherits root security");
+});
+
+test("parseSpec rejects incomplete explicit admin auth instead of guessing", async () => {
+	await expect(
+		parseSpec({
+			openapi: "3.0.0",
+			info: { title: "Secure API", version: "1.0.0" },
+			"x-fizzyx-admin": { auth: { mode: "server-cookie" } },
+			paths: {},
+		}),
+	).rejects.toThrow("loginOperationId is required");
+});
+
 test("parseSpec generates PascalCase request/response types from underscored operationIds", async () => {
 	const doc = {
 		openapi: "3.0.0",

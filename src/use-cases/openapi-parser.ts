@@ -2,6 +2,9 @@ import $RefParser from "@apidevtools/json-schema-ref-parser";
 import { toPascalCase } from "../domain/codegen-utils";
 import type {
 	ParsedEndpoint,
+	ParsedAdminConfig,
+	ParsedSecurityRequirement,
+	ParsedSecurityScheme,
 	ParsedProperty,
 	ParsedSpec,
 	ParsedTypeDef,
@@ -15,6 +18,9 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 	const info = doc.info as Record<string, unknown> | undefined;
 	const title = (info?.title as string) ?? "API";
 	const version = (info?.version as string) ?? "0.0.0";
+	const securitySchemes = parseSecuritySchemes(doc);
+	const security = parseSecurityRequirements(doc.security);
+	const admin = parseAdminConfig(doc["x-fizzyx-admin"]);
 
 	const schemas = extractRawSchemas(doc);
 	const resolveSchemaName = buildSchemaNameResolver(schemas);
@@ -40,8 +46,124 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 
 	const paths = dereferenced.paths as Record<string, unknown> | undefined;
 	const endpoints = parseAllEndpoints(paths, derefSchemas, refMap, resolveSchemaName, endpointMeta);
+	validateAdminAuth(admin, endpoints, security);
 
-	return { title, version, endpoints, types: derefSchemas };
+	return { title, version, endpoints, types: derefSchemas, securitySchemes, security, admin };
+}
+
+function validateAdminAuth(
+	admin: ParsedAdminConfig | undefined,
+	endpoints: ParsedEndpoint[],
+	rootSecurity: ParsedSecurityRequirement[] | undefined,
+): void {
+	const auth = admin?.auth;
+	if (!auth) return;
+	const configured = [
+		["loginOperationId", auth.loginOperationId],
+		["logoutOperationId", auth.logoutOperationId],
+		["meOperationId", auth.meOperationId],
+		["refreshOperationId", auth.refreshOperationId],
+	] as const;
+	for (const [field, operationId] of configured) {
+		if (operationId && !endpoints.some((endpoint) => endpoint.operationId === operationId)) {
+			throw new Error(`x-fizzyx-admin.auth.${field} references unknown operationId ${operationId}`);
+		}
+	}
+	const login = endpoints.find((endpoint) => endpoint.operationId === auth.loginOperationId)!;
+	if (login.method !== "post") {
+		throw new Error("x-fizzyx-admin.auth.loginOperationId must reference a POST operation");
+	}
+	if (rootSecurity?.length && login.security === undefined) {
+		throw new Error(
+			"configured login inherits root security; declare security: [] on the login operation",
+		);
+	}
+	if (login.security?.length) {
+		throw new Error("configured login operation must be public with security: []");
+	}
+	if (auth.mode === "server-cookie" && !auth.accessTokenPath) {
+		throw new Error("server-cookie auth requires x-fizzyx-admin.auth.accessTokenPath");
+	}
+}
+
+const object = (value: unknown, label: string): Record<string, unknown> => {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`${label} must be an object`);
+	}
+	return value as Record<string, unknown>;
+};
+
+const optionalString = (source: Record<string, unknown>, key: string): string | undefined => {
+	const value = source[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "string" || value.trim() === "") {
+		throw new Error(`x-fizzyx-admin.auth.${key} must be a non-empty string`);
+	}
+	return value;
+};
+
+function parseAdminConfig(value: unknown): ParsedAdminConfig | undefined {
+	if (value === undefined) return undefined;
+	const extension = object(value, "x-fizzyx-admin");
+	if (extension.auth === undefined) return {};
+	const auth = object(extension.auth, "x-fizzyx-admin.auth");
+	const mode = optionalString(auth, "mode");
+	if (mode !== "server-cookie" && mode !== "upstream-cookie") {
+		throw new Error("x-fizzyx-admin.auth.mode must be server-cookie or upstream-cookie");
+	}
+	const loginOperationId = optionalString(auth, "loginOperationId");
+	if (!loginOperationId) throw new Error("x-fizzyx-admin.auth.loginOperationId is required");
+	const routes = auth.routes === undefined ? {} : object(auth.routes, "x-fizzyx-admin.auth.routes");
+	const login = optionalString(routes, "login") ?? "/login";
+	const afterLogin = optionalString(routes, "afterLogin") ?? "/";
+	if (!/^\/[a-zA-Z0-9/_-]*$/.test(login) || !/^\/[a-zA-Z0-9/_-]*$/.test(afterLogin)) {
+		throw new Error("x-fizzyx-admin.auth routes must be static absolute application paths");
+	}
+	return {
+		auth: {
+			mode,
+			loginOperationId,
+			logoutOperationId: optionalString(auth, "logoutOperationId"),
+			meOperationId: optionalString(auth, "meOperationId"),
+			refreshOperationId: optionalString(auth, "refreshOperationId"),
+			usernameField: optionalString(auth, "usernameField"),
+			passwordField: optionalString(auth, "passwordField"),
+			accessTokenPath: optionalString(auth, "accessTokenPath"),
+			refreshTokenPath: optionalString(auth, "refreshTokenPath"),
+			expiresInPath: optionalString(auth, "expiresInPath"),
+			routes: { login, afterLogin },
+		},
+	};
+}
+
+function parseSecurityRequirements(value: unknown): ParsedSecurityRequirement[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) throw new Error("OpenAPI security must be an array");
+	return value.map((entry) => Object.keys(object(entry, "OpenAPI security requirement")));
+}
+
+function parseSecuritySchemes(doc: Record<string, unknown>): ParsedSecurityScheme[] {
+	const components = doc.components as Record<string, unknown> | undefined;
+	const schemes = components?.securitySchemes as Record<string, unknown> | undefined;
+	if (!schemes) return [];
+	return Object.entries(schemes).map(([name, value]) => {
+		const scheme = object(value, `security scheme ${name}`);
+		const type = scheme.type;
+		if (!["apiKey", "http", "oauth2", "openIdConnect", "mutualTLS"].includes(String(type))) {
+			throw new Error(`security scheme ${name} has unsupported type ${String(type)}`);
+		}
+		return {
+			name,
+			type: type as ParsedSecurityScheme["type"],
+			scheme: typeof scheme.scheme === "string" ? scheme.scheme : undefined,
+			bearerFormat: typeof scheme.bearerFormat === "string" ? scheme.bearerFormat : undefined,
+			in:
+				scheme.in === "query" || scheme.in === "header" || scheme.in === "cookie"
+					? scheme.in
+					: undefined,
+			parameterName: typeof scheme.name === "string" ? scheme.name : undefined,
+		};
+	});
 }
 
 function extractRawSchemas(doc: Record<string, unknown>): Record<string, unknown> {
@@ -444,6 +566,7 @@ function parseAllEndpoints(
 			const operationId = (op.operationId as string) ?? makeOperationId(httpMethod, path);
 			const opKey = `${method.toUpperCase()} ${path}`;
 			const description = (op.description as string) || undefined;
+			const security = parseSecurityRequirements(op.security);
 
 			const params = (op.parameters ?? []) as Record<string, unknown>[];
 			const pathParams: PathParam[] = [];
@@ -492,6 +615,7 @@ function parseAllEndpoints(
 				responseTypeRef,
 				bodyContentType: meta?.bodyContentType,
 				responseContentType: meta?.responseContentType,
+				security,
 			});
 		}
 	}

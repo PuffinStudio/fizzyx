@@ -18,7 +18,12 @@ import type {
 	ProjectSkillsConfig,
 	ProjectSkillSourceConfig,
 } from "../domain/models";
-import type { OpenApiGenConfig, OpenApiProjectConfig } from "../domain/openapi-models";
+import type {
+	OpenApiAdminProjectConfig,
+	OpenApiGenConfig,
+	OpenApiProjectConfig,
+	ParsedAdminAuthConfig,
+} from "../domain/openapi-models";
 import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-repository";
 
 export const DEFAULT_ACCOUNT = "1";
@@ -689,18 +694,57 @@ const parseOpenapiConfig = (raw: unknown): OpenApiProjectConfig | undefined => {
 	}
 
 	const obj = objectValue(raw);
-	if (!obj) return undefined;
+	const admin = parseOpenapiAdminConfig(obj.admin);
 	const entriesRaw = obj.entries;
 	if (entriesRaw) {
 		const entries = parseOpenapiEntries(entriesRaw);
-		if (!entries) return undefined;
+		if (!entries && !admin) return undefined;
 		return {
 			posthook: stringValue(obj.posthook) || undefined,
-			entries,
+			entries: entries ?? [],
+			admin,
 		};
 	}
 
-	return undefined;
+	return admin ? { posthook: stringValue(obj.posthook) || undefined, admin } : undefined;
+};
+
+const parseOpenapiAdminAuth = (raw: unknown): ParsedAdminAuthConfig | undefined => {
+	const auth = objectValue(raw);
+	const mode = stringValue(auth.mode);
+	const loginOperationId = stringValue(auth.login_operation_id);
+	if ((mode !== "server-cookie" && mode !== "upstream-cookie") || !loginOperationId) {
+		return undefined;
+	}
+	const routes = objectValue(auth.routes);
+	return {
+		mode,
+		loginOperationId,
+		logoutOperationId: stringValue(auth.logout_operation_id) || undefined,
+		meOperationId: stringValue(auth.me_operation_id) || undefined,
+		refreshOperationId: stringValue(auth.refresh_operation_id) || undefined,
+		usernameField: stringValue(auth.username_field) || undefined,
+		passwordField: stringValue(auth.password_field) || undefined,
+		accessTokenPath: stringValue(auth.access_token_path) || undefined,
+		refreshTokenPath: stringValue(auth.refresh_token_path) || undefined,
+		expiresInPath: stringValue(auth.expires_in_path) || undefined,
+		routes: {
+			login: stringValue(routes.login) || "/login",
+			afterLogin: stringValue(routes.after_login) || "/",
+		},
+	};
+};
+
+const parseOpenapiAdminConfig = (raw: unknown): OpenApiAdminProjectConfig | undefined => {
+	const admin = objectValue(raw);
+	const input = stringValue(admin.input) || undefined;
+	const output = stringValue(admin.output) || undefined;
+	const frameworkValue = stringValue(admin.framework);
+	const framework =
+		frameworkValue === "nextjs" || frameworkValue === "tanstack-start" ? frameworkValue : undefined;
+	const auth = parseOpenapiAdminAuth(admin.auth);
+	if (!input && !output && !framework && !auth) return undefined;
+	return { input, output, framework, auth };
 };
 
 const parseOpenapiEntries = (raw: unknown): OpenApiGenConfig[] | undefined => {
@@ -871,6 +915,29 @@ const renderOpenApiConfigFlat = (openapi: OpenApiProjectConfig): YamlObject => {
 			output: entry.output,
 			client: entry.client,
 		}));
+	}
+	if (openapi.admin) {
+		const admin: YamlObject = {};
+		if (openapi.admin.input) admin.input = openapi.admin.input;
+		if (openapi.admin.output) admin.output = openapi.admin.output;
+		if (openapi.admin.framework) admin.framework = openapi.admin.framework;
+		if (openapi.admin.auth) {
+			const auth = openapi.admin.auth;
+			admin.auth = {
+				mode: auth.mode,
+				login_operation_id: auth.loginOperationId,
+				...(auth.logoutOperationId ? { logout_operation_id: auth.logoutOperationId } : {}),
+				...(auth.meOperationId ? { me_operation_id: auth.meOperationId } : {}),
+				...(auth.refreshOperationId ? { refresh_operation_id: auth.refreshOperationId } : {}),
+				...(auth.usernameField ? { username_field: auth.usernameField } : {}),
+				...(auth.passwordField ? { password_field: auth.passwordField } : {}),
+				...(auth.accessTokenPath ? { access_token_path: auth.accessTokenPath } : {}),
+				...(auth.refreshTokenPath ? { refresh_token_path: auth.refreshTokenPath } : {}),
+				...(auth.expiresInPath ? { expires_in_path: auth.expiresInPath } : {}),
+				routes: { login: auth.routes.login, after_login: auth.routes.afterLogin },
+			};
+		}
+		result.admin = admin;
 	}
 	return result;
 };

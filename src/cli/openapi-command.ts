@@ -6,6 +6,7 @@ import {
 	runOpenApiGenerateLifecycle,
 } from "../use-cases/openapi-service";
 import { generateAdminProject } from "../use-cases/openapi-admin-service";
+import { ConfigRepo } from "../ports/config-repository";
 import {
 	formatGeneratedDetails,
 	formatGeneratedOutput,
@@ -233,19 +234,33 @@ const openapiListCmd = Command.make("list", {}, handleList).pipe(
 );
 
 const handleAdmin = (config: {
-	input: string;
-	output: string;
-	framework: "nextjs" | "tanstack-start";
+	input: Option.Option<string>;
+	output: Option.Option<string>;
+	framework: Option.Option<"nextjs" | "tanstack-start">;
 	dryRun: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
+		const repository = yield* ConfigRepo;
+		const project = yield* repository.loadProjectConfigOptional();
+		const defaults = project?.openapi?.admin;
+		const input = Option.getOrUndefined(config.input) ?? defaults?.input;
+		const output = Option.getOrUndefined(config.output) ?? defaults?.output;
+		const framework = Option.getOrUndefined(config.framework) ?? defaults?.framework;
+		if (!input || !output || !framework) {
+			return yield* Effect.fail(
+				new Error(
+					"admin generation requires --input, --output, and --framework (or matching openapi.admin defaults in .fizzyx.yaml)",
+				),
+			);
+		}
 		const result = yield* withSpinner(
 			config.dryRun ? "Planning admin project" : "Generating admin project",
 			generateAdminProject({
-				input: config.input,
-				output: config.output,
-				framework: config.framework,
+				input,
+				output,
+				framework,
 				dryRun: config.dryRun,
+				auth: defaults?.auth,
 			}),
 		);
 		if (config.dryRun) {
@@ -261,16 +276,22 @@ const handleAdmin = (config: {
 const openapiAdminCmd = Command.make(
 	"admin",
 	{
-		input: Flag.string("input").pipe(
-			Flag.withAlias("i"),
-			Flag.withDescription("OpenAPI spec URL or file path"),
+		input: Flag.optional(
+			Flag.string("input").pipe(
+				Flag.withAlias("i"),
+				Flag.withDescription("OpenAPI spec URL or file path (or openapi.admin.input)"),
+			),
 		),
-		output: Flag.string("output").pipe(
-			Flag.withAlias("o"),
-			Flag.withDescription("New admin project directory"),
+		output: Flag.optional(
+			Flag.string("output").pipe(
+				Flag.withAlias("o"),
+				Flag.withDescription("New admin project directory (or openapi.admin.output)"),
+			),
 		),
-		framework: Flag.choice("framework", ["nextjs", "tanstack-start"] as const).pipe(
-			Flag.withDescription("Application framework (nextjs or tanstack-start)"),
+		framework: Flag.optional(
+			Flag.choice("framework", ["nextjs", "tanstack-start"] as const).pipe(
+				Flag.withDescription("Application framework (or openapi.admin.framework)"),
+			),
 		),
 		dryRun: Flag.boolean("dry-run").pipe(
 			Flag.withDescription("Print Bun-first scaffold commands without writing a project"),

@@ -69,3 +69,36 @@ test("openapi admin dry-run plans Bun commands without creating the project", as
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("openapi admin can use optional project defaults without CLI flags", async () => {
+	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-config-cli-"));
+	try {
+		const entry = join(import.meta.dir, "..", "src", "main.ts");
+		const specPath = join(root, "openapi.json");
+		const output = join(root, "configured-admin");
+		writeFileSync(
+			specPath,
+			JSON.stringify({
+				openapi: "3.0.0",
+				info: { title: "Configured", version: "1.0.0" },
+				paths: {},
+			}),
+		);
+		writeFileSync(
+			join(root, ".fizzyx.yaml"),
+			`openapi:\n  admin:\n    input: ${specPath}\n    output: ${output}\n    framework: tanstack-start\n`,
+		);
+		const proc = Bun.spawn(["bun", "run", entry, "openapi", "admin", "--dry-run"], {
+			cwd: root,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("@tanstack/cli@latest");
+		expect(await Bun.file(output).exists()).toBe(false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

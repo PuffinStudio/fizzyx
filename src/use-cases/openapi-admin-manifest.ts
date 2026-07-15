@@ -10,6 +10,7 @@ interface AdminManifest {
 	framework: AdminFramework;
 	packageManager: AdminPackageManager;
 	specFingerprint: string;
+	specSource?: string;
 	files: Record<string, string>;
 }
 
@@ -17,6 +18,7 @@ export interface AdminManifestMetadata {
 	framework: AdminFramework;
 	packageManager: AdminPackageManager;
 	specFingerprint: string;
+	specSource?: string;
 }
 
 export interface AdminWriteResult {
@@ -95,6 +97,7 @@ export const writeAdminGeneratedFiles = (
 		framework: metadata.framework,
 		packageManager: metadata.packageManager,
 		specFingerprint: metadata.specFingerprint,
+		specSource: metadata.specSource ?? previous?.specSource,
 		files: nextHashes,
 	};
 	const manifestPath = join(root, MANIFEST_PATH);

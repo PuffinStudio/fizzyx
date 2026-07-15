@@ -1,0 +1,4 @@
+interface:
+  display_name: "FizzyX Admin Development"
+  short_description: "Safely extend and regenerate generated admin projects"
+  default_prompt: "Use $fizzyx-openapi-admin-development to extend this generated admin without losing changes during regeneration."

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { basename, dirname, join, resolve } from "node:path";
 import { AdminGenerationError } from "../domain/errors";
 import type { GeneratedFile } from "../domain/openapi-models";
+import type { ParsedAdminAuthConfig } from "../domain/openapi-models";
 import { AdminProcessRunner } from "../ports/admin-process-runner";
 import { generate } from "./openapi-service";
 import { planAdminApp } from "./openapi-admin-plan";
@@ -26,6 +27,7 @@ export interface GenerateAdminProjectInput {
 	output: string;
 	framework: AdminFramework;
 	dryRun?: boolean;
+	auth?: ParsedAdminAuthConfig;
 }
 
 export interface GenerateAdminProjectResult {
@@ -106,7 +108,11 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			client: "fetch",
 			stateManagement: "tanstack-query",
 		});
-		const plan = planAdminApp(client.spec);
+		const spec =
+			client.spec.admin?.auth || !input.auth
+				? client.spec
+				: { ...client.spec, admin: { ...client.spec.admin, auth: input.auth } };
+		const plan = planAdminApp(spec);
 		let packageManager: AdminPackageManager = "bun";
 		let scaffold = planAdminScaffold({
 			framework: input.framework,
@@ -170,7 +176,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			...renderAdminApp(plan, input.framework),
 		];
 		const specFingerprint = new Bun.CryptoHasher("sha256")
-			.update(JSON.stringify(client.spec))
+			.update(JSON.stringify(spec))
 			.digest("hex");
 		const writeResult = yield* Effect.try({
 			try: () =>
@@ -178,6 +184,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 					framework: input.framework,
 					packageManager,
 					specFingerprint,
+					specSource: input.input,
 				}),
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to write admin project", cause }),

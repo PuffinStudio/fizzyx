@@ -5,6 +5,11 @@ import { renderAdminApp } from "../src/use-cases/openapi-admin-render";
 const plan: AdminAppPlan = {
 	title: "Pet Store",
 	diagnostics: [],
+	auth: {
+		status: "needs-configuration",
+		securitySchemes: [],
+		candidates: { login: [], logout: [], me: [], refresh: [] },
+	},
 	resources: [
 		{
 			id: "pets",
@@ -93,6 +98,14 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(paths).toContain("src/app/(admin)/pets/page.tsx");
 	expect(paths).toContain("src/components/admin/data-table.tsx");
 	expect(paths).toContain("src/lib/api/admin-api.ts");
+	expect(paths).toContain(".agents/skills/fizzyx-openapi-admin-auth/SKILL.md");
+	expect(paths).toContain(".agents/skills/fizzyx-openapi-admin-development/SKILL.md");
+	expect(
+		files.find((file) => file.path.endsWith("fizzyx-openapi-admin-auth/SKILL.md"))?.content,
+	).toContain("Do not promote a `candidate`");
+	expect(
+		files.find((file) => file.path.endsWith("fizzyx-openapi-admin-development/SKILL.md"))?.content,
+	).toContain("preserves a modified owned file and reports it as a conflict");
 	expect(files.find((file) => file.path.endsWith("lib/api/admin-api.ts"))?.content).toContain(
 		"process.env.NEXT_PUBLIC_API_BASE_URL",
 	);
@@ -158,4 +171,74 @@ test("renders TanStack Start create, detail, and edit file routes for mapped CRU
 	expect(paths).toContain("src/routes/_admin/pets/$id.tsx");
 	expect(paths).toContain("src/routes/_admin/pets/$id.edit.tsx");
 	expect(files.find((file) => file.path.endsWith("$id.tsx"))?.content).toContain("useDeletePet");
+});
+
+const authenticatedPlan: AdminAppPlan = {
+	...plan,
+	auth: {
+		status: "configured",
+		loginPath: "/auth/login",
+		securitySchemes: [{ name: "bearerAuth", type: "http", scheme: "bearer" }],
+		candidates: {
+			login: [{ operationId: "authLogin", score: 10, evidence: ["explicit"] }],
+			logout: [],
+			me: [],
+			refresh: [],
+		},
+		config: {
+			mode: "server-cookie",
+			loginOperationId: "authLogin",
+			usernameField: "email",
+			passwordField: "password",
+			accessTokenPath: "data.access_token",
+			refreshTokenPath: "data.refresh_token",
+			routes: { login: "/login", afterLogin: "/pets" },
+		},
+	},
+};
+
+test("renders server-cookie login, guard, and BFF routes for Next.js", () => {
+	const files = renderAdminApp(authenticatedPlan, "nextjs");
+	const paths = files.map((file) => file.path);
+
+	expect(paths).toContain("src/app/(auth)/login/page.tsx");
+	expect(paths).toContain("src/app/(auth)/api/auth/login/route.ts");
+	expect(paths).toContain("src/app/(auth)/api/admin/[...path]/route.ts");
+	expect(files.find((file) => file.path === "src/app/(admin)/layout.tsx")?.content).toContain(
+		"hasAdminSession",
+	);
+	expect(files.find((file) => file.path === "src/lib/api/admin-api.ts")?.content).toContain(
+		'baseUrl: "/api/admin"',
+	);
+	expect(files.find((file) => file.path === ".env.example")?.content).toContain("API_BASE_URL=");
+	expect(files.find((file) => file.path === "src/lib/auth/server.ts")?.content).toContain(
+		"httpOnly: true",
+	);
+	expect(files.find((file) => file.path.endsWith("api/auth/login/route.ts"))?.content).toContain(
+		'request.headers.get("origin")',
+	);
+	expect(files.find((file) => file.path.endsWith("admin-shell.tsx"))?.content).toContain(
+		"Sign out",
+	);
+});
+
+test("renders server-cookie login, guard, and BFF routes for TanStack Start", () => {
+	const files = renderAdminApp(authenticatedPlan, "tanstack-start");
+	const paths = files.map((file) => file.path);
+
+	expect(paths).toContain("src/routes/login.tsx");
+	expect(paths).toContain("src/routes/api/auth/login.ts");
+	expect(paths).toContain("src/routes/api/admin/$.ts");
+	expect(files.find((file) => file.path === "src/routes/_admin.tsx")?.content).toContain(
+		"beforeLoad",
+	);
+	expect(files.find((file) => file.path === "src/lib/auth/server.ts")?.content).toContain(
+		"createServerFn",
+	);
+	expect(files.find((file) => file.path === "src/lib/auth/session.server.ts")?.content).toContain(
+		"@tanstack/react-start/server",
+	);
+	expect(files.find((file) => file.path === "src/routes/api/admin/$.ts")?.content).toContain(
+		"encodeURIComponent(decodeURIComponent(segment))",
+	);
 });

@@ -72,7 +72,47 @@ test("plans CRUD admin pages from collection and member operations", () => {
 			delete: { operationId: "deletePet" },
 		},
 	});
-	expect(plan.diagnostics).toEqual([]);
+	expect(plan.diagnostics).toContainEqual(expect.objectContaining({ code: "auth-missing" }));
+});
+
+test("reports strong auth candidates but does not silently enable authentication", async () => {
+	const spec = await parseSpec({
+		openapi: "3.0.0",
+		info: { title: "Users", version: "1.0.0" },
+		components: {
+			schemas: {
+				LoginInput: {
+					type: "object",
+					required: ["email", "password"],
+					properties: { email: { type: "string" }, password: { type: "string" } },
+				},
+			},
+		},
+		paths: {
+			"/auth/login": {
+				post: {
+					operationId: "authLogin",
+					security: [],
+					requestBody: {
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/LoginInput" } },
+						},
+					},
+					responses: { "200": { description: "ok" } },
+				},
+			},
+		},
+	});
+
+	const plan = planAdminApp(spec);
+
+	expect(plan.auth.status).toBe("needs-configuration");
+	expect(plan.auth.candidates.login[0]).toMatchObject({ operationId: "authLogin" });
+	expect(plan.auth.candidates.login[0]!.score).toBeGreaterThanOrEqual(8);
+	expect(plan.resources).toEqual([]);
+	expect(plan.diagnostics).toContainEqual(
+		expect.objectContaining({ code: "auth-candidate", operationId: "authLogin" }),
+	);
 });
 
 test("uses an OpenAPI operation tag instead of a versioned URL prefix for the resource", async () => {

@@ -1,4 +1,9 @@
-import type { ParsedEndpoint, ParsedProperty } from "./openapi-models";
+import type {
+	ParsedAdminAuthConfig,
+	ParsedEndpoint,
+	ParsedProperty,
+	ParsedSecurityScheme,
+} from "./openapi-models";
 
 export type AdminOperationKind = "list" | "detail" | "create" | "update" | "delete";
 
@@ -29,13 +34,35 @@ export interface AdminResourcePlan {
 }
 
 export interface AdminPlanDiagnostic {
-	code: "unsupported-operation" | "ambiguous-operation";
+	code:
+		| "unsupported-operation"
+		| "ambiguous-operation"
+		| "auth-candidate"
+		| "auth-missing"
+		| "auth-unsupported";
 	message: string;
+	operationId?: string;
+}
+
+export type AdminAuthRole = "login" | "logout" | "me" | "refresh";
+
+export interface AdminAuthCandidate {
 	operationId: string;
+	score: number;
+	evidence: string[];
+}
+
+export interface AdminAuthPlan {
+	status: "configured" | "needs-configuration";
+	config?: ParsedAdminAuthConfig;
+	loginPath?: string;
+	securitySchemes: ParsedSecurityScheme[];
+	candidates: Record<AdminAuthRole, AdminAuthCandidate[]>;
 }
 
 export interface AdminAppPlan {
 	title: string;
 	resources: AdminResourcePlan[];
 	diagnostics: AdminPlanDiagnostic[];
+	auth: AdminAuthPlan;
 }

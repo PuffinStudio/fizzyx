@@ -349,6 +349,54 @@ skills:
 	}
 });
 
+test("loadProjectConfig parses optional OpenAPI admin defaults and auth override", async () => {
+	const root = makeTempDir();
+	const configPath = join(root, ".fizzyx.yaml");
+	const repo = makeBunConfigRepository();
+	const originalCwd = process.cwd();
+
+	try {
+		process.chdir(root);
+		writeFileSync(
+			configPath,
+			`openapi:
+  admin:
+    input: ./openapi.yaml
+    output: ./apps/admin
+    framework: nextjs
+    auth:
+      mode: server-cookie
+      login_operation_id: authLogin
+      username_field: email
+      password_field: password
+      access_token_path: data.access_token
+      routes:
+        login: /login
+        after_login: /users
+`,
+		);
+
+		const config = await Effect.runPromise(repo.loadProjectConfig());
+
+		expect(config.openapi?.admin).toEqual({
+			input: "./openapi.yaml",
+			output: "./apps/admin",
+			framework: "nextjs",
+			auth: {
+				mode: "server-cookie",
+				loginOperationId: "authLogin",
+				usernameField: "email",
+				passwordField: "password",
+				accessTokenPath: "data.access_token",
+				routes: { login: "/login", afterLogin: "/users" },
+			},
+		});
+	} finally {
+		process.chdir(originalCwd);
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("setupProjectConfig preserves project skills config", async () => {
 	const root = makeTempDir();
 	const configPath = join(root, ".fizzyx.yaml");

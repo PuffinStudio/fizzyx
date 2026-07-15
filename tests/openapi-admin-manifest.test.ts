@@ -14,6 +14,7 @@ test("preserves a user-modified generated file and reports a regeneration confli
 				framework: "nextjs",
 				packageManager: "bun",
 				specFingerprint: "spec-v1",
+				specSource: "./openapi.yaml",
 			},
 		);
 		expect(first.conflicts).toEqual([]);
@@ -31,6 +32,9 @@ test("preserves a user-modified generated file and reports a regeneration confli
 		expect(readFileSync(join(root, ".fizzyx/admin-manifest.json"), "utf8")).toContain(
 			'"framework": "nextjs"',
 		);
+		expect(readFileSync(join(root, ".fizzyx/admin-manifest.json"), "utf8")).toContain(
+			'"specSource": "./openapi.yaml"',
+		);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -43,6 +47,7 @@ test("removes an obsolete generated file only when it was not modified", () => {
 			framework: "nextjs" as const,
 			packageManager: "bun" as const,
 			specFingerprint: "spec-v1",
+			specSource: "./openapi.yaml",
 		};
 		writeAdminGeneratedFiles(
 			root,

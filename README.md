@@ -302,9 +302,48 @@ Generated admin projects include:
 - TanStack Table list pages with OpenAPI-aware pagination, search, filtering, and sorting
 - schema-driven TanStack Form create/edit pages with shadcn Field controls
 - detail/delete routes and a typed fetch + TanStack Query client
-- `NEXT_PUBLIC_API_BASE_URL` (Next.js) or `VITE_API_BASE_URL` (TanStack Start) support
-- `configureAdminApi({ token, headers, ... })` for runtime authentication configuration
+- OXC `fmt`, `lint`, `lint:fix`, and `check` scripts, run automatically after first generation
+- optional server-cookie authentication with a login page, server guard, logout, and same-origin BFF
 - `.fizzyx/admin-manifest.json` regeneration safety that preserves user-edited generated files
+- project-local AI skills for auth discovery and conflict-safe generated-project development
+
+The command works without `.fizzyx.yaml` when all three flags are provided. Teams may keep defaults
+in the optional project config; explicit flags fill or override those values:
+
+```yaml
+openapi:
+  admin:
+    input: ./openapi.yaml
+    output: ./apps/admin
+    framework: nextjs
+```
+
+Authentication is never enabled from endpoint names alone. Without an explicit contract, FizzyX
+reports ranked login/logout/me/refresh candidates and tells the user what must be confirmed. Put the
+durable API semantics in the OpenAPI document (preferred):
+
+```yaml
+x-fizzyx-admin:
+  auth:
+    mode: server-cookie
+    loginOperationId: authLogin
+    logoutOperationId: authLogout
+    meOperationId: usersMe
+    usernameField: email # optional when inferable from the login request schema
+    passwordField: password # optional when inferable
+    accessTokenPath: data.access_token
+    refreshTokenPath: data.refresh_token
+    routes:
+      login: /login
+      afterLogin: /users
+```
+
+For a remote or immutable spec, the equivalent optional `.fizzyx.yaml` override uses snake-case keys
+under `openapi.admin.auth` (`login_operation_id`, `access_token_path`, and so on). An OpenAPI
+`x-fizzyx-admin.auth` block takes precedence when both exist. Server-cookie mode uses the server-only
+`API_BASE_URL`; tokens stay in HttpOnly, Secure-in-production, SameSite cookies and browser API calls
+go through `/api/admin`. If auth is not configured, the existing public
+`NEXT_PUBLIC_API_BASE_URL`/`VITE_API_BASE_URL` hook remains available.
 
 The main generated structure is:
 
@@ -316,15 +355,20 @@ src/
   app/(admin)/            # Next.js routes (Next.js target)
   routes/_admin/          # file routes (TanStack Start target)
 .fizzyx/admin-manifest.json
+.agents/skills/             # generated-project development and auth discovery guidance
 ```
 
 The output directory must be empty on the first run. Re-run the same command to update
-unchanged generated files; local edits are reported and preserved as conflicts.
+unchanged generated files; local edits are reported and preserved as conflicts. Files listed in the
+manifest are generator-owned. Prefer new wrapper/adapter/route files for durable customization; edit
+the OpenAPI or auth configuration and regenerate for contract changes.
 
 Resource inference intentionally targets tagged, conventional collection/member CRUD paths.
 Unmapped operations remain callable through the generated client and are reported as diagnostics.
 List parameter inference recognizes common page/offset/limit/search/sort names; custom envelopes,
-authorization UI, relationships, file inputs, and router-only TanStack projects are not inferred.
+ambiguous authorization contracts, relationships, file inputs, and router-only TanStack projects are
+not inferred. `upstream-cookie` is parsed but remains disabled until an application-specific cookie
+rewrite policy is supplied; `server-cookie` is the safe generated default.
 
 ### Generated Runtime API
 

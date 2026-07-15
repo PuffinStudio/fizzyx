@@ -6,6 +6,7 @@ import type {
 	AdminResourcePlan,
 } from "../domain/openapi-admin-models";
 import type { ParsedEndpoint, ParsedSpec, ParsedTypeDef } from "../domain/openapi-models";
+import { discoverAdminAuth } from "./openapi-admin-auth";
 
 const pathSegments = (path: string): string[] => path.split("/").filter(Boolean);
 const isPathParam = (segment: string): boolean => segment.startsWith("{") && segment.endsWith("}");
@@ -67,9 +68,19 @@ const listQueryMapping = (
 
 export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
 	const resources = new Map<string, AdminResourcePlan>();
-	const diagnostics: AdminPlanDiagnostic[] = [];
+	const authDiscovery = discoverAdminAuth(spec);
+	const diagnostics: AdminPlanDiagnostic[] = [...authDiscovery.diagnostics];
+	const configuredAuthOperations = Object.entries(authDiscovery.auth.config ?? {})
+		.filter(([key, value]) => key.endsWith("OperationId") && typeof value === "string")
+		.map(([, value]) => value as string);
+	const strongAuthCandidates = Object.values(authDiscovery.auth.candidates)
+		.flat()
+		.filter((candidate) => candidate.score >= 6)
+		.map((candidate) => candidate.operationId);
+	const reservedAuthOperations = new Set([...configuredAuthOperations, ...strongAuthCandidates]);
 
 	for (const endpoint of spec.endpoints) {
+		if (reservedAuthOperations.has(endpoint.operationId)) continue;
 		const resourceId = resourceIdFor(endpoint);
 		const kind = classifyOperation(endpoint);
 		if (!resourceId || !kind) {
@@ -113,5 +124,10 @@ export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
 		resources.set(resourceId, current);
 	}
 
-	return { title: spec.title, resources: [...resources.values()], diagnostics };
+	return {
+		title: spec.title,
+		resources: [...resources.values()],
+		diagnostics,
+		auth: authDiscovery.auth,
+	};
 };

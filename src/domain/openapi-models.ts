@@ -13,7 +13,15 @@ export interface OpenApiGenConfig {
 
 export interface OpenApiProjectConfig {
 	posthook?: string;
-	entries: OpenApiGenConfig[];
+	entries?: OpenApiGenConfig[];
+	admin?: OpenApiAdminProjectConfig;
+}
+
+export interface OpenApiAdminProjectConfig {
+	input?: string;
+	output?: string;
+	framework?: "nextjs" | "tanstack-start";
+	auth?: ParsedAdminAuthConfig;
 }
 
 export interface GenFileOptions {
@@ -29,6 +37,43 @@ export interface ParsedSpec {
 	version: string;
 	endpoints: ParsedEndpoint[];
 	types: Record<string, ParsedTypeDef>;
+	securitySchemes?: ParsedSecurityScheme[];
+	security?: ParsedSecurityRequirement[];
+	admin?: ParsedAdminConfig;
+}
+
+export interface ParsedSecurityScheme {
+	name: string;
+	type: "apiKey" | "http" | "oauth2" | "openIdConnect" | "mutualTLS";
+	scheme?: string;
+	bearerFormat?: string;
+	in?: "query" | "header" | "cookie";
+	parameterName?: string;
+}
+
+export type ParsedSecurityRequirement = string[];
+
+export type AdminAuthMode = "server-cookie" | "upstream-cookie";
+
+export interface ParsedAdminAuthConfig {
+	mode: AdminAuthMode;
+	loginOperationId: string;
+	logoutOperationId?: string;
+	meOperationId?: string;
+	refreshOperationId?: string;
+	usernameField?: string;
+	passwordField?: string;
+	accessTokenPath?: string;
+	refreshTokenPath?: string;
+	expiresInPath?: string;
+	routes: {
+		login: string;
+		afterLogin: string;
+	};
+}
+
+export interface ParsedAdminConfig {
+	auth?: ParsedAdminAuthConfig;
 }
 
 export interface ParsedEndpoint {
@@ -44,6 +89,7 @@ export interface ParsedEndpoint {
 	responseTypeRef?: string;
 	bodyContentType?: "json" | "multipart";
 	responseContentType?: "json" | "binary";
+	security?: ParsedSecurityRequirement[];
 }
 
 export interface PathParam {
