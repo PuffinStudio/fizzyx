@@ -5,6 +5,7 @@ import {
 	listGenerators,
 	runOpenApiGenerateLifecycle,
 } from "../use-cases/openapi-service";
+import { generateAdminProject } from "../use-cases/openapi-admin-service";
 import {
 	formatGeneratedDetails,
 	formatGeneratedOutput,
@@ -231,7 +232,54 @@ const openapiListCmd = Command.make("list", {}, handleList).pipe(
 	Command.withDescription("List available client generators"),
 );
 
+const handleAdmin = (config: {
+	input: string;
+	output: string;
+	framework: "nextjs" | "tanstack-start";
+	dryRun: boolean;
+}): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const result = yield* withSpinner(
+			config.dryRun ? "Planning admin project" : "Generating admin project",
+			generateAdminProject({
+				input: config.input,
+				output: config.output,
+				framework: config.framework,
+				dryRun: config.dryRun,
+			}),
+		);
+		if (config.dryRun) {
+			for (const command of result.commands) yield* Console.log(command.join(" "));
+		}
+		yield* logSuccess(
+			`${config.dryRun ? "planned" : "generated"} ${result.framework} admin with ${result.resources} resource(s) at ${result.outputDir}`,
+		);
+		for (const diagnostic of result.diagnostics) yield* logInfo(`skipped: ${diagnostic}`);
+		for (const conflict of result.conflicts) yield* logInfo(`conflict preserved: ${conflict}`);
+	});
+
+const openapiAdminCmd = Command.make(
+	"admin",
+	{
+		input: Flag.string("input").pipe(
+			Flag.withAlias("i"),
+			Flag.withDescription("OpenAPI spec URL or file path"),
+		),
+		output: Flag.string("output").pipe(
+			Flag.withAlias("o"),
+			Flag.withDescription("New admin project directory"),
+		),
+		framework: Flag.choice("framework", ["nextjs", "tanstack-start"] as const).pipe(
+			Flag.withDescription("Application framework (nextjs or tanstack-start)"),
+		),
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDescription("Print Bun-first scaffold commands without writing a project"),
+		),
+	},
+	handleAdmin,
+).pipe(Command.withDescription("Generate a runnable shadcn admin app from an OpenAPI spec"));
+
 export const openapiCmd = Command.make("openapi").pipe(
 	Command.withDescription("Generate API client code from OpenAPI specs"),
-	Command.withSubcommands([openapiGenerateCmd, openapiInitCmd, openapiListCmd]),
+	Command.withSubcommands([openapiGenerateCmd, openapiInitCmd, openapiListCmd, openapiAdminCmd]),
 );

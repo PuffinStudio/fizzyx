@@ -1,0 +1,71 @@
+import { expect, test } from "bun:test";
+import { join } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+
+test("openapi admin help documents the project generation contract", async () => {
+	const entry = join(import.meta.dir, "..", "src", "main.ts");
+	const proc = Bun.spawn(["bun", "run", entry, "openapi", "admin", "--help"], {
+		cwd: join(import.meta.dir, ".."),
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+
+	expect(stderr).toBe("");
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("fizzyx openapi admin");
+	expect(stdout).toContain("--input");
+	expect(stdout).toContain("--output");
+	expect(stdout).toContain("--framework");
+});
+
+test("openapi admin dry-run plans Bun commands without creating the project", async () => {
+	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-cli-"));
+	try {
+		const entry = join(import.meta.dir, "..", "src", "main.ts");
+		const specPath = join(root, "openapi.json");
+		const output = join(root, "pet-admin");
+		writeFileSync(
+			specPath,
+			JSON.stringify({
+				openapi: "3.0.0",
+				info: { title: "Pet Store", version: "1.0.0" },
+				paths: {
+					"/pets": {
+						get: { operationId: "listPets", responses: { "200": { description: "ok" } } },
+					},
+				},
+			}),
+		);
+		const proc = Bun.spawn(
+			[
+				"bun",
+				"run",
+				entry,
+				"openapi",
+				"admin",
+				"--input",
+				specPath,
+				"--output",
+				output,
+				"--framework",
+				"nextjs",
+				"--dry-run",
+			],
+			{ cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe" },
+		);
+		const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("bun create next-app@latest");
+		expect(stdout).not.toMatch(/\bnpm|\bnpx/);
+		expect(await Bun.file(output).exists()).toBe(false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

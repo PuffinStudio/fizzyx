@@ -45,6 +45,13 @@ export class CodegenError extends Data.TaggedError("CodegenError")<{
 	cause?: unknown;
 }> {}
 
+export class AdminGenerationError extends Data.TaggedError("AdminGenerationError")<{
+	message: string;
+	command?: string[];
+	stderr?: string;
+	cause?: unknown;
+}> {}
+
 export class ConfigValidationError extends Data.TaggedError("ConfigValidationError")<{
 	message: string;
 	field?: string;
@@ -60,4 +67,5 @@ export type FizzyxError =
 	| SpecLoadError
 	| SpecParseError
 	| CodegenError
+	| AdminGenerationError
 	| ConfigValidationError;

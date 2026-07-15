@@ -314,6 +314,14 @@ function parseSchema(
 					tsType,
 					required: required.includes(propName),
 					description: (ps.description as string) || undefined,
+					format: typeof ps.format === "string" ? ps.format : undefined,
+					minimum: typeof ps.minimum === "number" ? ps.minimum : undefined,
+					maximum: typeof ps.maximum === "number" ? ps.maximum : undefined,
+					minLength: typeof ps.minLength === "number" ? ps.minLength : undefined,
+					maxLength: typeof ps.maxLength === "number" ? ps.maxLength : undefined,
+					pattern: typeof ps.pattern === "string" ? ps.pattern : undefined,
+					readOnly: ps.readOnly === true ? true : undefined,
+					writeOnly: ps.writeOnly === true ? true : undefined,
 				});
 			}
 		}
@@ -473,6 +481,9 @@ function parseAllEndpoints(
 				operationId,
 				method: httpMethod,
 				path,
+				tags: Array.isArray(op.tags)
+					? op.tags.filter((tag): tag is string => typeof tag === "string")
+					: undefined,
 				summary: op.summary as string | undefined,
 				description,
 				pathParams,

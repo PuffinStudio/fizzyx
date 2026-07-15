@@ -271,6 +271,61 @@ src/api/
   └── api.ts          # tree-shakeable export functions + param types
 ```
 
+### Admin App
+
+Generate a standalone shadcn admin project with a typed fetch client and TanStack Query hooks:
+
+Prerequisites are Bun, Git, and network access to the framework and shadcn registries. pnpm is
+only needed for the guarded compatibility fallback.
+
+```sh
+fizzyx openapi admin \
+  --input ./openapi.json \
+  --output ./pet-admin \
+  --framework nextjs
+```
+
+URLs work as input too:
+
+```sh
+fizzyx openapi admin -i https://api.example.com/openapi.json -o ./admin --framework tanstack-start
+```
+
+Use `--framework tanstack-start` for TanStack Start, or add `--dry-run` to inspect the
+scaffold commands without creating files. The generator uses the official framework
+scaffolds, Bun and `bunx` by default, and only falls back to pnpm for a known Bun
+compatibility failure. It never invokes npm or npx.
+
+Generated admin projects include:
+
+- shadcn components installed with `shadcn add --all`
+- TanStack Table list pages with OpenAPI-aware pagination, search, filtering, and sorting
+- schema-driven TanStack Form create/edit pages with shadcn Field controls
+- detail/delete routes and a typed fetch + TanStack Query client
+- `NEXT_PUBLIC_API_BASE_URL` (Next.js) or `VITE_API_BASE_URL` (TanStack Start) support
+- `configureAdminApi({ token, headers, ... })` for runtime authentication configuration
+- `.fizzyx/admin-manifest.json` regeneration safety that preserves user-edited generated files
+
+The main generated structure is:
+
+```text
+src/
+  components/admin/       # shell, DataTable, DynamicForm, query provider
+  lib/api/generated/      # fetch runtime, types, endpoints, query hooks
+  lib/api/admin-api.ts    # environment and runtime API configuration
+  app/(admin)/            # Next.js routes (Next.js target)
+  routes/_admin/          # file routes (TanStack Start target)
+.fizzyx/admin-manifest.json
+```
+
+The output directory must be empty on the first run. Re-run the same command to update
+unchanged generated files; local edits are reported and preserved as conflicts.
+
+Resource inference intentionally targets tagged, conventional collection/member CRUD paths.
+Unmapped operations remain callable through the generated client and are reported as diagnostics.
+List parameter inference recognizes common page/offset/limit/search/sort names; custom envelopes,
+authorization UI, relationships, file inputs, and router-only TanStack projects are not inferred.
+
 ### Generated Runtime API
 
 ```ts

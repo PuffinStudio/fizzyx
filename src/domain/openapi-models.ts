@@ -35,6 +35,7 @@ export interface ParsedEndpoint {
 	operationId: string;
 	method: HttpMethod;
 	path: string;
+	tags?: string[];
 	summary?: string;
 	description?: string;
 	pathParams: PathParam[];
@@ -72,6 +73,14 @@ export interface ParsedProperty {
 	tsType: string;
 	required: boolean;
 	description?: string;
+	format?: string;
+	minimum?: number;
+	maximum?: number;
+	minLength?: number;
+	maxLength?: number;
+	pattern?: string;
+	readOnly?: boolean;
+	writeOnly?: boolean;
 }
 
 export interface GeneratedFile {
