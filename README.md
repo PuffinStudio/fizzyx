@@ -370,6 +370,10 @@ ambiguous authorization contracts, relationships, file inputs, and router-only T
 not inferred. `upstream-cookie` is parsed but remains disabled until an application-specific cookie
 rewrite policy is supplied; `server-cookie` is the safe generated default.
 
+For a complete local login + protected CRUD walkthrough, use
+[`examples/openapi-admin-auth`](./examples/openapi-admin-auth/README.md). It includes an OpenAPI
+document, a localhost-only Bun mock API, fixed demo credentials, and commands for both frameworks.
+
 ### Generated Runtime API
 
 ```ts
