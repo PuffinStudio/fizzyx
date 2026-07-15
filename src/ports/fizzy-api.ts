@@ -27,6 +27,11 @@ export interface FizzyApi {
 	triageCard: (number: CardNumber, columnId: string) => Effect.Effect<void, ApiError>;
 	untriageCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	comment: (number: CardNumber, body: string) => Effect.Effect<void, ApiError>;
+	updateComment: (
+		number: CardNumber,
+		commentId: string,
+		body: string,
+	) => Effect.Effect<void, ApiError>;
 	closeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	reopenCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
 	postponeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;

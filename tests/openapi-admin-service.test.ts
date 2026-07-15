@@ -28,7 +28,13 @@ test("falls back from a known Bun compatibility failure to pnpm without selectin
 					}),
 				);
 			}
-			if (argv[0] === "pnpm" && argv.includes("create")) mkdirSync(output, { recursive: true });
+			if (argv[0] === "pnpm" && argv.includes("create")) {
+				mkdirSync(output, { recursive: true });
+				writeFileSync(
+					join(output, "package.json"),
+					JSON.stringify({ scripts: { build: "next build" } }),
+				);
+			}
 			return Effect.succeed({ stdout: "", stderr: "" });
 		},
 	};

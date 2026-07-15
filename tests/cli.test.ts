@@ -271,6 +271,14 @@ test("flow comment-template is removed from public flow surface", async () => {
 	expect(stdout).not.toContain("comment-template");
 });
 
+test("flow comment supports editing an existing comment", async () => {
+	const { stdout, exitCode } = await runCli(["flow", "comment", "--help"]);
+
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("--edit");
+	expect(stdout).toContain("comment id");
+});
+
 test("flow repair supports kind-based help surface", async () => {
 	const steps = await runCli(["flow", "repair", "--kind", "steps", "--help"]);
 	const metadata = await runCli(["flow", "repair", "--kind", "metadata", "--help"]);

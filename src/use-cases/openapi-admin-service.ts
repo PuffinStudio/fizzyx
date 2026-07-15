@@ -15,7 +15,11 @@ import {
 	type AdminFramework,
 	type AdminPackageManager,
 } from "./openapi-admin-scaffold";
-import { writeAdminGeneratedFiles } from "./openapi-admin-manifest";
+import {
+	refreshAdminGeneratedFileHashes,
+	writeAdminGeneratedFiles,
+} from "./openapi-admin-manifest";
+import { configureAdminQualityScripts, planAdminQualityCommands } from "./openapi-admin-quality";
 
 export interface GenerateAdminProjectInput {
 	input: string;
@@ -60,11 +64,20 @@ const runScaffold = (
 					mkdirSync(dirname(destination), { recursive: true });
 					writeFileSync(destination, file.content);
 				}
+				configureAdminQualityScripts(outputDir);
 			},
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to bootstrap shadcn config", cause }),
 		});
 		for (const command of remaining) yield* runner.run(command.argv);
+	});
+
+const runQualityCommands = (packageManager: AdminPackageManager, outputDir: string) =>
+	Effect.gen(function* () {
+		const runner = yield* AdminProcessRunner;
+		for (const argv of planAdminQualityCommands(packageManager)) {
+			yield* runner.run(argv, outputDir);
+		}
 	});
 
 const validateProjectName = (name: string): void => {
@@ -169,6 +182,21 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to write admin project", cause }),
 		});
+		if (!manifestExists) {
+			yield* runQualityCommands(packageManager, outputDir);
+			yield* Effect.try({
+				try: () =>
+					refreshAdminGeneratedFileHashes(
+						outputDir,
+						files.map((file) => file.path),
+					),
+				catch: (cause) =>
+					new AdminGenerationError({
+						message: "failed to refresh formatted admin manifest",
+						cause,
+					}),
+			});
+		}
 
 		return {
 			outputDir,

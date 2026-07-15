@@ -49,7 +49,7 @@ test("plans a Bun-only official Next.js and shadcn scaffold", () => {
 		"--cwd",
 		"/tmp/pet-admin",
 	]);
-	expect(commands[3]?.argv).toEqual([
+	expect(commands.at(-1)?.argv).toEqual([
 		"bunx",
 		"--bun",
 		"shadcn@latest",
@@ -59,6 +59,9 @@ test("plans a Bun-only official Next.js and shadcn scaffold", () => {
 		"-c",
 		"/tmp/pet-admin",
 	]);
+	expect(
+		commands.some((command) => command.argv.join(" ").includes("add --dev oxlint oxfmt")),
+	).toBe(true);
 });
 
 test("plans a Bun-only official TanStack Start and shadcn scaffold", () => {
@@ -103,7 +106,12 @@ test("plans a Bun-only official TanStack Start and shadcn scaffold", () => {
 		targetDir: "/tmp/pet-admin",
 		packageManager: "bun",
 	});
-	expect(bootstrap.map((file) => file.path)).toEqual(["components.json", "src/lib/utils.ts"]);
+	expect(bootstrap.map((file) => file.path)).toEqual([
+		"components.json",
+		"src/lib/utils.ts",
+		".oxlintrc.json",
+		".oxfmtrc.json",
+	]);
 	expect(bootstrap[0]?.content).toContain('"css": "src/styles.css"');
 	expect(bootstrap[0]?.content).toContain('"rsc": false');
 	expect(commands.flatMap((command) => command.argv).join(" ")).not.toMatch(/\bnpm|\bnpx/);

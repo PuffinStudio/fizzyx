@@ -102,3 +102,16 @@ export const writeAdminGeneratedFiles = (
 	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 	return result;
 };
+
+export const refreshAdminGeneratedFileHashes = (root: string, paths: string[]): void => {
+	const manifest = loadManifest(root);
+	if (!manifest) return;
+	for (const path of paths) {
+		const relative = safeRelativePath(path);
+		const fullPath = join(root, relative);
+		if (manifest.files[relative] && existsSync(fullPath)) {
+			manifest.files[relative] = hash(readFileSync(fullPath, "utf8"));
+		}
+	}
+	writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, 2)}\n`);
+};

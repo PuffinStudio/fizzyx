@@ -1,3 +1,5 @@
+import { adminQualityBootstrapFiles } from "./openapi-admin-quality";
+
 export type AdminFramework = "nextjs" | "tanstack-start";
 export type AdminPackageManager = "bun" | "pnpm";
 
@@ -126,6 +128,13 @@ const shadcnComponentsCommand = (input: AdminScaffoldInput): AdminScaffoldComman
 	],
 });
 
+const qualityDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
+	argv:
+		input.packageManager === "bun"
+			? ["bun", "add", "--dev", "oxlint", "oxfmt", "--cwd", input.targetDir]
+			: ["pnpm", "add", "--save-dev", "oxlint", "oxfmt", "--dir", input.targetDir],
+});
+
 export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldCommand[] => {
 	const frameworkCommand =
 		input.framework === "nextjs" ? nextCommand(input) : tanstackStartCommand(input);
@@ -134,9 +143,15 @@ export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldComma
 				frameworkCommand,
 				shadcnCommand(input),
 				queryDependencyCommand(input),
+				qualityDependencyCommand(input),
 				shadcnComponentsCommand(input),
 			]
-		: [frameworkCommand, queryDependencyCommand(input), shadcnComponentsCommand(input)];
+		: [
+				frameworkCommand,
+				queryDependencyCommand(input),
+				qualityDependencyCommand(input),
+				shadcnComponentsCommand(input),
+			];
 };
 
 const tanstackComponentsConfig = `${JSON.stringify(
@@ -181,5 +196,6 @@ export const planAdminScaffoldBootstrap = (
 		? [
 				{ path: "components.json", content: tanstackComponentsConfig },
 				{ path: "src/lib/utils.ts", content: tanstackUtils },
+				...adminQualityBootstrapFiles(input.framework),
 			]
-		: [];
+		: adminQualityBootstrapFiles(input.framework);
