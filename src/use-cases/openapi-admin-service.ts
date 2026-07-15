@@ -17,10 +17,15 @@ import {
 	type AdminPackageManager,
 } from "./openapi-admin-scaffold";
 import {
+	readAdminManifestMetadata,
 	refreshAdminGeneratedFileHashes,
 	writeAdminGeneratedFiles,
 } from "./openapi-admin-manifest";
-import { configureAdminQualityScripts, planAdminQualityCommands } from "./openapi-admin-quality";
+import {
+	configureAdminQualityScripts,
+	planAdminQualityCommands,
+	planAdminTargetedQualityCommands,
+} from "./openapi-admin-quality";
 
 export interface GenerateAdminProjectInput {
 	input: string;
@@ -82,6 +87,18 @@ const runQualityCommands = (packageManager: AdminPackageManager, outputDir: stri
 		}
 	});
 
+const runTargetedQualityCommands = (
+	packageManager: AdminPackageManager,
+	outputDir: string,
+	paths: string[],
+) =>
+	Effect.gen(function* () {
+		const runner = yield* AdminProcessRunner;
+		for (const argv of planAdminTargetedQualityCommands(packageManager, paths)) {
+			yield* runner.run(argv, outputDir);
+		}
+	});
+
 const validateProjectName = (name: string): void => {
 	if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
 		throw new AdminGenerationError({
@@ -113,7 +130,8 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 				? client.spec
 				: { ...client.spec, admin: { ...client.spec.admin, auth: input.auth } };
 		const plan = planAdminApp(spec);
-		let packageManager: AdminPackageManager = "bun";
+		let packageManager: AdminPackageManager =
+			readAdminManifestMetadata(outputDir)?.packageManager ?? "bun";
 		let scaffold = planAdminScaffold({
 			framework: input.framework,
 			projectName,
@@ -189,21 +207,19 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to write admin project", cause }),
 		});
-		if (!manifestExists) {
+		if (manifestExists) {
+			yield* runTargetedQualityCommands(packageManager, outputDir, writeResult.written);
+		} else {
 			yield* runQualityCommands(packageManager, outputDir);
-			yield* Effect.try({
-				try: () =>
-					refreshAdminGeneratedFileHashes(
-						outputDir,
-						files.map((file) => file.path),
-					),
-				catch: (cause) =>
-					new AdminGenerationError({
-						message: "failed to refresh formatted admin manifest",
-						cause,
-					}),
-			});
 		}
+		yield* Effect.try({
+			try: () => refreshAdminGeneratedFileHashes(outputDir, writeResult.written),
+			catch: (cause) =>
+				new AdminGenerationError({
+					message: "failed to refresh formatted admin manifest",
+					cause,
+				}),
+		});
 
 		return {
 			outputDir,

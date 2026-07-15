@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import {
 	configureAdminQualityScripts,
 	planAdminQualityCommands,
+	planAdminTargetedQualityCommands,
 } from "../src/use-cases/openapi-admin-quality";
 
 test("adds OXC quality scripts without removing official scaffold scripts", () => {
@@ -40,5 +41,25 @@ test("plans package-manager-consistent post-generation fixes", () => {
 	expect(planAdminQualityCommands("pnpm")).toEqual([
 		["pnpm", "run", "fmt"],
 		["pnpm", "run", "lint:fix"],
+	]);
+});
+
+test("plans regeneration fixes for generated source files only", () => {
+	const paths = [
+		"src/generated/admin-plan.ts",
+		"src/app/(admin)/pets/page.tsx",
+		".agents/skills/admin/SKILL.md",
+		".env.example",
+	];
+	expect(planAdminTargetedQualityCommands("bun", paths)).toEqual([
+		["bunx", "oxfmt", "src/generated/admin-plan.ts", "src/app/(admin)/pets/page.tsx"],
+		["bunx", "oxlint", "src/generated/admin-plan.ts", "src/app/(admin)/pets/page.tsx", "--fix"],
+	]);
+	expect(planAdminTargetedQualityCommands("pnpm", paths)[0]).toEqual([
+		"pnpm",
+		"exec",
+		"oxfmt",
+		"src/generated/admin-plan.ts",
+		"src/app/(admin)/pets/page.tsx",
 	]);
 });

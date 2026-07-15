@@ -60,3 +60,20 @@ export const planAdminQualityCommands = (packageManager: AdminPackageManager): s
 				["pnpm", "run", "fmt"],
 				["pnpm", "run", "lint:fix"],
 			];
+
+export const planAdminTargetedQualityCommands = (
+	packageManager: AdminPackageManager,
+	paths: string[],
+): string[][] => {
+	const sourcePaths = paths.filter((path) => /\.[cm]?[jt]sx?$/.test(path));
+	if (!sourcePaths.length) return [];
+	return packageManager === "bun"
+		? [
+				["bunx", "oxfmt", ...sourcePaths],
+				["bunx", "oxlint", ...sourcePaths, "--fix"],
+			]
+		: [
+				["pnpm", "exec", "oxfmt", ...sourcePaths],
+				["pnpm", "exec", "oxlint", ...sourcePaths, "--fix"],
+			];
+};

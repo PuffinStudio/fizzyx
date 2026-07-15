@@ -49,6 +49,17 @@ const loadManifest = (root: string): AdminManifest | undefined => {
 	}
 };
 
+export const readAdminManifestMetadata = (root: string): AdminManifestMetadata | undefined => {
+	const manifest = loadManifest(root);
+	if (!manifest) return undefined;
+	return {
+		framework: manifest.framework,
+		packageManager: manifest.packageManager,
+		specFingerprint: manifest.specFingerprint,
+		specSource: manifest.specSource,
+	};
+};
+
 export const writeAdminGeneratedFiles = (
 	root: string,
 	files: GeneratedFile[],
@@ -102,7 +113,7 @@ export const writeAdminGeneratedFiles = (
 	};
 	const manifestPath = join(root, MANIFEST_PATH);
 	mkdirSync(dirname(manifestPath), { recursive: true });
-	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, "\t")}\n`);
 	return result;
 };
 
@@ -116,5 +127,5 @@ export const refreshAdminGeneratedFileHashes = (root: string, paths: string[]): 
 			manifest.files[relative] = hash(readFileSync(fullPath, "utf8"));
 		}
 	}
-	writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, 2)}\n`);
+	writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, "\t")}\n`);
 };

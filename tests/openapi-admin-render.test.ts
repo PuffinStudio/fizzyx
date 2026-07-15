@@ -16,7 +16,10 @@ const plan: AdminAppPlan = {
 			label: "Pets",
 			path: "/pets",
 			idParam: "petId",
-			columns: [{ name: "name", tsType: "string", required: true }],
+			columns: [
+				{ name: "id", tsType: "string", required: true },
+				{ name: "name", tsType: "string", required: true },
+			],
 			fields: [
 				{
 					name: "name",
@@ -144,6 +147,7 @@ test("renders native TanStack Start file routes backed by generated query hooks"
 test("renders Next.js create, detail, and edit experiences for mapped CRUD operations", () => {
 	const files = renderAdminApp(plan, "nextjs");
 	const paths = files.map((file) => file.path);
+	const listPage = files.find((file) => file.path === "src/app/(admin)/pets/page.tsx")?.content;
 
 	expect(paths).toContain("src/components/admin/dynamic-form.tsx");
 	expect(paths).toContain("src/app/(admin)/pets/new/page.tsx");
@@ -151,6 +155,9 @@ test("renders Next.js create, detail, and edit experiences for mapped CRUD opera
 	expect(paths).toContain("src/app/(admin)/pets/[id]/edit/page.tsx");
 	expect(files.find((file) => file.path.endsWith("[id]/page.tsx"))?.content).toContain(
 		"useDeletePet",
+	);
+	expect(files.find((file) => file.path.endsWith("[id]/page.tsx"))?.content).toContain(
+		'router.replace("/pets")',
 	);
 	const dynamicForm = files.find((file) => file.path.endsWith("admin/dynamic-form.tsx"))?.content;
 	expect(dynamicForm).toContain('from "@tanstack/react-form"');
@@ -161,16 +168,30 @@ test("renders Next.js create, detail, and edit experiences for mapped CRUD opera
 	expect(files.find((file) => file.path.endsWith("[id]/edit/page.tsx"))?.content).toContain(
 		"initialValue={(detail.data ?? {}) as Record<string, unknown>}",
 	);
+	expect(listPage).toContain("New Pets");
+	expect(listPage).toContain("View");
+	expect(listPage).toContain("Edit");
+	expect(listPage).toContain("renderRowActions");
+	expect(listPage).toContain('row["id"]');
 });
 
 test("renders TanStack Start create, detail, and edit file routes for mapped CRUD operations", () => {
 	const files = renderAdminApp(plan, "tanstack-start");
 	const paths = files.map((file) => file.path);
+	const listRoute = files.find((file) => file.path === "src/routes/_admin/pets/index.tsx")?.content;
 
 	expect(paths).toContain("src/routes/_admin/pets/new.tsx");
 	expect(paths).toContain("src/routes/_admin/pets/$id.tsx");
 	expect(paths).toContain("src/routes/_admin/pets/$id.edit.tsx");
 	expect(files.find((file) => file.path.endsWith("$id.tsx"))?.content).toContain("useDeletePet");
+	expect(files.find((file) => file.path.endsWith("$id.tsx"))?.content).toContain(
+		'await navigate({ to: "/pets" })',
+	);
+	expect(listRoute).toContain("New Pets");
+	expect(listRoute).toContain("View");
+	expect(listRoute).toContain("Edit");
+	expect(listRoute).toContain("renderRowActions");
+	expect(listRoute).toContain('row["id"]');
 });
 
 const authenticatedPlan: AdminAppPlan = {
@@ -220,6 +241,9 @@ test("renders server-cookie login, guard, and BFF routes for Next.js", () => {
 	expect(files.find((file) => file.path.endsWith("admin-shell.tsx"))?.content).toContain(
 		"Sign out",
 	);
+	expect(files.find((file) => file.path.endsWith("login/page.tsx"))?.content).toContain(
+		'<form method="post"',
+	);
 });
 
 test("renders server-cookie login, guard, and BFF routes for TanStack Start", () => {
@@ -240,5 +264,8 @@ test("renders server-cookie login, guard, and BFF routes for TanStack Start", ()
 	);
 	expect(files.find((file) => file.path === "src/routes/api/admin/$.ts")?.content).toContain(
 		"encodeURIComponent(decodeURIComponent(segment))",
+	);
+	expect(files.find((file) => file.path === "src/routes/login.tsx")?.content).toContain(
+		'<form method="post"',
 	);
 });

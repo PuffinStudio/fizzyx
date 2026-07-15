@@ -50,6 +50,17 @@ test("falls back from a known Bun compatibility failure to pnpm without selectin
 		expect(result.packageManager).toBe("pnpm");
 		expect(commands.some((argv) => argv[0] === "pnpm")).toBe(true);
 		expect(commands.flat().join(" ")).not.toMatch(/\bnpm\b|\bnpx\b/);
+
+		commands.length = 0;
+		const regenerated = await Effect.runPromise(
+			generateAdminProject({ input: fixture, output, framework: "nextjs" }).pipe(
+				Effect.provideService(AdminProcessRunner, runner),
+				Effect.provide(GeneratorRegistryLive),
+			),
+		);
+		expect(regenerated.packageManager).toBe("pnpm");
+		expect(commands.some((argv) => argv.slice(0, 3).join(" ") === "pnpm exec oxfmt")).toBe(true);
+		expect(commands.flat()).not.toContain(".");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

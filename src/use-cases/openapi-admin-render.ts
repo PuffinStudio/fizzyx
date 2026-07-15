@@ -175,6 +175,55 @@ const listTableValues = (resource: AdminResourcePlan) => {
 	};
 };
 
+const listRowIdKey = (resource: AdminResourcePlan): string => {
+	const pathParam = resource.idParam ?? "id";
+	if (resource.columns.some((column) => column.name === pathParam)) return pathParam;
+	return resource.columns.find((column) => column.name.toLowerCase() === "id")?.name ?? pathParam;
+};
+
+const nextListNavigationValues = (resource: AdminResourcePlan) => {
+	const canCreate = Boolean(resource.operations.create);
+	const canView = Boolean(resource.operations.detail);
+	const canEdit = Boolean(resource.operations.update);
+	const hasActions = canCreate || canView || canEdit;
+	const idKey = listRowIdKey(resource);
+	const rowActions =
+		canView || canEdit
+			? ` renderRowActions={(row) => { const value = row[${JSON.stringify(idKey)}]; if (value == null) return null; const id = encodeURIComponent(String(value)); return <div className="flex items-center gap-2">${canView ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}\`}>View</Link>` : ""}${canEdit ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}/edit\`}>Edit</Link>` : ""}</div> }}`
+			: "";
+	return {
+		FIZZYX_NAV_IMPORTS: hasActions
+			? 'import Link from "next/link"\nimport { buttonVariants } from "@/components/ui/button"\n'
+			: "",
+		FIZZYX_CREATE_ACTION: canCreate
+			? `<Link className={buttonVariants()} href=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
+			: "",
+		FIZZYX_ROW_ACTIONS: rowActions,
+	};
+};
+
+const tanstackListNavigationValues = (resource: AdminResourcePlan) => {
+	const canCreate = Boolean(resource.operations.create);
+	const canView = Boolean(resource.operations.detail);
+	const canEdit = Boolean(resource.operations.update);
+	const hasActions = canCreate || canView || canEdit;
+	const idKey = listRowIdKey(resource);
+	const rowActions =
+		canView || canEdit
+			? ` renderRowActions={(row) => { const value = row[${JSON.stringify(idKey)}]; if (value == null) return null; const id = String(value); return <div className="flex items-center gap-2">${canView ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} to=${JSON.stringify(`/${resource.id}/$id`)} params={{ id }}>View</Link>` : ""}${canEdit ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} to=${JSON.stringify(`/${resource.id}/$id/edit`)} params={{ id }}>Edit</Link>` : ""}</div> }}`
+			: "";
+	return {
+		FIZZYX_ROUTER_IMPORTS: hasActions ? ", Link" : "",
+		FIZZYX_BUTTON_IMPORT: hasActions
+			? 'import { buttonVariants } from "@/components/ui/button"\n'
+			: "",
+		FIZZYX_CREATE_ACTION: canCreate
+			? `<Link className={buttonVariants()} to=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
+			: "",
+		FIZZYX_ROW_ACTIONS: rowActions,
+	};
+};
+
 const renderNextList = (resource: AdminResourcePlan): GeneratedFile | undefined => {
 	const operation = resource.operations.list;
 	if (!operation) return undefined;
@@ -187,6 +236,7 @@ const renderNextList = (resource: AdminResourcePlan): GeneratedFile | undefined 
 			FIZZYX_COLUMNS: columnsLiteral(resource),
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("", resource),
+			...nextListNavigationValues(resource),
 			...tableValues,
 		}),
 	};
@@ -212,6 +262,7 @@ const detailValues = (resource: AdminResourcePlan, framework: AdminFramework) =>
 	const detailHook = hookName(detail.operationId);
 	const remove = resource.operations.delete;
 	const deleteHook = remove ? hookName(remove.operationId) : undefined;
+	const listRoute = JSON.stringify(`/${resource.id}`);
 	return {
 		FIZZYX_ROUTE: JSON.stringify(`/_admin/${resource.id}/$id`),
 		FIZZYX_HOOK_IMPORTS: [detailHook, deleteHook].filter(Boolean).join(", "),
@@ -219,9 +270,21 @@ const detailValues = (resource: AdminResourcePlan, framework: AdminFramework) =>
 		FIZZYX_LABEL: JSON.stringify(resource.label),
 		FIZZYX_COMPONENT_NAME: componentName("", resource),
 		FIZZYX_DETAIL_HOOK: detailHook,
+		FIZZYX_ROUTER_IMPORTS: deleteHook
+			? framework === "nextjs"
+				? ", useRouter"
+				: ", useNavigate"
+			: "",
+		FIZZYX_NAV_DECLARATION: deleteHook
+			? framework === "nextjs"
+				? "const router = useRouter()"
+				: "const navigate = useNavigate()"
+			: "",
 		FIZZYX_DELETE_DECLARATION: deleteHook ? `const remove = ${deleteHook}()` : "",
 		FIZZYX_DELETE_BUTTON: deleteHook
-			? '<Button variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate(params as never)}>Delete</Button>'
+			? framework === "nextjs"
+				? `<Button variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); router.replace(${listRoute}); router.refresh() }}>Delete</Button>`
+				: `<Button variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); await navigate({ to: ${listRoute} }) }}>Delete</Button>`
 			: "",
 		framework,
 	};
@@ -277,6 +340,7 @@ const renderTanstackList = (resource: AdminResourcePlan): GeneratedFile | undefi
 			FIZZYX_COLUMNS: columnsLiteral(resource),
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("", resource),
+			...tanstackListNavigationValues(resource),
 			...tableValues,
 		}),
 	};

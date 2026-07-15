@@ -157,7 +157,7 @@ export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldComma
 const tanstackComponentsConfig = `${JSON.stringify(
 	{
 		$schema: "https://ui.shadcn.com/schema.json",
-		style: "new-york",
+		style: "base-nova",
 		rsc: false,
 		tsx: true,
 		tailwind: {

@@ -114,5 +114,6 @@ test("plans a Bun-only official TanStack Start and shadcn scaffold", () => {
 	]);
 	expect(bootstrap[0]?.content).toContain('"css": "src/styles.css"');
 	expect(bootstrap[0]?.content).toContain('"rsc": false');
+	expect(bootstrap[0]?.content).toContain('"style": "base-nova"');
 	expect(commands.flatMap((command) => command.argv).join(" ")).not.toMatch(/\bnpm|\bnpx/);
 });

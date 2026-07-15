@@ -29,12 +29,10 @@ test("preserves a user-modified generated file and reports a regeneration confli
 
 		expect(second.conflicts).toEqual(["src/generated/page.tsx"]);
 		expect(readFileSync(generatedPath, "utf8")).toBe("user edit\n");
-		expect(readFileSync(join(root, ".fizzyx/admin-manifest.json"), "utf8")).toContain(
-			'"framework": "nextjs"',
-		);
-		expect(readFileSync(join(root, ".fizzyx/admin-manifest.json"), "utf8")).toContain(
-			'"specSource": "./openapi.yaml"',
-		);
+		const manifest = readFileSync(join(root, ".fizzyx/admin-manifest.json"), "utf8");
+		expect(manifest).toContain('"framework": "nextjs"');
+		expect(manifest).toContain('"specSource": "./openapi.yaml"');
+		expect(manifest).toStartWith('{\n\t"version"');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

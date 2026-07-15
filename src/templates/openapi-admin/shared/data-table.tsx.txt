@@ -2,7 +2,7 @@
 
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import {
   flexRender,
   getCoreRowModel,
@@ -35,7 +35,7 @@ export interface AdminDataTableState {
   globalFilter: string
 }
 
-export function AdminDataTable({ data, columns, loading, error, onRetry, mode = "client", rowCount, state, onStateChange }: {
+export function AdminDataTable({ data, columns, loading, error, onRetry, mode = "client", rowCount, state, onStateChange, renderRowActions }: {
   data: unknown
   columns: readonly AdminColumnDefinition[]
   loading: boolean
@@ -45,6 +45,7 @@ export function AdminDataTable({ data, columns, loading, error, onRetry, mode = 
   rowCount?: number
   state?: AdminDataTableState
   onStateChange?: (state: AdminDataTableState) => void
+  renderRowActions?: (row: Record<string, unknown>) => ReactNode
 }) {
   const [localPagination, setLocalPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 20 })
   const [localSorting, setLocalSorting] = useState<SortingState>([])
@@ -55,13 +56,17 @@ export function AdminDataTable({ data, columns, loading, error, onRetry, mode = 
   const columnFilters = state?.columnFilters ?? localFilters
   const globalFilter = state?.globalFilter ?? localGlobalFilter
   const rows = Array.isArray(data) ? data as Array<Record<string, unknown>> : []
-  const tableColumns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => columns.map((column) => ({
-    accessorKey: column.key,
-    enableSorting: column.sortable ?? true,
-    enableColumnFilter: column.filterable ?? true,
-    header: ({ column: tableColumn }) => <Button variant="ghost" className="-ml-3" onClick={() => tableColumn.toggleSorting(tableColumn.getIsSorted() === "asc")}>{column.label}</Button>,
-    cell: ({ getValue }) => String(getValue() ?? "—"),
-  })), [columns])
+  const tableColumns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
+    const valueColumns: ColumnDef<Record<string, unknown>>[] = columns.map((column) => ({
+      accessorKey: column.key,
+      enableSorting: column.sortable ?? true,
+      enableColumnFilter: column.filterable ?? true,
+      header: ({ column: tableColumn }) => <Button variant="ghost" className="-ml-3" onClick={() => tableColumn.toggleSorting(tableColumn.getIsSorted() === "asc")}>{column.label}</Button>,
+      cell: ({ getValue }) => String(getValue() ?? "—"),
+    }))
+    if (renderRowActions) valueColumns.push({ id: "actions", header: "Actions", enableSorting: false, enableColumnFilter: false, cell: ({ row }) => renderRowActions(row.original) })
+    return valueColumns
+  }, [columns, renderRowActions])
   const publish = (next: Partial<AdminDataTableState>) => onStateChange?.({ pagination, sorting, columnFilters, globalFilter, ...next })
   const table = useReactTable({
     data: rows,

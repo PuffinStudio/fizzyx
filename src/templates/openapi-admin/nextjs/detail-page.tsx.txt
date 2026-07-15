@@ -2,13 +2,14 @@
 
 "use client"
 
-import { useParams } from "next/navigation"
+import { useParams{{FIZZYX_ROUTER_IMPORTS}} } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { {{FIZZYX_HOOK_IMPORTS}} } from "@/lib/api/generated"
 
 const apiIdParam = {{FIZZYX_ID_PARAM}}
 const resourceLabel = {{FIZZYX_LABEL}}
 export default function {{FIZZYX_COMPONENT_NAME}}() {
+  {{FIZZYX_NAV_DECLARATION}}
   const routeParams = useParams<{ id: string }>()
   const params = { [apiIdParam]: routeParams.id as never }
   const query = {{FIZZYX_DETAIL_HOOK}}(params as never)
