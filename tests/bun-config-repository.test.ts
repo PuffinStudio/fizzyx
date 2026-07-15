@@ -364,6 +364,8 @@ test("loadProjectConfig parses optional OpenAPI admin defaults and auth override
     input: ./openapi.yaml
     output: ./apps/admin
     framework: nextjs
+    preset: customPreset123
+    create_mode: dialog
     auth:
       mode: server-cookie
       login_operation_id: authLogin
@@ -382,6 +384,8 @@ test("loadProjectConfig parses optional OpenAPI admin defaults and auth override
 			input: "./openapi.yaml",
 			output: "./apps/admin",
 			framework: "nextjs",
+			preset: "customPreset123",
+			createMode: "dialog",
 			auth: {
 				mode: "server-cookie",
 				loginOperationId: "authLogin",

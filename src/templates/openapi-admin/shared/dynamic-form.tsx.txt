@@ -31,6 +31,7 @@ function validateField(definition: AdminFormFieldDefinition, value: unknown): { 
   if (definition.required && (value === undefined || value === null || value === "")) return { message: `${definition.label} is required.` }
   if (typeof value === "string" && definition.minLength !== undefined && value.length < definition.minLength) return { message: `${definition.label} must be at least ${definition.minLength} characters.` }
   if (typeof value === "string" && definition.maxLength !== undefined && value.length > definition.maxLength) return { message: `${definition.label} must be at most ${definition.maxLength} characters.` }
+  if (typeof value === "string" && definition.pattern !== undefined && value !== "" && !new RegExp(definition.pattern).test(value)) return { message: `${definition.label} has an invalid format.` }
   if (typeof value === "number" && definition.minimum !== undefined && value < definition.minimum) return { message: `${definition.label} must be at least ${definition.minimum}.` }
   if (typeof value === "number" && definition.maximum !== undefined && value > definition.maximum) return { message: `${definition.label} must be at most ${definition.maximum}.` }
   return undefined
@@ -46,9 +47,9 @@ export function DynamicForm<TValue extends Record<string, unknown>>({ fields, in
 }) {
   const form = useForm({ defaultValues: initialValue, onSubmit: async ({ value }) => onSubmit(value) })
   useEffect(() => form.reset(initialValue), [form, initialValue])
-  return <form className="space-y-6" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); void form.handleSubmit() }}>
+  return <form className="space-y-6" noValidate onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); void form.handleSubmit() }}>
     <div className="grid gap-5 md:grid-cols-2">{fields.map((definition) => <form.Field key={definition.name} name={definition.name} validators={{ onChange: ({ value }) => validateField(definition, value) }}>{(field) => {
-      const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+      const invalid = field.state.meta.errors.length > 0
       const common = { id: field.name, name: field.name, onBlur: field.handleBlur, "aria-invalid": invalid }
       // Runtime field schemas are dynamic, so bridge their unknown values to TanStack Form's static DeepValue type here.
       const handleChange = (value: unknown) => field.handleChange(value as never)

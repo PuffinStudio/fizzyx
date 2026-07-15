@@ -19,6 +19,7 @@ import { renderAdminApp } from "./openapi-admin-render";
 import {
 	planAdminScaffold,
 	planAdminScaffoldBootstrap,
+	FIZZYX_ADMIN_PRESET,
 	type AdminScaffoldBootstrapFile,
 	type AdminScaffoldCommand,
 	type AdminFramework,
@@ -41,6 +42,8 @@ export interface GenerateAdminProjectInput {
 	framework: AdminFramework;
 	dryRun?: boolean;
 	auth?: ParsedAdminAuthConfig;
+	preset?: string;
+	createMode?: "page" | "dialog";
 }
 
 export interface GenerateAdminProjectResult {
@@ -162,19 +165,23 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 				? client.spec
 				: { ...client.spec, admin: { ...client.spec.admin, auth: input.auth } };
 		const plan = planAdminApp(spec);
-		let packageManager: AdminPackageManager =
-			readAdminManifestMetadata(outputDir)?.packageManager ?? "bun";
+		const manifestMetadata = readAdminManifestMetadata(outputDir);
+		let packageManager: AdminPackageManager = manifestMetadata?.packageManager ?? "bun";
+		const preset = input.preset ?? manifestMetadata?.preset ?? FIZZYX_ADMIN_PRESET;
+		const createMode = input.createMode ?? manifestMetadata?.createMode ?? "page";
 		let scaffold = planAdminScaffold({
 			framework: input.framework,
 			projectName,
 			targetDir: outputDir,
 			packageManager,
+			preset,
 		});
 		let bootstrap = planAdminScaffoldBootstrap({
 			framework: input.framework,
 			projectName,
 			targetDir: outputDir,
 			packageManager,
+			preset,
 		});
 		const commands = scaffold.map((command) => command.argv);
 
@@ -192,6 +199,14 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 		}
 
 		const manifestExists = existsSync(`${outputDir}/.fizzyx/admin-manifest.json`);
+		if (manifestExists && input.preset && input.preset !== manifestMetadata?.preset) {
+			return yield* Effect.fail(
+				new AdminGenerationError({
+					message:
+						"cannot safely replace the shadcn preset during regeneration because component files may be user-owned; generate a new output or apply the preset manually after reviewing the shadcn diff",
+				}),
+			);
+		}
 		if (existsSync(outputDir) && readdirSync(outputDir).length > 0 && !manifestExists) {
 			return yield* Effect.fail(
 				new AdminGenerationError({ message: `output directory is not empty: ${outputDir}` }),
@@ -209,12 +224,14 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 						projectName,
 						targetDir: outputDir,
 						packageManager,
+						preset,
 					});
 					bootstrap = planAdminScaffoldBootstrap({
 						framework: input.framework,
 						projectName,
 						targetDir: outputDir,
 						packageManager,
+						preset,
 					});
 					return runScaffold(scaffold, bootstrap, outputDir);
 				}),
@@ -233,7 +250,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 
 		const files = [
 			...prefixed("src/lib/api/generated", client.files),
-			...renderAdminApp(plan, input.framework),
+			...renderAdminApp(plan, input.framework, { createMode }),
 		];
 		const specFingerprint = new Bun.CryptoHasher("sha256")
 			.update(JSON.stringify(spec))
@@ -245,6 +262,8 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 					packageManager,
 					specFingerprint,
 					specSource: input.input,
+					preset,
+					createMode,
 				}),
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to write admin project", cause }),

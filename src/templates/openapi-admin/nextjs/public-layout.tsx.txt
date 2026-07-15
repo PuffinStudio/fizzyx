@@ -3,9 +3,10 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { adminPlan } from "@/generated/admin-plan"
+import { AdminThemeProvider } from "@/components/admin/theme-provider"
 
 export const metadata: Metadata = { title: `Sign In · ${adminPlan.title}` }
 
 export default function PublicLayout({ children }: { children: ReactNode }) {
-  return children
+  return <AdminThemeProvider>{children}</AdminThemeProvider>
 }

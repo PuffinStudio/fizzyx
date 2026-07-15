@@ -11,6 +11,8 @@ interface AdminManifest {
 	packageManager: AdminPackageManager;
 	specFingerprint: string;
 	specSource?: string;
+	preset?: string;
+	createMode?: "page" | "dialog";
 	files: Record<string, string>;
 }
 
@@ -19,6 +21,8 @@ export interface AdminManifestMetadata {
 	packageManager: AdminPackageManager;
 	specFingerprint: string;
 	specSource?: string;
+	preset?: string;
+	createMode?: "page" | "dialog";
 }
 
 export interface AdminWriteResult {
@@ -57,6 +61,8 @@ export const readAdminManifestMetadata = (root: string): AdminManifestMetadata |
 		packageManager: manifest.packageManager,
 		specFingerprint: manifest.specFingerprint,
 		specSource: manifest.specSource,
+		preset: manifest.preset,
+		createMode: manifest.createMode,
 	};
 };
 
@@ -109,6 +115,8 @@ export const writeAdminGeneratedFiles = (
 		packageManager: metadata.packageManager,
 		specFingerprint: metadata.specFingerprint,
 		specSource: metadata.specSource ?? previous?.specSource,
+		preset: metadata.preset ?? previous?.preset,
+		createMode: metadata.createMode ?? previous?.createMode,
 		files: nextHashes,
 	};
 	const manifestPath = join(root, MANIFEST_PATH);

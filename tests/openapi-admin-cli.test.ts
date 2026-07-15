@@ -22,6 +22,8 @@ test("openapi admin help documents the project generation contract", async () =>
 	expect(stdout).toContain("--input");
 	expect(stdout).toContain("--output");
 	expect(stdout).toContain("--framework");
+	expect(stdout).toContain("--preset");
+	expect(stdout).toContain("--create-mode");
 });
 
 test("openapi admin dry-run plans Bun commands without creating the project", async () => {
@@ -55,6 +57,10 @@ test("openapi admin dry-run plans Bun commands without creating the project", as
 				output,
 				"--framework",
 				"nextjs",
+				"--preset",
+				"customPreset123",
+				"--create-mode",
+				"dialog",
 				"--dry-run",
 			],
 			{ cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe" },
@@ -63,6 +69,7 @@ test("openapi admin dry-run plans Bun commands without creating the project", as
 
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("bun create next-app@latest");
+		expect(stdout).toContain("--preset customPreset123");
 		expect(stdout).not.toMatch(/\bnpm|\bnpx/);
 		expect(await Bun.file(output).exists()).toBe(false);
 	} finally {
@@ -86,7 +93,7 @@ test("openapi admin can use optional project defaults without CLI flags", async 
 		);
 		writeFileSync(
 			join(root, ".fizzyx.yaml"),
-			`openapi:\n  admin:\n    input: ${specPath}\n    output: ${output}\n    framework: tanstack-start\n`,
+			`openapi:\n  admin:\n    input: ${specPath}\n    output: ${output}\n    framework: tanstack-start\n    preset: configuredPreset456\n    create_mode: dialog\n`,
 		);
 		const proc = Bun.spawn(["bun", "run", entry, "openapi", "admin", "--dry-run"], {
 			cwd: root,
@@ -97,6 +104,7 @@ test("openapi admin can use optional project defaults without CLI flags", async 
 
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("@tanstack/cli@latest");
+		expect(stdout).toContain("--preset configuredPreset456");
 		expect(await Bun.file(output).exists()).toBe(false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });

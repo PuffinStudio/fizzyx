@@ -15,6 +15,8 @@ test("preserves a user-modified generated file and reports a regeneration confli
 				packageManager: "bun",
 				specFingerprint: "spec-v1",
 				specSource: "./openapi.yaml",
+				preset: "preset123",
+				createMode: "dialog",
 			},
 		);
 		expect(first.conflicts).toEqual([]);
@@ -32,6 +34,8 @@ test("preserves a user-modified generated file and reports a regeneration confli
 		const manifest = readFileSync(join(root, ".fizzyx/admin-manifest.json"), "utf8");
 		expect(manifest).toContain('"framework": "nextjs"');
 		expect(manifest).toContain('"specSource": "./openapi.yaml"');
+		expect(manifest).toContain('"preset": "preset123"');
+		expect(manifest).toContain('"createMode": "dialog"');
 		expect(manifest).toStartWith('{\n\t"version"');
 	} finally {
 		rmSync(root, { recursive: true, force: true });

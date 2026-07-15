@@ -8,6 +8,7 @@ export interface AdminScaffoldInput {
 	projectName: string;
 	targetDir: string;
 	packageManager: AdminPackageManager;
+	preset?: string;
 }
 
 export interface AdminScaffoldCommand {
@@ -18,6 +19,13 @@ export interface AdminScaffoldBootstrapFile {
 	path: string;
 	content: string;
 }
+
+// Base UI + Mira, Mist, Indigo, Cyan charts, Inter, medium radius, inverted menu.
+// Inspect with: bunx --bun shadcn@latest preset decode b1tNoIJIf
+export const FIZZYX_ADMIN_PRESET = "b1tNoIJIf";
+
+const shadcnRunner = (packageManager: AdminPackageManager): string[] =>
+	packageManager === "bun" ? ["bunx", "--bun"] : ["pnpm", "dlx"];
 
 const nextCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
 	argv:
@@ -58,10 +66,27 @@ const nextCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
 
 const shadcnCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
 	argv: [
-		...(input.packageManager === "bun" ? ["bunx", "--bun"] : ["pnpm", "dlx"]),
+		...shadcnRunner(input.packageManager),
 		"shadcn@latest",
 		"init",
-		"-d",
+		"--base",
+		"base",
+		"--preset",
+		input.preset ?? FIZZYX_ADMIN_PRESET,
+		"-y",
+		"-c",
+		input.targetDir,
+	],
+});
+
+const shadcnApplyPresetCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
+	argv: [
+		...shadcnRunner(input.packageManager),
+		"shadcn@latest",
+		"apply",
+		"--preset",
+		input.preset ?? FIZZYX_ADMIN_PRESET,
+		"-y",
 		"-c",
 		input.targetDir,
 	],
@@ -118,7 +143,7 @@ const queryDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldCommand
 
 const shadcnComponentsCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
 	argv: [
-		...(input.packageManager === "bun" ? ["bunx", "--bun"] : ["pnpm", "dlx"]),
+		...shadcnRunner(input.packageManager),
 		"shadcn@latest",
 		"add",
 		"--all",
@@ -150,6 +175,7 @@ export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldComma
 				frameworkCommand,
 				queryDependencyCommand(input),
 				qualityDependencyCommand(input),
+				shadcnApplyPresetCommand(input),
 				shadcnComponentsCommand(input),
 			];
 };
@@ -157,13 +183,13 @@ export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldComma
 const tanstackComponentsConfig = `${JSON.stringify(
 	{
 		$schema: "https://ui.shadcn.com/schema.json",
-		style: "base-nova",
+		style: "base-mira",
 		rsc: false,
 		tsx: true,
 		tailwind: {
 			config: "",
 			css: "src/styles.css",
-			baseColor: "neutral",
+			baseColor: "mist",
 			cssVariables: true,
 			prefix: "",
 		},

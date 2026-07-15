@@ -6,6 +6,7 @@ import type { ReactNode } from "react"
 import { Boxes, Database, LogOut, ShieldCheck } from "lucide-react"
 import { adminPlan } from "@/generated/admin-plan"
 import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/admin/theme-toggle"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
@@ -71,6 +72,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <SidebarTrigger aria-label="Toggle navigation" />
           <Separator orientation="vertical" className="h-5" />
           <p className="text-sm font-medium text-muted-foreground">Administration</p>
+          <div className="ml-auto"><ThemeToggle /></div>
         </header>
         <main id="admin-content" className="mx-auto w-full max-w-[1600px] flex-1 p-4 md:p-6 lg:p-8">{children}</main>
       </SidebarInset>

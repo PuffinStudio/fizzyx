@@ -99,6 +99,8 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 
 	expect(paths).toContain("src/app/(admin)/page.tsx");
 	expect(paths).toContain("src/components/admin/dashboard.tsx");
+	expect(paths).toContain("src/components/admin/theme-provider.tsx");
+	expect(paths).toContain("src/components/admin/theme-toggle.tsx");
 	expect(paths).toContain("src/app/(admin)/layout.tsx");
 	expect(paths).toContain("src/app/(admin)/pets/page.tsx");
 	expect(paths).toContain("src/components/admin/data-table.tsx");
@@ -130,6 +132,9 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(dataTable).toContain("manualSorting");
 	expect(dataTable).toContain("manualFiltering");
 	expect(dataTable).toContain("globalFilter: string");
+	expect(
+		files.find((file) => file.path === "src/components/admin/dynamic-form.tsx")?.content,
+	).toContain("noValidate");
 	expect(files.find((file) => file.path === "src/app/(admin)/page.tsx")?.content).toContain(
 		"AdminDashboard",
 	);
@@ -213,6 +218,20 @@ test("renders TanStack Start create, detail, and edit file routes for mapped CRU
 	expect(listRoute).toContain('row["id"]');
 });
 
+test("renders create actions as dialogs when configured", () => {
+	for (const framework of ["nextjs", "tanstack-start"] as const) {
+		const files = renderAdminApp(plan, framework, { createMode: "dialog" });
+		const listPath =
+			framework === "nextjs" ? "src/app/(admin)/pets/page.tsx" : "src/routes/_admin/pets/index.tsx";
+		const createPath =
+			framework === "nextjs"
+				? "src/app/(admin)/pets/new/page.tsx"
+				: "src/routes/_admin/pets/new.tsx";
+		expect(files.find((file) => file.path === listPath)?.content).toContain("CreateResourceDialog");
+		expect(files.map((file) => file.path)).not.toContain(createPath);
+	}
+});
+
 const authenticatedPlan: AdminAppPlan = {
 	...plan,
 	auth: {
@@ -262,7 +281,7 @@ test("renders server-cookie login, guard, and BFF routes for Next.js", () => {
 	expect(files.find((file) => file.path.endsWith("admin-shell.tsx"))?.content).toContain(
 		"Sign Out",
 	);
-	expect(files.find((file) => file.path.endsWith("login/page.tsx"))?.content).toContain(
+	expect(files.find((file) => file.path.endsWith("login-screen.tsx"))?.content).toContain(
 		'<form method="post"',
 	);
 	const dashboard = files.find(
@@ -270,7 +289,7 @@ test("renders server-cookie login, guard, and BFF routes for Next.js", () => {
 	)?.content;
 	expect(dashboard).toContain("Admin Overview");
 	expect(dashboard).toContain("adminPlan.resources.length");
-	expect(files.find((file) => file.path.endsWith("login/page.tsx"))?.content).toContain(
+	expect(files.find((file) => file.path.endsWith("login-screen.tsx"))?.content).toContain(
 		"ShieldCheck",
 	);
 	expect(files.find((file) => file.path === "src/app/(auth)/layout.tsx")?.content).toContain(
@@ -298,7 +317,7 @@ test("renders server-cookie login, guard, and BFF routes for TanStack Start", ()
 	expect(files.find((file) => file.path === "src/routes/api/admin/$.ts")?.content).toContain(
 		"encodeURIComponent(decodeURIComponent(segment))",
 	);
-	expect(files.find((file) => file.path === "src/routes/login.tsx")?.content).toContain(
+	expect(files.find((file) => file.path.endsWith("login-screen.tsx"))?.content).toContain(
 		'<form method="post"',
 	);
 	expect(files.find((file) => file.path === "src/routes/login.tsx")?.content).toContain(

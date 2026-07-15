@@ -742,9 +742,13 @@ const parseOpenapiAdminConfig = (raw: unknown): OpenApiAdminProjectConfig | unde
 	const frameworkValue = stringValue(admin.framework);
 	const framework =
 		frameworkValue === "nextjs" || frameworkValue === "tanstack-start" ? frameworkValue : undefined;
+	const preset = stringValue(admin.preset) || undefined;
+	const createModeValue = stringValue(admin.create_mode);
+	const createMode =
+		createModeValue === "page" || createModeValue === "dialog" ? createModeValue : undefined;
 	const auth = parseOpenapiAdminAuth(admin.auth);
-	if (!input && !output && !framework && !auth) return undefined;
-	return { input, output, framework, auth };
+	if (!input && !output && !framework && !preset && !createMode && !auth) return undefined;
+	return { input, output, framework, preset, createMode, auth };
 };
 
 const parseOpenapiEntries = (raw: unknown): OpenApiGenConfig[] | undefined => {
@@ -921,6 +925,8 @@ const renderOpenApiConfigFlat = (openapi: OpenApiProjectConfig): YamlObject => {
 		if (openapi.admin.input) admin.input = openapi.admin.input;
 		if (openapi.admin.output) admin.output = openapi.admin.output;
 		if (openapi.admin.framework) admin.framework = openapi.admin.framework;
+		if (openapi.admin.preset) admin.preset = openapi.admin.preset;
+		if (openapi.admin.createMode) admin.create_mode = openapi.admin.createMode;
 		if (openapi.admin.auth) {
 			const auth = openapi.admin.auth;
 			admin.auth = {

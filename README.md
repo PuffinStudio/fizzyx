@@ -282,7 +282,8 @@ only needed for the guarded compatibility fallback.
 fizzyx openapi admin \
   --input ./openapi.json \
   --output ./pet-admin \
-  --framework nextjs
+  --framework nextjs \
+  --create-mode dialog
 ```
 
 URLs work as input too:
@@ -299,8 +300,10 @@ compatibility failure. It never invokes npm or npx.
 Generated admin projects include:
 
 - shadcn components installed with `shadcn add --all`
+- a Base UI Mira admin preset with persistent system/light/dark themes and a header toggle
 - TanStack Table list pages with OpenAPI-aware pagination, search, filtering, and sorting
 - schema-driven TanStack Form create/edit pages with shadcn Field controls
+- configurable `page` or `dialog` record creation with generated field-level validation messages
 - detail/delete routes and a typed fetch + TanStack Query client
 - OXC `fmt`, `lint`, `lint:fix`, and `check` scripts, run automatically after first generation
 - optional server-cookie authentication with a login page, server guard, logout, and same-origin BFF
@@ -316,7 +319,16 @@ openapi:
     input: ./openapi.yaml
     output: ./apps/admin
     framework: nextjs
+    preset: b1tNoIJIf # optional shadcn preset override
+    create_mode: page # page or dialog
 ```
+
+On first generation, the precedence is `--preset`/`--create-mode`, then `openapi.admin` project
+defaults, then the FizzyX defaults (`b1tNoIJIf` and `page`). Presets customize the shadcn style,
+colors, font, radius, charts, and menu treatment; the generated theme provider always keeps light
+and dark mode available. Regeneration may safely switch `create_mode`. It preserves the recorded
+preset and rejects replacing it in place because shadcn component files may contain user changes;
+use a new output or review an explicit `shadcn apply` diff instead.
 
 Authentication is never enabled from endpoint names alone. Without an explicit contract, FizzyX
 reports ranked login/logout/me/refresh candidates and tells the user what must be confirmed. Put the

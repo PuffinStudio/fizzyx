@@ -40,6 +40,8 @@ the task is explicitly a one-off fork.
   OpenAPI source, then regenerate.
 - Change reusable generator behavior in FizzyX itself, not in one generated copy.
 - Keep team defaults in optional `.fizzyx.yaml`. Direct CLI flags remain valid without that file.
+- Keep visual defaults in `openapi.admin.preset` and creation UX in `openapi.admin.create_mode`;
+  direct `--preset` and `--create-mode` flags override them for a generation.
 - Keep API-specific admin semantics in `x-fizzyx-admin`, especially confirmed auth operation IDs and
   response paths.
 - Never place secrets, real tokens, passwords, or private keys in OpenAPI, `.fizzyx.yaml`, generated

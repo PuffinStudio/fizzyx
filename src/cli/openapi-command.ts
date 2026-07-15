@@ -237,6 +237,8 @@ const handleAdmin = (config: {
 	input: Option.Option<string>;
 	output: Option.Option<string>;
 	framework: Option.Option<"nextjs" | "tanstack-start">;
+	preset: Option.Option<string>;
+	createMode: Option.Option<"page" | "dialog">;
 	dryRun: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
@@ -246,6 +248,8 @@ const handleAdmin = (config: {
 		const input = Option.getOrUndefined(config.input) ?? defaults?.input;
 		const output = Option.getOrUndefined(config.output) ?? defaults?.output;
 		const framework = Option.getOrUndefined(config.framework) ?? defaults?.framework;
+		const preset = Option.getOrUndefined(config.preset) ?? defaults?.preset;
+		const createMode = Option.getOrUndefined(config.createMode) ?? defaults?.createMode;
 		if (!input || !output || !framework) {
 			return yield* Effect.fail(
 				new Error(
@@ -261,6 +265,8 @@ const handleAdmin = (config: {
 				framework,
 				dryRun: config.dryRun,
 				auth: defaults?.auth,
+				preset,
+				createMode,
 			}),
 		);
 		if (config.dryRun) {
@@ -291,6 +297,18 @@ const openapiAdminCmd = Command.make(
 		framework: Flag.optional(
 			Flag.choice("framework", ["nextjs", "tanstack-start"] as const).pipe(
 				Flag.withDescription("Application framework (or openapi.admin.framework)"),
+			),
+		),
+		preset: Flag.optional(
+			Flag.string("preset").pipe(
+				Flag.withDescription("shadcn preset code (or openapi.admin.preset)"),
+			),
+		),
+		createMode: Flag.optional(
+			Flag.choice("create-mode", ["page", "dialog"] as const).pipe(
+				Flag.withDescription(
+					"Create records on a page or in a dialog (or openapi.admin.create_mode)",
+				),
 			),
 		),
 		dryRun: Flag.boolean("dry-run").pipe(

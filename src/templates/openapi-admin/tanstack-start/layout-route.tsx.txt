@@ -3,9 +3,10 @@
 import { Outlet, createFileRoute } from "@tanstack/react-router"
 import { AdminShell } from "@/components/admin/admin-shell"
 import { AdminQueryProvider } from "@/components/admin/query-provider"
+import { AdminThemeProvider } from "@/components/admin/theme-provider"
 
 export const Route = createFileRoute("/_admin")({ component: AdminRoute })
 
 function AdminRoute() {
-  return <AdminQueryProvider><AdminShell><Outlet /></AdminShell></AdminQueryProvider>
+  return <AdminThemeProvider><AdminQueryProvider><AdminShell><Outlet /></AdminShell></AdminQueryProvider></AdminThemeProvider>
 }

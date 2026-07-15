@@ -9,6 +9,10 @@ import dataTableTemplate from "../templates/openapi-admin/shared/data-table.tsx.
 import dynamicFormTemplate from "../templates/openapi-admin/shared/dynamic-form.tsx.txt" with { type: "text" };
 import dashboardTemplate from "../templates/openapi-admin/shared/dashboard.tsx.txt" with { type: "text" };
 import recordDetailsTemplate from "../templates/openapi-admin/shared/record-details.tsx.txt" with { type: "text" };
+import createDialogTemplate from "../templates/openapi-admin/shared/create-dialog.tsx.txt" with { type: "text" };
+import themeProviderTemplate from "../templates/openapi-admin/shared/theme-provider.tsx.txt" with { type: "text" };
+import themeToggleTemplate from "../templates/openapi-admin/shared/theme-toggle.tsx.txt" with { type: "text" };
+import loginScreenTemplate from "../templates/openapi-admin/shared/login-screen.tsx.txt" with { type: "text" };
 import queryProviderTemplate from "../templates/openapi-admin/shared/query-provider.tsx.txt" with { type: "text" };
 import adminApiTemplate from "../templates/openapi-admin/shared/admin-api.ts.txt" with { type: "text" };
 import nextLayoutTemplate from "../templates/openapi-admin/nextjs/layout.tsx.txt" with { type: "text" };
@@ -88,7 +92,7 @@ const authTemplateValues = (plan: AdminAppPlan) => {
 		}),
 		FIZZYX_USERNAME_FIELD: JSON.stringify(config.usernameField),
 		FIZZYX_PASSWORD_FIELD: JSON.stringify(config.passwordField),
-		FIZZYX_USERNAME_LABEL: config.usernameField === "email" ? "Email" : "Username",
+		FIZZYX_USERNAME_LABEL: JSON.stringify(config.usernameField === "email" ? "Email" : "Username"),
 		FIZZYX_USERNAME_TYPE: JSON.stringify(config.usernameField === "email" ? "email" : "text"),
 		FIZZYX_LOGIN_ROUTE: JSON.stringify(config.routes.login),
 		FIZZYX_AFTER_LOGIN_ROUTE: JSON.stringify(config.routes.afterLogin),
@@ -186,11 +190,32 @@ const listRowIdKey = (resource: AdminResourcePlan): string => {
 	return resource.columns.find((column) => column.name.toLowerCase() === "id")?.name ?? pathParam;
 };
 
-const nextListNavigationValues = (resource: AdminResourcePlan) => {
+type AdminCreateMode = "page" | "dialog";
+
+const createDialogValues = (resource: AdminResourcePlan, createMode: AdminCreateMode) => {
+	const create = resource.operations.create;
+	if (!create || createMode !== "dialog") {
+		return {
+			FIZZYX_CREATE_HOOK_IMPORT: "",
+			FIZZYX_CREATE_IMPORT: "",
+			FIZZYX_CREATE_FIELDS: "",
+			FIZZYX_CREATE_DECLARATION: "",
+		};
+	}
+	return {
+		FIZZYX_CREATE_HOOK_IMPORT: `, ${hookName(create.operationId)}`,
+		FIZZYX_CREATE_IMPORT:
+			'import { CreateResourceDialog } from "@/components/admin/create-dialog"\n',
+		FIZZYX_CREATE_FIELDS: `const createFields = ${JSON.stringify(formFields(resource))} as const`,
+		FIZZYX_CREATE_DECLARATION: `const createMutation = ${hookName(create.operationId)}()`,
+	};
+};
+
+const nextListNavigationValues = (resource: AdminResourcePlan, createMode: AdminCreateMode) => {
 	const canCreate = Boolean(resource.operations.create);
 	const canView = Boolean(resource.operations.detail);
 	const canEdit = Boolean(resource.operations.update);
-	const hasActions = canCreate || canView || canEdit;
+	const hasActions = (canCreate && createMode === "page") || canView || canEdit;
 	const idKey = listRowIdKey(resource);
 	const rowActions =
 		canView || canEdit
@@ -201,17 +226,19 @@ const nextListNavigationValues = (resource: AdminResourcePlan) => {
 			? 'import Link from "next/link"\nimport { buttonVariants } from "@/components/ui/button"\n'
 			: "",
 		FIZZYX_CREATE_ACTION: canCreate
-			? `<Link className={buttonVariants()} href=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
+			? createMode === "dialog"
+				? `<CreateResourceDialog label={resourceLabel} fields={createFields} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`
+				: `<Link className={buttonVariants()} href=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
 			: "",
 		FIZZYX_ROW_ACTIONS: rowActions,
 	};
 };
 
-const tanstackListNavigationValues = (resource: AdminResourcePlan) => {
+const tanstackListNavigationValues = (resource: AdminResourcePlan, createMode: AdminCreateMode) => {
 	const canCreate = Boolean(resource.operations.create);
 	const canView = Boolean(resource.operations.detail);
 	const canEdit = Boolean(resource.operations.update);
-	const hasActions = canCreate || canView || canEdit;
+	const hasActions = (canCreate && createMode === "page") || canView || canEdit;
 	const idKey = listRowIdKey(resource);
 	const rowActions =
 		canView || canEdit
@@ -223,13 +250,18 @@ const tanstackListNavigationValues = (resource: AdminResourcePlan) => {
 			? 'import { buttonVariants } from "@/components/ui/button"\n'
 			: "",
 		FIZZYX_CREATE_ACTION: canCreate
-			? `<Link className={buttonVariants()} to=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
+			? createMode === "dialog"
+				? `<CreateResourceDialog label={resourceLabel} fields={createFields} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`
+				: `<Link className={buttonVariants()} to=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
 			: "",
 		FIZZYX_ROW_ACTIONS: rowActions,
 	};
 };
 
-const renderNextList = (resource: AdminResourcePlan): GeneratedFile | undefined => {
+const renderNextList = (
+	resource: AdminResourcePlan,
+	createMode: AdminCreateMode,
+): GeneratedFile | undefined => {
 	const operation = resource.operations.list;
 	if (!operation) return undefined;
 	const hook = hookName(operation.operationId);
@@ -241,7 +273,8 @@ const renderNextList = (resource: AdminResourcePlan): GeneratedFile | undefined 
 			FIZZYX_COLUMNS: columnsLiteral(resource),
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("", resource),
-			...nextListNavigationValues(resource),
+			...nextListNavigationValues(resource, createMode),
+			...createDialogValues(resource, createMode),
 			...tableValues,
 		}),
 	};
@@ -337,7 +370,10 @@ const renderNextEdit = (resource: AdminResourcePlan): GeneratedFile | undefined 
 	};
 };
 
-const renderTanstackList = (resource: AdminResourcePlan): GeneratedFile | undefined => {
+const renderTanstackList = (
+	resource: AdminResourcePlan,
+	createMode: AdminCreateMode,
+): GeneratedFile | undefined => {
 	const operation = resource.operations.list;
 	if (!operation) return undefined;
 	const tableValues = listTableValues(resource);
@@ -349,7 +385,8 @@ const renderTanstackList = (resource: AdminResourcePlan): GeneratedFile | undefi
 			FIZZYX_COLUMNS: columnsLiteral(resource),
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("", resource),
-			...tanstackListNavigationValues(resource),
+			...tanstackListNavigationValues(resource, createMode),
+			...createDialogValues(resource, createMode),
 			...tableValues,
 		}),
 	};
@@ -455,7 +492,16 @@ const renderTanstackAuth = (plan: AdminAppPlan): GeneratedFile[] => {
 	];
 };
 
-export const renderAdminApp = (plan: AdminAppPlan, framework: AdminFramework): GeneratedFile[] => {
+export interface RenderAdminAppOptions {
+	createMode?: AdminCreateMode;
+}
+
+export const renderAdminApp = (
+	plan: AdminAppPlan,
+	framework: AdminFramework,
+	options: RenderAdminAppOptions = {},
+): GeneratedFile[] => {
+	const createMode = options.createMode ?? "page";
 	const authEnabled = plan.auth.status === "configured";
 	const apiBaseUrl = authEnabled
 		? '"/api/admin"'
@@ -495,6 +541,10 @@ export const renderAdminApp = (plan: AdminAppPlan, framework: AdminFramework): G
 		staticFile("src/components/admin/dynamic-form.tsx", dynamicFormTemplate),
 		staticFile("src/components/admin/dashboard.tsx", dashboardTemplate),
 		staticFile("src/components/admin/record-details.tsx", recordDetailsTemplate),
+		staticFile("src/components/admin/create-dialog.tsx", createDialogTemplate),
+		staticFile("src/components/admin/theme-provider.tsx", themeProviderTemplate),
+		staticFile("src/components/admin/theme-toggle.tsx", themeToggleTemplate),
+		staticFile("src/components/admin/login-screen.tsx", loginScreenTemplate),
 		staticFile("src/components/admin/query-provider.tsx", queryProviderTemplate),
 		{
 			path: "src/lib/api/admin-api.ts",
@@ -510,8 +560,8 @@ export const renderAdminApp = (plan: AdminAppPlan, framework: AdminFramework): G
 				? [staticFile("src/app/(auth)/layout.tsx", nextPublicLayoutTemplate), ...authFiles]
 				: [staticFile("src/app/(admin)/layout.tsx", nextLayoutTemplate)]),
 			...renderResources(plan, [
-				renderNextList,
-				renderNextCreate,
+				(resource) => renderNextList(resource, createMode),
+				...(createMode === "page" ? [renderNextCreate] : []),
 				renderNextDetail,
 				renderNextEdit,
 			]),
@@ -525,8 +575,8 @@ export const renderAdminApp = (plan: AdminAppPlan, framework: AdminFramework): G
 			? authFiles
 			: [staticFile("src/routes/_admin.tsx", tanstackLayoutTemplate)]),
 		...renderResources(plan, [
-			renderTanstackList,
-			renderTanstackCreate,
+			(resource) => renderTanstackList(resource, createMode),
+			...(createMode === "page" ? [renderTanstackCreate] : []),
 			renderTanstackDetail,
 			renderTanstackEdit,
 		]),

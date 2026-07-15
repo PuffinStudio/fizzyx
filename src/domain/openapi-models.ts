@@ -21,6 +21,8 @@ export interface OpenApiAdminProjectConfig {
 	input?: string;
 	output?: string;
 	framework?: "nextjs" | "tanstack-start";
+	preset?: string;
+	createMode?: "page" | "dialog";
 	auth?: ParsedAdminAuthConfig;
 }
 
