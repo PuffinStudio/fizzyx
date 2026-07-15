@@ -97,6 +97,8 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	const files = renderAdminApp(plan, "nextjs");
 	const paths = files.map((file) => file.path);
 
+	expect(paths).toContain("src/app/(admin)/page.tsx");
+	expect(paths).toContain("src/components/admin/dashboard.tsx");
 	expect(paths).toContain("src/app/(admin)/layout.tsx");
 	expect(paths).toContain("src/app/(admin)/pets/page.tsx");
 	expect(paths).toContain("src/components/admin/data-table.tsx");
@@ -128,6 +130,9 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(dataTable).toContain("manualSorting");
 	expect(dataTable).toContain("manualFiltering");
 	expect(dataTable).toContain("globalFilter: string");
+	expect(files.find((file) => file.path === "src/app/(admin)/page.tsx")?.content).toContain(
+		"AdminDashboard",
+	);
 });
 
 test("renders native TanStack Start file routes backed by generated query hooks", () => {
@@ -135,6 +140,7 @@ test("renders native TanStack Start file routes backed by generated query hooks"
 	const paths = files.map((file) => file.path);
 
 	expect(paths).toContain("src/routes/_admin.tsx");
+	expect(paths).toContain("src/routes/_admin/index.tsx");
 	expect(paths).toContain("src/routes/_admin/pets/index.tsx");
 	expect(files.find((file) => file.path.endsWith("lib/api/admin-api.ts"))?.content).toContain(
 		"import.meta.env.VITE_API_BASE_URL",
@@ -142,6 +148,9 @@ test("renders native TanStack Start file routes backed by generated query hooks"
 	const listPage = files.find((file) => file.path.endsWith("pets/index.tsx"))?.content;
 	expect(listPage).toContain("createFileRoute");
 	expect(listPage).toContain("useListPets");
+	expect(files.find((file) => file.path === "src/routes/_admin/index.tsx")?.content).toContain(
+		"AdminDashboard",
+	);
 });
 
 test("renders Next.js create, detail, and edit experiences for mapped CRUD operations", () => {
@@ -173,6 +182,16 @@ test("renders Next.js create, detail, and edit experiences for mapped CRUD opera
 	expect(listPage).toContain("Edit");
 	expect(listPage).toContain("renderRowActions");
 	expect(listPage).toContain('row["id"]');
+	expect(
+		files.find((file) => file.path === "src/components/admin/admin-shell.tsx")?.content,
+	).toContain("SidebarProvider");
+	expect(
+		files.find((file) => file.path === "src/components/admin/data-table.tsx")?.content,
+	).toContain("<Card");
+	expect(files.find((file) => file.path.endsWith("[id]/page.tsx"))?.content).toContain(
+		"AlertDialog",
+	);
+	expect(paths).toContain("src/components/admin/record-details.tsx");
 });
 
 test("renders TanStack Start create, detail, and edit file routes for mapped CRUD operations", () => {
@@ -222,6 +241,8 @@ test("renders server-cookie login, guard, and BFF routes for Next.js", () => {
 	const files = renderAdminApp(authenticatedPlan, "nextjs");
 	const paths = files.map((file) => file.path);
 
+	expect(paths).toContain("src/app/(admin)/page.tsx");
+	expect(paths).toContain("src/app/(auth)/layout.tsx");
 	expect(paths).toContain("src/app/(auth)/login/page.tsx");
 	expect(paths).toContain("src/app/(auth)/api/auth/login/route.ts");
 	expect(paths).toContain("src/app/(auth)/api/admin/[...path]/route.ts");
@@ -239,10 +260,21 @@ test("renders server-cookie login, guard, and BFF routes for Next.js", () => {
 		'request.headers.get("origin")',
 	);
 	expect(files.find((file) => file.path.endsWith("admin-shell.tsx"))?.content).toContain(
-		"Sign out",
+		"Sign Out",
 	);
 	expect(files.find((file) => file.path.endsWith("login/page.tsx"))?.content).toContain(
 		'<form method="post"',
+	);
+	const dashboard = files.find(
+		(file) => file.path === "src/components/admin/dashboard.tsx",
+	)?.content;
+	expect(dashboard).toContain("Admin Overview");
+	expect(dashboard).toContain("adminPlan.resources.length");
+	expect(files.find((file) => file.path.endsWith("login/page.tsx"))?.content).toContain(
+		"ShieldCheck",
+	);
+	expect(files.find((file) => file.path === "src/app/(auth)/layout.tsx")?.content).toContain(
+		"Sign In · ${adminPlan.title}",
 	);
 });
 
@@ -250,6 +282,7 @@ test("renders server-cookie login, guard, and BFF routes for TanStack Start", ()
 	const files = renderAdminApp(authenticatedPlan, "tanstack-start");
 	const paths = files.map((file) => file.path);
 
+	expect(paths).toContain("src/routes/_admin/index.tsx");
 	expect(paths).toContain("src/routes/login.tsx");
 	expect(paths).toContain("src/routes/api/auth/login.ts");
 	expect(paths).toContain("src/routes/api/admin/$.ts");
@@ -268,4 +301,11 @@ test("renders server-cookie login, guard, and BFF routes for TanStack Start", ()
 	expect(files.find((file) => file.path === "src/routes/login.tsx")?.content).toContain(
 		'<form method="post"',
 	);
+	expect(files.find((file) => file.path === "src/routes/login.tsx")?.content).toContain(
+		"Sign In · ${adminPlan.title}",
+	);
+	const dashboard = files.find(
+		(file) => file.path === "src/components/admin/dashboard.tsx",
+	)?.content;
+	expect(dashboard).toContain("Admin Overview");
 });

@@ -7,6 +7,8 @@ import adminShellTemplate from "../templates/openapi-admin/shared/admin-shell.ts
 import authAdminShellTemplate from "../templates/openapi-admin/shared/auth-admin-shell.tsx.txt" with { type: "text" };
 import dataTableTemplate from "../templates/openapi-admin/shared/data-table.tsx.txt" with { type: "text" };
 import dynamicFormTemplate from "../templates/openapi-admin/shared/dynamic-form.tsx.txt" with { type: "text" };
+import dashboardTemplate from "../templates/openapi-admin/shared/dashboard.tsx.txt" with { type: "text" };
+import recordDetailsTemplate from "../templates/openapi-admin/shared/record-details.tsx.txt" with { type: "text" };
 import queryProviderTemplate from "../templates/openapi-admin/shared/query-provider.tsx.txt" with { type: "text" };
 import adminApiTemplate from "../templates/openapi-admin/shared/admin-api.ts.txt" with { type: "text" };
 import nextLayoutTemplate from "../templates/openapi-admin/nextjs/layout.tsx.txt" with { type: "text" };
@@ -25,6 +27,8 @@ import nextLoginRouteTemplate from "../templates/openapi-admin/nextjs/login-rout
 import nextLogoutRouteTemplate from "../templates/openapi-admin/nextjs/logout-route.ts.txt" with { type: "text" };
 import nextProxyRouteTemplate from "../templates/openapi-admin/nextjs/proxy-route.ts.txt" with { type: "text" };
 import nextLoginPageTemplate from "../templates/openapi-admin/nextjs/login-page.tsx.txt" with { type: "text" };
+import nextDashboardTemplate from "../templates/openapi-admin/nextjs/dashboard-page.tsx.txt" with { type: "text" };
+import nextPublicLayoutTemplate from "../templates/openapi-admin/nextjs/public-layout.tsx.txt" with { type: "text" };
 import tanstackAuthLayoutTemplate from "../templates/openapi-admin/tanstack-start/auth-layout-route.tsx.txt" with { type: "text" };
 import tanstackAuthServerTemplate from "../templates/openapi-admin/tanstack-start/auth-server.ts.txt" with { type: "text" };
 import tanstackAuthSessionTemplate from "../templates/openapi-admin/tanstack-start/auth-session.server.ts.txt" with { type: "text" };
@@ -32,6 +36,7 @@ import tanstackLoginApiTemplate from "../templates/openapi-admin/tanstack-start/
 import tanstackLogoutApiTemplate from "../templates/openapi-admin/tanstack-start/logout-api-route.ts.txt" with { type: "text" };
 import tanstackProxyTemplate from "../templates/openapi-admin/tanstack-start/proxy-route.ts.txt" with { type: "text" };
 import tanstackLoginTemplate from "../templates/openapi-admin/tanstack-start/login-route.tsx.txt" with { type: "text" };
+import tanstackDashboardTemplate from "../templates/openapi-admin/tanstack-start/dashboard-route.tsx.txt" with { type: "text" };
 import adminAuthSkillTemplate from "../templates/openapi-admin/skills/fizzyx-openapi-admin-auth/SKILL.md" with { type: "text" };
 import adminAuthSkillMetadataTemplate from "../templates/openapi-admin/skills/fizzyx-openapi-admin-auth/agents/openai.yaml" with { type: "text" };
 import adminDevelopmentSkillTemplate from "../templates/openapi-admin/skills/fizzyx-openapi-admin-development/SKILL.md" with { type: "text" };
@@ -265,6 +270,7 @@ const detailValues = (resource: AdminResourcePlan, framework: AdminFramework) =>
 	const listRoute = JSON.stringify(`/${resource.id}`);
 	return {
 		FIZZYX_ROUTE: JSON.stringify(`/_admin/${resource.id}/$id`),
+		FIZZYX_LIST_ROUTE: listRoute,
 		FIZZYX_HOOK_IMPORTS: [detailHook, deleteHook].filter(Boolean).join(", "),
 		FIZZYX_ID_PARAM: JSON.stringify(resource.idParam ?? "id"),
 		FIZZYX_LABEL: JSON.stringify(resource.label),
@@ -281,10 +287,13 @@ const detailValues = (resource: AdminResourcePlan, framework: AdminFramework) =>
 				: "const navigate = useNavigate()"
 			: "",
 		FIZZYX_DELETE_DECLARATION: deleteHook ? `const remove = ${deleteHook}()` : "",
+		FIZZYX_DELETE_IMPORTS: deleteHook
+			? 'import { Button } from "@/components/ui/button"\nimport { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"\n'
+			: "",
 		FIZZYX_DELETE_BUTTON: deleteHook
 			? framework === "nextjs"
-				? `<Button variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); router.replace(${listRoute}); router.refresh() }}>Delete</Button>`
-				: `<Button variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); await navigate({ to: ${listRoute} }) }}>Delete</Button>`
+				? `<AlertDialog><AlertDialogTrigger render={<Button variant="destructive" />}>Delete Record</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this record?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone. The record will be permanently removed from the API.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); router.replace(${listRoute}); router.refresh() }}>{remove.isPending ? "Deleting…" : "Delete Record"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>`
+				: `<AlertDialog><AlertDialogTrigger render={<Button variant="destructive" />}>Delete Record</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this record?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone. The record will be permanently removed from the API.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); await navigate({ to: ${listRoute} }) }}>{remove.isPending ? "Deleting…" : "Delete Record"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>`
 			: "",
 		framework,
 	};
@@ -484,6 +493,8 @@ export const renderAdminApp = (plan: AdminAppPlan, framework: AdminFramework): G
 			: staticFile("src/components/admin/admin-shell.tsx", adminShellTemplate),
 		staticFile("src/components/admin/data-table.tsx", dataTableTemplate),
 		staticFile("src/components/admin/dynamic-form.tsx", dynamicFormTemplate),
+		staticFile("src/components/admin/dashboard.tsx", dashboardTemplate),
+		staticFile("src/components/admin/record-details.tsx", recordDetailsTemplate),
 		staticFile("src/components/admin/query-provider.tsx", queryProviderTemplate),
 		{
 			path: "src/lib/api/admin-api.ts",
@@ -494,8 +505,9 @@ export const renderAdminApp = (plan: AdminAppPlan, framework: AdminFramework): G
 		const authFiles = renderNextAuth(plan);
 		return [
 			...shared,
+			staticFile("src/app/(admin)/page.tsx", nextDashboardTemplate),
 			...(authFiles.length
-				? authFiles
+				? [staticFile("src/app/(auth)/layout.tsx", nextPublicLayoutTemplate), ...authFiles]
 				: [staticFile("src/app/(admin)/layout.tsx", nextLayoutTemplate)]),
 			...renderResources(plan, [
 				renderNextList,
@@ -508,6 +520,7 @@ export const renderAdminApp = (plan: AdminAppPlan, framework: AdminFramework): G
 	const authFiles = renderTanstackAuth(plan);
 	return [
 		...shared,
+		staticFile("src/routes/_admin/index.tsx", tanstackDashboardTemplate),
 		...(authFiles.length
 			? authFiles
 			: [staticFile("src/routes/_admin.tsx", tanstackLayoutTemplate)]),

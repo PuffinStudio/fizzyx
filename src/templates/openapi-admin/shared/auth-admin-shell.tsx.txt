@@ -3,8 +3,26 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { Boxes, Database, LogOut, ShieldCheck } from "lucide-react"
 import { adminPlan } from "@/generated/admin-plan"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
 
 export function AdminShell({ children }: { children: ReactNode }) {
   async function logout() {
@@ -12,15 +30,50 @@ export function AdminShell({ children }: { children: ReactNode }) {
     window.location.assign({{FIZZYX_LOGIN_ROUTE}})
   }
   return (
-    <div className="min-h-screen bg-muted/30 md:grid md:grid-cols-[240px_1fr]">
-      <aside className="flex flex-col border-b bg-background p-4 md:min-h-screen md:border-b-0 md:border-r">
-        <a href="/" className="mb-6 block text-lg font-semibold">{adminPlan.title}</a>
-        <nav className="flex gap-2 overflow-x-auto md:flex-col">
-          {adminPlan.resources.map((resource) => <a key={resource.id} href={resource.path} className="rounded-md px-3 py-2 text-sm hover:bg-muted">{resource.label}</a>)}
-        </nav>
-        <Button className="mt-4 md:mt-auto" variant="outline" onClick={() => void logout()}>Sign out</Button>
-      </aside>
-      <main className="min-w-0 p-4 md:p-8">{children}</main>
-    </div>
+    <SidebarProvider>
+      <a href="#admin-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow-lg">Skip to content</a>
+      <Sidebar collapsible="icon">
+        <SidebarHeader className="border-b border-sidebar-border/70 p-3">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" tooltip={adminPlan.title} render={<a href="/" aria-label={`${adminPlan.title} home`} />}>
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Boxes aria-hidden="true" className="size-4" /></span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{adminPlan.title}</span><span className="block truncate text-xs text-sidebar-foreground/60">Admin workspace</span></span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Resources</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminPlan.resources.map((resource) => (
+                  <SidebarMenuItem key={resource.id}>
+                    <SidebarMenuButton tooltip={resource.label} render={<a aria-label={`Open ${resource.label}`} href={resource.path} />}>
+                      <Database aria-hidden="true" />
+                      <span>{resource.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter className="border-t border-sidebar-border/70 p-3">
+          <div className="mb-2 flex items-center gap-2 px-2 text-xs text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden"><ShieldCheck aria-hidden="true" className="size-3.5" />Secure server session</div>
+          <Button className="w-full justify-start group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0" variant="ghost" onClick={() => void logout()}><LogOut aria-hidden="true" /><span className="group-data-[collapsible=icon]:hidden">Sign Out</span></Button>
+        </SidebarFooter>
+        <SidebarRail />
+      </Sidebar>
+      <SidebarInset className="min-w-0 bg-muted/20">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/90 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+          <SidebarTrigger aria-label="Toggle navigation" />
+          <Separator orientation="vertical" className="h-5" />
+          <p className="text-sm font-medium text-muted-foreground">Administration</p>
+        </header>
+        <main id="admin-content" className="mx-auto w-full max-w-[1600px] flex-1 p-4 md:p-6 lg:p-8">{children}</main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

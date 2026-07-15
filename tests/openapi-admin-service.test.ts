@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Effect } from "effect";
@@ -93,6 +93,44 @@ test("surfaces an unknown scaffold failure without an unsafe fallback", async ()
 			),
 		).rejects.toMatchObject({ message: "framework scaffold failed" });
 		expect(commands).toHaveLength(1);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("replaces and owns the official scaffold welcome route on first generation", async () => {
+	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-welcome-"));
+	const output = join(root, "pet-admin");
+	const runner = {
+		run: (argv: string[]) => {
+			if (argv[0] === "bun" && argv.includes("next-app@latest")) {
+				mkdirSync(join(output, "src/app"), { recursive: true });
+				writeFileSync(
+					join(output, "package.json"),
+					JSON.stringify({ scripts: { build: "next build" } }),
+				);
+				writeFileSync(join(output, "src/app/page.tsx"), "export default function Welcome() {}\n");
+			}
+			return Effect.succeed({ stdout: "", stderr: "" });
+		},
+	};
+
+	try {
+		const result = await Effect.runPromise(
+			generateAdminProject({ input: fixture, output, framework: "nextjs" }).pipe(
+				Effect.provideService(AdminProcessRunner, runner),
+				Effect.provide(GeneratorRegistryLive),
+			),
+		);
+
+		expect(result.conflicts).not.toContain("src/app/(admin)/page.tsx");
+		expect(existsSync(join(output, "src/app/page.tsx"))).toBe(false);
+		expect(readFileSync(join(output, "src/app/(admin)/page.tsx"), "utf8")).toContain(
+			"AdminDashboard",
+		);
+		expect(readFileSync(join(output, ".fizzyx/admin-manifest.json"), "utf8")).toContain(
+			'"src/app/(admin)/page.tsx"',
+		);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

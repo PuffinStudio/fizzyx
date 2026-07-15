@@ -11,5 +11,5 @@ const resourceLabel = {{FIZZYX_LABEL}}
 export default function {{FIZZYX_COMPONENT_NAME}}() {
   {{FIZZYX_STATE_DECLARATION}}
   const query = {{FIZZYX_HOOK_NAME}}{{FIZZYX_HOOK_ARGS}}
-  return <section className="space-y-6"><header className="flex items-center justify-between gap-4"><h1 className="text-2xl font-semibold">{resourceLabel}</h1>{{FIZZYX_CREATE_ACTION}}</header><AdminDataTable data={query.data} columns={columns} loading={query.isPending} error={query.error} onRetry={() => void query.refetch()}{{FIZZYX_TABLE_PROPS}}{{FIZZYX_ROW_ACTIONS}} /></section>
+  return <section className="space-y-6"><header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div className="space-y-1"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Resource</p><h1 className="text-3xl font-semibold tracking-tight text-balance">{resourceLabel}</h1><p className="max-w-2xl text-sm text-muted-foreground text-pretty">Review, search, and manage {resourceLabel.toLowerCase()} from one workspace.</p></div>{{FIZZYX_CREATE_ACTION}}</header><AdminDataTable data={query.data} columns={columns} loading={query.isPending} error={query.error} onRetry={() => void query.refetch()}{{FIZZYX_TABLE_PROPS}}{{FIZZYX_ROW_ACTIONS}} /></section>
 }

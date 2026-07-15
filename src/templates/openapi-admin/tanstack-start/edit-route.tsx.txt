@@ -3,6 +3,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { {{FIZZYX_HOOK_IMPORTS}} } from "@/lib/api/generated"
 import { DynamicForm } from "@/components/admin/dynamic-form"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const Route = createFileRoute({{FIZZYX_ROUTE}})({ component: {{FIZZYX_COMPONENT_NAME}} })
 const fields = {{FIZZYX_FIELDS}} as const
@@ -13,5 +14,5 @@ function {{FIZZYX_COMPONENT_NAME}}() {
   const params = { [apiIdParam]: routeParams.id as never }
   {{FIZZYX_DETAIL_DECLARATION}}
   const mutation = {{FIZZYX_UPDATE_HOOK}}()
-  return <section className="space-y-6"><h1 className="text-2xl font-semibold">Edit {resourceLabel}</h1><DynamicForm fields={fields} initialValue={{{FIZZYX_INITIAL_VALUE}}} pending={mutation.isPending} error={mutation.error} success={mutation.isSuccess} onSubmit={async (value) => { await mutation.mutateAsync({ params, data: value } as never) }} /></section>
+  return <section className="mx-auto max-w-4xl space-y-6"><header className="space-y-1"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Edit Record</p><h1 className="text-3xl font-semibold tracking-tight text-balance">Edit {resourceLabel}</h1><p className="text-sm text-muted-foreground text-pretty">Update this record and save your changes.</p></header><Card><CardHeader className="border-b"><CardTitle>Record Details</CardTitle><CardDescription>Changes are sent directly to the configured API.</CardDescription></CardHeader><CardContent><DynamicForm fields={fields} initialValue={{{FIZZYX_INITIAL_VALUE}}} pending={mutation.isPending} error={mutation.error} success={mutation.isSuccess} onSubmit={async (value) => { await mutation.mutateAsync({ params, data: value } as never) }} /></CardContent></Card></section>
 }

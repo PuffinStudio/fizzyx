@@ -17,9 +17,11 @@ import {
 } from "@tanstack/react-table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Database, Search } from "lucide-react"
 
 export interface AdminColumnDefinition {
   key: string
@@ -85,11 +87,16 @@ export function AdminDataTable({ data, columns, loading, error, onRetry, mode = 
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   })
-  if (loading) return <div className="space-y-3"><Skeleton className="h-10 w-full" /><Skeleton className="h-48 w-full" /></div>
+  if (loading) return <Card><CardHeader><Skeleton className="h-5 w-28" /><Skeleton className="h-4 w-52" /></CardHeader><CardContent className="space-y-3"><Skeleton className="h-9 w-full max-w-sm" /><Skeleton className="h-56 w-full" /></CardContent></Card>
   if (error) return <Alert variant="destructive"><AlertTitle>Unable to load data</AlertTitle><AlertDescription>{error.message}</AlertDescription><Button className="mt-3" variant="outline" onClick={onRetry}>Retry</Button></Alert>
-  return <div className="space-y-4">
-    <div className="flex flex-wrap items-center gap-2"><Input className="max-w-sm" placeholder="Filter…" value={globalFilter} onChange={(event) => table.setGlobalFilter(event.target.value)} /></div>
-    <div className="overflow-hidden rounded-md border"><Table><TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader><TableBody>{table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={tableColumns.length} className="h-24 text-center">No records found.</TableCell></TableRow>}</TableBody></Table></div>
-    <div className="flex items-center justify-end gap-2"><Button variant="outline" size="sm" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}>Previous</Button><span className="text-sm text-muted-foreground">Page {pagination.pageIndex + 1}</span><Button variant="outline" size="sm" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>Next</Button></div>
-  </div>
+  return <Card>
+    <CardHeader className="border-b">
+      <div><CardTitle>Records</CardTitle><CardDescription>Search, sort, and manage this resource.</CardDescription></div>
+      <div className="relative mt-3 max-w-sm"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" aria-label="Search records" placeholder="Search records…" value={globalFilter} onChange={(event) => table.setGlobalFilter(event.target.value)} /></div>
+    </CardHeader>
+    <CardContent className="px-0">
+      <div className="overflow-x-auto"><Table><TableHeader className="bg-muted/40">{table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader><TableBody>{table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow className="hover:bg-muted/35" key={row.id}>{row.getVisibleCells().map((cell) => <TableCell className="max-w-80 break-words" key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={tableColumns.length} className="h-56 text-center"><div className="mx-auto flex max-w-xs flex-col items-center gap-2 text-muted-foreground"><span className="flex size-10 items-center justify-center rounded-full bg-muted"><Database aria-hidden="true" className="size-5" /></span><p className="font-medium text-foreground">No records found</p><p className="text-sm">Try adjusting your search or create the first record.</p></div></TableCell></TableRow>}</TableBody></Table></div>
+    </CardContent>
+    <CardFooter className="justify-between border-t"><span className="text-sm tabular-nums text-muted-foreground">Page {pagination.pageIndex + 1}</span><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}>Previous</Button><Button variant="outline" size="sm" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>Next</Button></div></CardFooter>
+  </Card>
 }
