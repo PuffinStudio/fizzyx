@@ -12,6 +12,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { AdminGenerationError } from "../domain/errors";
 import type { GeneratedFile } from "../domain/openapi-models";
 import type { ParsedAdminAuthConfig } from "../domain/openapi-models";
+import type { AdminPresentationDefaults } from "../domain/openapi-models";
 import { AdminProcessRunner } from "../ports/admin-process-runner";
 import { generate } from "./openapi-service";
 import { planAdminApp } from "./openapi-admin-plan";
@@ -45,6 +46,7 @@ export interface GenerateAdminProjectInput {
 	auth?: ParsedAdminAuthConfig;
 	preset?: string;
 	createMode?: "page" | "dialog";
+	presentation?: Partial<AdminPresentationDefaults>;
 }
 
 export interface GenerateAdminProjectResult {
@@ -58,8 +60,43 @@ export interface GenerateAdminProjectResult {
 	conflicts: string[];
 }
 
+export interface AdminSyncCandidate {
+	specFingerprint: string;
+	plan: ReturnType<typeof planAdminApp>;
+	files: GeneratedFile[];
+}
+
 const prefixed = (prefix: string, files: GeneratedFile[]): GeneratedFile[] =>
 	files.map((file) => ({ ...file, path: `${prefix}/${file.path}` }));
+
+/** Builds the complete generated state without touching the target project. */
+export const prepareAdminSyncCandidate = (
+	input: Pick<
+		GenerateAdminProjectInput,
+		"input" | "framework" | "auth" | "createMode" | "presentation"
+	>,
+): Effect.Effect<AdminSyncCandidate, any, any> =>
+	Effect.gen(function* () {
+		const client = yield* generate({
+			input: input.input,
+			output: "src/lib/api/generated",
+			client: "fetch",
+			stateManagement: "tanstack-query",
+		});
+		const spec =
+			client.spec.admin?.auth || !input.auth
+				? client.spec
+				: { ...client.spec, admin: { ...client.spec.admin, auth: input.auth } };
+		const plan = planAdminApp(spec, { presentation: input.presentation });
+		return {
+			specFingerprint: new Bun.CryptoHasher("sha256").update(JSON.stringify(spec)).digest("hex"),
+			plan,
+			files: [
+				...prefixed("src/lib/api/generated", client.files),
+				...renderAdminApp(plan, input.framework, { createMode: input.createMode }),
+			],
+		};
+	});
 
 const isBunCompatibilityFailure = (error: AdminGenerationError): boolean =>
 	/(bun.*(?:unsupported|not supported|not found)|(?:unsupported|not supported).*bun)/i.test(
@@ -177,11 +214,11 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			client.spec.admin?.auth || !input.auth
 				? client.spec
 				: { ...client.spec, admin: { ...client.spec.admin, auth: input.auth } };
-		const plan = planAdminApp(spec);
+		const plan = planAdminApp(spec, { presentation: input.presentation });
 		const manifestMetadata = readAdminManifestMetadata(outputDir);
 		let packageManager: AdminPackageManager = manifestMetadata?.packageManager ?? "bun";
 		const preset = input.preset ?? manifestMetadata?.preset ?? FIZZYX_ADMIN_PRESET;
-		const createMode = input.createMode ?? manifestMetadata?.createMode ?? "page";
+		const createMode = input.createMode ?? manifestMetadata?.createMode;
 		let scaffold = planAdminScaffold({
 			framework: input.framework,
 			projectName,
@@ -291,6 +328,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 					specSource: input.input,
 					preset,
 					createMode,
+					adminPlanSnapshot: plan,
 				}),
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to write admin project", cause }),

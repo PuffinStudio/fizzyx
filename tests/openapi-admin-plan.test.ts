@@ -60,8 +60,11 @@ const petStoreSpec: ParsedSpec = {
 test("plans CRUD admin pages from collection and member operations", () => {
 	const plan = planAdminApp(petStoreSpec);
 
+	expect(plan.version).toBe(2);
+	expect(plan.defaults).toEqual({ create: "page", edit: "page", detail: "page" });
 	expect(plan.resources).toHaveLength(1);
 	expect(plan.resources[0]).toMatchObject({
+		key: "pets",
 		id: "pets",
 		label: "Pets",
 		path: "/pets",
@@ -73,6 +76,13 @@ test("plans CRUD admin pages from collection and member operations", () => {
 		},
 	});
 	expect(plan.diagnostics).toContainEqual(expect.objectContaining({ code: "auth-missing" }));
+	expect(plan.navigation.groups).toEqual([
+		expect.objectContaining({
+			id: "resources",
+			label: "Resources",
+			items: [expect.objectContaining({ resourceKey: "pets", path: "/pets" })],
+		}),
+	]);
 });
 
 test("reports strong auth candidates but does not silently enable authentication", async () => {
@@ -287,3 +297,105 @@ test("maps conventional list query parameters to server-side table state", () =>
 		filterFields: [{ name: "name", type: "text" }],
 	});
 });
+
+test("applies metadata to resources and builds deterministic grouped navigation", async () => {
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Backoffice", version: "1.0.0" },
+		tags: [
+			{
+				name: "Orders",
+				"x-fizzyx-admin": {
+					key: "commerce.orders",
+					label: "Purchases",
+					group: "Commerce",
+					order: 20,
+					icon: "shopping-cart",
+					presentation: { edit: "sheet" },
+					data: { rowsPath: "data.items", totalPath: "data.total" },
+					permissions: { list: "orders:read" },
+					actions: [{ key: "export", scope: "bulk" }],
+				},
+			},
+			{
+				name: "Customers",
+				"x-fizzyx-admin": { group: "Commerce", order: 10, icon: "users" },
+			},
+			{ name: "Audit", "x-fizzyx-admin": { hidden: true, order: 1 } },
+			{ name: "Settings" },
+		],
+		paths: {
+			"/orders": { get: operation("listOrders", "Orders") },
+			"/customers": { get: operation("listCustomers", "Customers") },
+			"/audit": { get: operation("listAudit", "Audit") },
+			"/settings": { get: operation("listSettings", "Settings") },
+		},
+	});
+
+	const plan = planAdminApp(spec, {
+		presentation: { create: "dialog", edit: "dialog", detail: "sheet" },
+	});
+	const orders = plan.resources.find((resource) => resource.id === "orders");
+
+	expect(orders).toMatchObject({
+		key: "commerce.orders",
+		label: "Purchases",
+		icon: "shopping-cart",
+		presentation: { create: "dialog", edit: "sheet", detail: "sheet" },
+		list: { data: { rowsPath: "data.items", totalPath: "data.total" } },
+		permissions: { list: "orders:read" },
+		actions: [{ key: "export", scope: "bulk" }],
+	});
+	expect(plan.navigation.groups.map((group) => group.label)).toEqual(["Commerce", "Resources"]);
+	expect(plan.navigation.groups[0]?.items.map((item) => item.label)).toEqual([
+		"Customers",
+		"Purchases",
+	]);
+	expect(
+		plan.navigation.groups.flatMap((group) => group.items).map((item) => item.label),
+	).not.toContain("Audit");
+});
+
+test("preserves one-argument planning and the createMode compatibility alias", () => {
+	expect(planAdminApp(petStoreSpec).resources[0]?.presentation).toEqual({
+		create: "page",
+		edit: "page",
+		detail: "page",
+	});
+	expect(planAdminApp(petStoreSpec, { createMode: "dialog" }).resources[0]?.presentation).toEqual({
+		create: "dialog",
+		edit: "dialog",
+		detail: "page",
+	});
+});
+
+test("reports duplicate stable resource keys and invalid controlled icon metadata", async () => {
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Backoffice", version: "1.0.0" },
+		tags: [
+			{ name: "Orders", "x-fizzyx-admin": { key: "shared", icon: "sparkles" } },
+			{ name: "Customers", "x-fizzyx-admin": { key: "shared" } },
+		],
+		paths: {
+			"/orders": { get: operation("listOrders", "Orders") },
+			"/customers": { get: operation("listCustomers", "Customers") },
+		},
+	});
+	const plan = planAdminApp(spec);
+
+	expect(plan.diagnostics).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ code: "invalid-admin-metadata", resourceKey: "shared" }),
+			expect.objectContaining({ code: "ambiguous-admin-metadata", resourceKey: "shared" }),
+		]),
+	);
+});
+
+function operation(operationId: string, tag: string) {
+	return {
+		operationId,
+		tags: [tag],
+		responses: { "200": { description: "ok" } },
+	};
+}

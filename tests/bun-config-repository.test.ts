@@ -366,6 +366,10 @@ test("loadProjectConfig parses optional OpenAPI admin defaults and auth override
     framework: nextjs
     preset: customPreset123
     create_mode: dialog
+    presentation:
+      create: sheet
+      edit: dialog
+      detail: page
     auth:
       mode: server-cookie
       login_operation_id: authLogin
@@ -386,6 +390,7 @@ test("loadProjectConfig parses optional OpenAPI admin defaults and auth override
 			framework: "nextjs",
 			preset: "customPreset123",
 			createMode: "dialog",
+			presentation: { create: "sheet", edit: "dialog", detail: "page" },
 			auth: {
 				mode: "server-cookie",
 				loginOperationId: "authLogin",

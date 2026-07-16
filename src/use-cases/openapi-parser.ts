@@ -3,6 +3,10 @@ import { toPascalCase } from "../domain/codegen-utils";
 import type {
 	ParsedEndpoint,
 	ParsedAdminConfig,
+	ParsedAdminActionDescriptor,
+	ParsedAdminMetadataDiagnostic,
+	ParsedAdminTagMetadata,
+	ParsedOpenApiTag,
 	ParsedSecurityRequirement,
 	ParsedSecurityScheme,
 	ParsedProperty,
@@ -21,6 +25,7 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 	const securitySchemes = parseSecuritySchemes(doc);
 	const security = parseSecurityRequirements(doc.security);
 	const admin = parseAdminConfig(doc["x-fizzyx-admin"]);
+	const { tags, diagnostics: adminMetadataDiagnostics } = parseTopLevelTags(doc.tags);
 
 	const schemas = extractRawSchemas(doc);
 	const resolveSchemaName = buildSchemaNameResolver(schemas);
@@ -48,7 +53,203 @@ export async function parseSpec(doc: Record<string, unknown>): Promise<ParsedSpe
 	const endpoints = parseAllEndpoints(paths, derefSchemas, refMap, resolveSchemaName, endpointMeta);
 	validateAdminAuth(admin, endpoints, security);
 
-	return { title, version, endpoints, types: derefSchemas, securitySchemes, security, admin };
+	return {
+		title,
+		version,
+		endpoints,
+		types: derefSchemas,
+		securitySchemes,
+		security,
+		admin,
+		tags,
+		adminMetadataDiagnostics,
+	};
+}
+
+const adminSurfaces = new Set(["page", "dialog", "sheet"]);
+
+function parseTopLevelTags(value: unknown): {
+	tags: ParsedOpenApiTag[];
+	diagnostics: ParsedAdminMetadataDiagnostic[];
+} {
+	const diagnostics: ParsedAdminMetadataDiagnostic[] = [];
+	if (value === undefined) return { tags: [], diagnostics };
+	if (!Array.isArray(value)) {
+		return {
+			tags: [],
+			diagnostics: [{ code: "invalid-admin-metadata", message: "OpenAPI tags must be an array" }],
+		};
+	}
+	const tags: ParsedOpenApiTag[] = [];
+	for (const entry of value) {
+		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+			diagnostics.push({
+				code: "invalid-admin-metadata",
+				message: "OpenAPI tag must be an object",
+			});
+			continue;
+		}
+		const source = entry as Record<string, unknown>;
+		if (typeof source.name !== "string" || !source.name.trim()) {
+			diagnostics.push({
+				code: "invalid-admin-metadata",
+				message: "OpenAPI tag name must be a non-empty string",
+			});
+			continue;
+		}
+		const name = source.name.trim();
+		const parsed: ParsedOpenApiTag = {
+			name,
+			...(typeof source.description === "string" ? { description: source.description } : {}),
+		};
+		const metadata = parseTagAdminMetadata(source["x-fizzyx-admin"], name, diagnostics);
+		if (metadata) parsed.admin = metadata;
+		tags.push(parsed);
+	}
+	return { tags, diagnostics };
+}
+
+function parseTagAdminMetadata(
+	value: unknown,
+	tag: string,
+	diagnostics: ParsedAdminMetadataDiagnostic[],
+): ParsedAdminTagMetadata | undefined {
+	if (value === undefined) return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		diagnostics.push({
+			code: "invalid-admin-metadata",
+			message: `x-fizzyx-admin for tag ${tag} must be an object`,
+			tag,
+		});
+		return undefined;
+	}
+	const source = value as Record<string, unknown>;
+	const result: ParsedAdminTagMetadata = {};
+	const invalid = (field: string, expected: string) =>
+		diagnostics.push({
+			code: "invalid-admin-metadata",
+			message: `x-fizzyx-admin.${field} for tag ${tag} must be ${expected}`,
+			tag,
+		});
+	for (const field of ["label", "group"] as const) {
+		const candidate = source[field];
+		if (candidate === undefined) continue;
+		if (typeof candidate === "string" && candidate.trim()) result[field] = candidate.trim();
+		else invalid(field, "a non-empty string");
+	}
+	if (source.key !== undefined) {
+		if (typeof source.key === "string" && /^[a-z0-9]+(?:[-_.][a-z0-9]+)*$/.test(source.key)) {
+			result.key = source.key;
+		} else invalid("key", "a stable lowercase key");
+	}
+	if (source.order !== undefined) {
+		if (typeof source.order === "number" && Number.isFinite(source.order))
+			result.order = source.order;
+		else invalid("order", "a finite number");
+	}
+	if (source.icon !== undefined) {
+		if (typeof source.icon === "string" && source.icon.trim()) result.icon = source.icon.trim();
+		else invalid("icon", "a non-empty controlled icon key");
+	}
+	if (source.hidden !== undefined) {
+		if (typeof source.hidden === "boolean") result.hidden = source.hidden;
+		else invalid("hidden", "a boolean");
+	}
+	if (source.presentation !== undefined) {
+		if (
+			!source.presentation ||
+			typeof source.presentation !== "object" ||
+			Array.isArray(source.presentation)
+		) {
+			invalid("presentation", "an object");
+		} else {
+			const presentation: ParsedAdminTagMetadata["presentation"] = {};
+			for (const field of ["create", "edit", "detail"] as const) {
+				const candidate = (source.presentation as Record<string, unknown>)[field];
+				if (candidate === undefined) continue;
+				if (typeof candidate === "string" && adminSurfaces.has(candidate))
+					presentation[field] = candidate as "page" | "dialog" | "sheet";
+				else invalid(`presentation.${field}`, "page, dialog, or sheet");
+			}
+			result.presentation = presentation;
+		}
+	}
+	if (source.data !== undefined) {
+		if (!source.data || typeof source.data !== "object" || Array.isArray(source.data))
+			invalid("data", "an object");
+		else {
+			const data: NonNullable<ParsedAdminTagMetadata["data"]> = {};
+			for (const field of ["rowsPath", "totalPath", "detailPath"] as const) {
+				const candidate = (source.data as Record<string, unknown>)[field];
+				if (candidate === undefined) continue;
+				if (typeof candidate === "string" && candidate.trim()) data[field] = candidate.trim();
+				else invalid(`data.${field}`, "a non-empty property path");
+			}
+			result.data = data;
+		}
+	}
+	if (source.permissions !== undefined) {
+		if (
+			!source.permissions ||
+			typeof source.permissions !== "object" ||
+			Array.isArray(source.permissions)
+		)
+			invalid("permissions", "an object");
+		else {
+			const permissions: Record<string, string> = {};
+			for (const [key, candidate] of Object.entries(
+				source.permissions as Record<string, unknown>,
+			)) {
+				if (typeof candidate === "string" && candidate.trim()) permissions[key] = candidate.trim();
+				else invalid(`permissions.${key}`, "a non-empty string");
+			}
+			result.permissions = permissions;
+		}
+	}
+	if (source.actions !== undefined) {
+		if (!Array.isArray(source.actions)) invalid("actions", "an array");
+		else {
+			const actions: ParsedAdminActionDescriptor[] = [];
+			const actionKeys = new Set<string>();
+			for (const [index, candidate] of source.actions.entries()) {
+				if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+					invalid(`actions.${index}`, "an object");
+					continue;
+				}
+				const action = candidate as Record<string, unknown>;
+				if (typeof action.key !== "string" || !action.key.trim()) {
+					invalid(`actions.${index}.key`, "a non-empty string");
+					continue;
+				}
+				const key = action.key.trim();
+				if (actionKeys.has(key)) {
+					diagnostics.push({
+						code: "ambiguous-admin-metadata",
+						message: `x-fizzyx-admin.actions for tag ${tag} declares key ${key} more than once`,
+						tag,
+					});
+					continue;
+				}
+				actionKeys.add(key);
+				const parsed: ParsedAdminActionDescriptor = { key };
+				for (const field of ["label", "operationId", "permission"] as const) {
+					if (typeof action[field] === "string" && action[field].trim())
+						parsed[field] = action[field].trim();
+				}
+				if (action.scope === "resource" || action.scope === "row" || action.scope === "bulk")
+					parsed.scope = action.scope;
+				else if (action.scope !== undefined)
+					invalid(`actions.${index}.scope`, "resource, row, or bulk");
+				if (typeof action.presentation === "string" && adminSurfaces.has(action.presentation))
+					parsed.presentation = action.presentation as "page" | "dialog" | "sheet";
+				else if (action.presentation !== undefined)
+					invalid(`actions.${index}.presentation`, "page, dialog, or sheet");
+				actions.push(parsed);
+			}
+			result.actions = actions;
+		}
+	}
+	return result;
 }
 
 function validateAdminAuth(

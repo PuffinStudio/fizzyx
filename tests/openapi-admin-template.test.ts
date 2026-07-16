@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { renderTemplate } from "../src/use-cases/openapi-admin-template";
+import resourceFormTemplate from "../src/templates/openapi-admin/shared/resource-form.tsx.txt" with { type: "text" };
+import resourceListTemplate from "../src/templates/openapi-admin/shared/resource-list.tsx.txt" with { type: "text" };
 
 test("renders every declared admin template token exactly once or repeatedly", () => {
 	const rendered = renderTemplate(
@@ -18,4 +20,11 @@ test("renders every declared admin template token exactly once or repeatedly", (
 test("rejects missing and unused template values", () => {
 	expect(() => renderTemplate("{{FIZZYX_REQUIRED}}", {})).toThrow("FIZZYX_REQUIRED");
 	expect(() => renderTemplate("plain", { FIZZYX_UNUSED: "value" })).toThrow("FIZZYX_UNUSED");
+});
+
+test("loads token-free shared runtime templates without rendering", () => {
+	expect(resourceFormTemplate).toContain("export function ResourceForm");
+	expect(resourceListTemplate).toContain("export function ResourceList");
+	expect(resourceFormTemplate).not.toContain("{{FIZZYX_");
+	expect(resourceListTemplate).not.toContain("{{FIZZYX_");
 });

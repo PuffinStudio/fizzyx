@@ -1,0 +1,16 @@
+// Seeded by fizzyx. This file is user-owned after creation.
+
+export interface AdminResourceConfig {
+  columns?: Record<string, { cell?: string; hidden?: boolean }>
+  actions?: readonly string[]
+  page?: string
+  operations?: Record<string, string>
+}
+
+export interface AdminConfig {
+  resources?: Record<string, AdminResourceConfig>
+}
+
+export function defineAdminConfig<const T extends AdminConfig>(config: T): T { return config }
+
+export const adminConfig = defineAdminConfig({ resources: {} })

@@ -3,7 +3,19 @@ import type { AdminAppPlan } from "../src/domain/openapi-admin-models";
 import { renderAdminApp } from "../src/use-cases/openapi-admin-render";
 
 const plan: AdminAppPlan = {
+	version: 2,
 	title: "Pet Store",
+	defaults: { create: "page", edit: "page", detail: "page" },
+	navigation: {
+		groups: [
+			{
+				id: "inventory",
+				label: "Inventory",
+				order: 10,
+				items: [{ resourceKey: "pets", label: "Pets", path: "/pets", order: 10, icon: "database" }],
+			},
+		],
+	},
 	diagnostics: [],
 	auth: {
 		status: "needs-configuration",
@@ -12,10 +24,12 @@ const plan: AdminAppPlan = {
 	},
 	resources: [
 		{
+			key: "pets",
 			id: "pets",
 			label: "Pets",
 			path: "/pets",
 			idParam: "petId",
+			presentation: { create: "page", edit: "page", detail: "page" },
 			columns: [
 				{ name: "id", tsType: "string", required: true },
 				{ name: "name", tsType: "string", required: true },
@@ -296,6 +310,77 @@ test("renders create actions as dialogs when configured", () => {
 			"src/components/admin/resources/pets-edit-dialog.tsx",
 		);
 	}
+});
+
+test("renders independent create dialog, edit sheet, and canonical detail page surfaces", () => {
+	const mixedPlan: AdminAppPlan = {
+		...plan,
+		defaults: { create: "dialog", edit: "sheet", detail: "page" },
+		resources: plan.resources.map((resource) => ({
+			...resource,
+			presentation: { create: "dialog", edit: "sheet", detail: "page" },
+		})),
+	};
+
+	for (const framework of ["nextjs", "tanstack-start"] as const) {
+		const files = renderAdminApp(mixedPlan, framework);
+		const paths = files.map((file) => file.path);
+		const listPath =
+			framework === "nextjs" ? "src/app/(admin)/pets/page.tsx" : "src/routes/_admin/pets/index.tsx";
+		const detailPath =
+			framework === "nextjs"
+				? "src/app/(admin)/pets/[id]/page.tsx"
+				: "src/routes/_admin/pets/$id.tsx";
+		const editPagePath =
+			framework === "nextjs"
+				? "src/app/(admin)/pets/[id]/edit/page.tsx"
+				: "src/routes/_admin/pets/$id.edit.tsx";
+		const list = files.find((file) => file.path === listPath)?.content;
+		const sheet = files.find(
+			(file) => file.path === "src/components/admin/resources/pets-edit-sheet.tsx",
+		)?.content;
+
+		expect(list).toContain("CreateResourceDialog");
+		expect(list).toContain("EditPetsSheet");
+		expect(paths).toContain("src/components/admin/resources/pets-edit-sheet.tsx");
+		expect(sheet).toContain('mode="sheet"');
+		expect(sheet).toContain("ResourceForm");
+		expect(paths).not.toContain(editPagePath);
+		expect(paths).toContain(detailPath);
+	}
+});
+
+test("serializes grouped navigation and v2 presentation metadata", () => {
+	const files = renderAdminApp(plan, "nextjs");
+	const generatedPlan = files.find((file) => file.path === "src/generated/admin-plan.ts")?.content;
+	const shell = files.find((file) => file.path === "src/components/admin/admin-shell.tsx")?.content;
+
+	expect(generatedPlan).toContain('"version": 2');
+	expect(generatedPlan).toContain('"navigation"');
+	expect(generatedPlan).toContain('"label": "Inventory"');
+	expect(generatedPlan).toContain('"resourceKey": "pets"');
+	expect(generatedPlan).toContain('"presentation"');
+	expect(shell).toContain("adminPlan.navigation.groups.map");
+	expect(shell).toContain("AdminNavigation");
+});
+
+test("legacy createMode page overrides resource dialog and sheet presentation", () => {
+	const resource = plan.resources[0];
+	if (!resource) throw new Error("expected pets resource");
+	const mixedPlan: AdminAppPlan = {
+		...plan,
+		resources: [
+			{ ...resource, presentation: { create: "dialog", edit: "sheet", detail: "sheet" } },
+		],
+	};
+	const paths = renderAdminApp(mixedPlan, "nextjs", { createMode: "page" }).map(
+		(file) => file.path,
+	);
+
+	expect(paths).toContain("src/app/(admin)/pets/new/page.tsx");
+	expect(paths).toContain("src/app/(admin)/pets/[id]/edit/page.tsx");
+	expect(paths).toContain("src/app/(admin)/pets/[id]/page.tsx");
+	expect(paths).not.toContain("src/components/admin/resources/pets-edit-sheet.tsx");
 });
 
 const authenticatedPlan: AdminAppPlan = {

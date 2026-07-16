@@ -36,6 +36,7 @@ export interface AdminColumnDefinition {
   sortable?: boolean
   filterable?: boolean
   filter?: AdminTableFilterDefinition
+  render?: (value: unknown, row: Record<string, unknown>) => ReactNode
 }
 
 export interface AdminDataTableState {
@@ -73,7 +74,7 @@ export function AdminDataTable({ data, columns, loading, error, onRetry, mode = 
       enableSorting: column.sortable ?? true,
       enableColumnFilter: column.filterable ?? Boolean(column.filter),
       header: ({ column: tableColumn }) => <Button variant="ghost" className="-ml-3" onClick={() => tableColumn.toggleSorting(tableColumn.getIsSorted() === "asc")}>{column.label}</Button>,
-      cell: ({ getValue }) => String(getValue() ?? "—"),
+      cell: ({ getValue, row }) => column.render ? column.render(getValue(), row.original) : String(getValue() ?? "—"),
     }))
     if (renderRowActions) valueColumns.push({ id: "actions", header: "Actions", enableSorting: false, enableColumnFilter: false, cell: ({ row }) => renderRowActions(row.original) })
     return valueColumns

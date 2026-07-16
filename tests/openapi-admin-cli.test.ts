@@ -110,3 +110,42 @@ test("openapi admin can use optional project defaults without CLI flags", async 
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("openapi admin sync check exits nonzero when the coordinator reports drift", async () => {
+	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-sync-cli-"));
+	try {
+		const entry = join(import.meta.dir, "..", "src", "main.ts");
+		const fixture = join(import.meta.dir, "fixtures", "openapi-admin-pets.json");
+		const output = join(root, "missing-admin");
+		const proc = Bun.spawn(
+			[
+				"bun",
+				"run",
+				entry,
+				"openapi",
+				"admin",
+				"sync",
+				"--input",
+				fixture,
+				"--output",
+				output,
+				"--framework",
+				"nextjs",
+				"--check",
+			],
+			{ cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe" },
+		);
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		]);
+
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain("file written:");
+		expect(`${stdout}\n${stderr}`).toContain("admin sync check failed with status");
+		expect(await Bun.file(output).exists()).toBe(false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

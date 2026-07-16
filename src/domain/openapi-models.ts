@@ -23,7 +23,17 @@ export interface OpenApiAdminProjectConfig {
 	framework?: "nextjs" | "tanstack-start";
 	preset?: string;
 	createMode?: "page" | "dialog";
+	presentation?: Partial<AdminPresentationDefaults>;
 	auth?: ParsedAdminAuthConfig;
+}
+
+export type AdminSurface = "page" | "dialog" | "sheet";
+
+export interface AdminPresentationDefaults {
+	create: AdminSurface;
+	edit: AdminSurface;
+	detail: AdminSurface;
+	[key: string]: unknown;
 }
 
 export interface GenFileOptions {
@@ -42,6 +52,59 @@ export interface ParsedSpec {
 	securitySchemes?: ParsedSecurityScheme[];
 	security?: ParsedSecurityRequirement[];
 	admin?: ParsedAdminConfig;
+	tags?: ParsedOpenApiTag[];
+	adminMetadataDiagnostics?: ParsedAdminMetadataDiagnostic[];
+}
+
+export interface ParsedAdminMetadataDiagnostic {
+	code: "invalid-admin-metadata" | "ambiguous-admin-metadata";
+	message: string;
+	tag?: string;
+}
+
+export interface ParsedAdminDataMapping {
+	rowsPath?: string;
+	totalPath?: string;
+	detailPath?: string;
+	[key: string]: unknown;
+}
+
+export interface ParsedAdminPermissionDescriptor {
+	list?: string;
+	detail?: string;
+	create?: string;
+	update?: string;
+	delete?: string;
+	[key: string]: unknown;
+}
+
+export interface ParsedAdminActionDescriptor {
+	key: string;
+	label?: string;
+	operationId?: string;
+	scope?: "resource" | "row" | "bulk";
+	permission?: string;
+	presentation?: AdminSurface;
+	[key: string]: unknown;
+}
+
+export interface ParsedAdminTagMetadata {
+	key?: string;
+	label?: string;
+	group?: string;
+	order?: number;
+	icon?: string;
+	hidden?: boolean;
+	presentation?: Partial<AdminPresentationDefaults>;
+	data?: ParsedAdminDataMapping;
+	permissions?: ParsedAdminPermissionDescriptor;
+	actions?: ParsedAdminActionDescriptor[];
+}
+
+export interface ParsedOpenApiTag {
+	name: string;
+	description?: string;
+	admin?: ParsedAdminTagMetadata;
 }
 
 export interface ParsedSecurityScheme {
@@ -143,6 +206,8 @@ export interface ParsedProperty {
 export interface GeneratedFile {
 	path: string;
 	content: string;
+	/** Seed files are created once and become user-owned immediately. */
+	ownership?: "generated" | "seed-once";
 }
 
 export interface KnownGenerator {

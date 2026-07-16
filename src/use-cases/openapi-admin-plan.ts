@@ -1,12 +1,20 @@
 import type {
 	AdminAppPlan,
 	AdminFilterField,
+	AdminIconKey,
 	AdminListQueryMapping,
 	AdminOperationKind,
 	AdminPlanDiagnostic,
 	AdminResourcePlan,
 } from "../domain/openapi-admin-models";
-import type { ParsedEndpoint, ParsedSpec, ParsedTypeDef } from "../domain/openapi-models";
+import type {
+	AdminPresentationDefaults,
+	OpenApiAdminProjectConfig,
+	ParsedAdminTagMetadata,
+	ParsedEndpoint,
+	ParsedSpec,
+	ParsedTypeDef,
+} from "../domain/openapi-models";
 import { discoverAdminAuth } from "./openapi-admin-auth";
 
 const pathSegments = (path: string): string[] => path.split("/").filter(Boolean);
@@ -80,10 +88,100 @@ const listQueryMapping = (
 		: undefined;
 };
 
-export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
+const BUILTIN_PRESENTATION: AdminPresentationDefaults = {
+	create: "page",
+	edit: "page",
+	detail: "page",
+};
+
+const ADMIN_ICON_KEYS = new Set<AdminIconKey>([
+	"database",
+	"file",
+	"folder",
+	"home",
+	"package",
+	"settings",
+	"shield",
+	"shopping-cart",
+	"user",
+	"users",
+]);
+
+export interface AdminPlannerOptions {
+	presentation?: Partial<AdminPresentationDefaults>;
+	/** Backward-compatible alias that applies to both create and edit. */
+	createMode?: OpenApiAdminProjectConfig["createMode"];
+}
+
+const projectDefaults = (options: AdminPlannerOptions): AdminPresentationDefaults => ({
+	...BUILTIN_PRESENTATION,
+	...(options.createMode ? { create: options.createMode, edit: options.createMode } : {}),
+	...options.presentation,
+});
+
+const navigationFor = (resources: AdminResourcePlan[]) => {
+	const groups = new Map<
+		string,
+		{
+			id: string;
+			label: string;
+			order: number;
+			items: AdminAppPlan["navigation"]["groups"][number]["items"];
+		}
+	>();
+	for (const resource of resources) {
+		if (resource.hidden) continue;
+		const label = resource.group ?? "Resources";
+		const id = slugify(label) || "resources";
+		const order = resource.order ?? Number.MAX_SAFE_INTEGER;
+		const group = groups.get(id) ?? { id, label, order, items: [] };
+		group.order = Math.min(group.order, order);
+		group.items.push({
+			resourceKey: resource.key,
+			label: resource.label,
+			path: resource.path,
+			order,
+			...(resource.icon ? { icon: resource.icon } : {}),
+		});
+		groups.set(id, group);
+	}
+	return {
+		groups: [...groups.values()]
+			.map((group) => ({
+				...group,
+				items: group.items.sort(
+					(a, b) =>
+						a.order - b.order ||
+						a.label.localeCompare(b.label) ||
+						a.resourceKey.localeCompare(b.resourceKey),
+				),
+			}))
+			.sort(
+				(a, b) => a.order - b.order || a.label.localeCompare(b.label) || a.id.localeCompare(b.id),
+			),
+	};
+};
+
+export const planAdminApp = (spec: ParsedSpec, options: AdminPlannerOptions = {}): AdminAppPlan => {
 	const resources = new Map<string, AdminResourcePlan>();
 	const authDiscovery = discoverAdminAuth(spec);
-	const diagnostics: AdminPlanDiagnostic[] = [...authDiscovery.diagnostics];
+	const diagnostics: AdminPlanDiagnostic[] = [
+		...authDiscovery.diagnostics,
+		...(spec.adminMetadataDiagnostics ?? []),
+	];
+	const defaults = projectDefaults(options);
+	const tagMetadata = new Map<string, ParsedAdminTagMetadata | undefined>();
+	for (const tag of spec.tags ?? []) {
+		if (tagMetadata.has(tag.name)) {
+			diagnostics.push({
+				code: "ambiguous-admin-metadata",
+				message: `Top-level tag ${tag.name} is declared more than once; the first declaration is used`,
+				tag: tag.name,
+			});
+			continue;
+		}
+		tagMetadata.set(tag.name, tag.admin);
+	}
 	const configuredAuthOperations = Object.entries(authDiscovery.auth.config ?? {})
 		.filter(([key, value]) => key.endsWith("OperationId") && typeof value === "string")
 		.map(([, value]) => value as string);
@@ -96,6 +194,8 @@ export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
 	for (const endpoint of spec.endpoints) {
 		if (reservedAuthOperations.has(endpoint.operationId)) continue;
 		const resourceId = resourceIdFor(endpoint);
+		const tag = endpoint.tags?.[0];
+		const metadata = tag ? tagMetadata.get(tag) : undefined;
 		const kind = classifyOperation(endpoint);
 		if (!resourceId || !kind) {
 			diagnostics.push({
@@ -107,14 +207,33 @@ export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
 		}
 
 		const current = resources.get(resourceId) ?? {
+			key: metadata?.key ?? resourceId,
 			id: resourceId,
-			label: humanize(resourceId),
+			label: metadata?.label ?? humanize(resourceId),
 			path: `/${resourceId}`,
+			group: metadata?.group,
+			order: metadata?.order,
+			hidden: metadata?.hidden,
+			presentation: { ...defaults, ...metadata?.presentation },
+			permissions: metadata?.permissions,
+			actions: metadata?.actions,
 			idParam: endpoint.pathParams[0]?.name,
 			columns: [],
 			fields: [],
 			operations: {},
 		};
+		if (metadata?.icon) {
+			if (ADMIN_ICON_KEYS.has(metadata.icon as AdminIconKey))
+				current.icon = metadata.icon as AdminIconKey;
+			else if (!current.icon) {
+				diagnostics.push({
+					code: "invalid-admin-metadata",
+					message: `Unknown admin icon key ${metadata.icon} for tag ${tag}`,
+					tag,
+					resourceKey: current.key,
+				});
+			}
+		}
 		if (current.operations[kind]) {
 			diagnostics.push({
 				code: "ambiguous-operation",
@@ -128,7 +247,12 @@ export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
 		current.idParam ??= endpoint.pathParams[0]?.name;
 		if (kind === "list" || kind === "detail") {
 			current.columns = typeDef(spec, endpoint.responseTypeRef)?.properties ?? current.columns;
-			if (kind === "list") current.listQuery = listQueryMapping(endpoint, current.columns);
+			if (kind === "list") {
+				current.listQuery = listQueryMapping(endpoint, current.columns);
+				if (current.listQuery || metadata?.data) {
+					current.list = { query: current.listQuery, data: metadata?.data };
+				}
+			}
 		}
 		if (kind === "create" || kind === "update") {
 			const fields =
@@ -139,10 +263,28 @@ export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
 		}
 		resources.set(resourceId, current);
 	}
+	const plannedResources = [...resources.values()];
+	const keys = new Map<string, AdminResourcePlan>();
+	for (const resource of plannedResources) {
+		const existing = keys.get(resource.key);
+		if (!existing) {
+			keys.set(resource.key, resource);
+			continue;
+		}
+		diagnostics.push({
+			code: "ambiguous-admin-metadata",
+			message: `Resources ${existing.id} and ${resource.id} use the same stable key ${resource.key}`,
+			resourceKey: resource.key,
+		});
+		resource.key = resource.id;
+	}
 
 	return {
+		version: 2,
 		title: spec.title,
-		resources: [...resources.values()],
+		resources: plannedResources,
+		navigation: navigationFor(plannedResources),
+		defaults,
 		diagnostics,
 		auth: authDiscovery.auth,
 	};

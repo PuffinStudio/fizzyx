@@ -212,3 +212,98 @@ test("parseSpec normalizes component schema names and schema refs to PascalCase"
 	expect(dataProp).toBeDefined();
 	expect(dataProp?.tsType).toBe("UserProfile");
 });
+
+test("parseSpec validates and preserves top-level tag admin metadata", async () => {
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Backoffice", version: "1.0.0" },
+		tags: [
+			{
+				name: "Orders",
+				description: "Order operations",
+				"x-fizzyx-admin": {
+					key: "commerce.orders",
+					label: "Purchases",
+					group: "Commerce",
+					order: 20,
+					icon: "shopping-cart",
+					hidden: false,
+					presentation: { create: "sheet", edit: "dialog", detail: "page" },
+					data: { rowsPath: "data.items", totalPath: "data.total" },
+					permissions: { list: "orders:read", update: "orders:write" },
+					actions: [
+						{
+							key: "refund",
+							label: "Refund",
+							operationId: "refundOrder",
+							scope: "row",
+							permission: "orders:refund",
+							presentation: "dialog",
+						},
+					],
+				},
+			},
+		],
+		paths: {},
+	});
+
+	expect(spec.tags).toEqual([
+		{
+			name: "Orders",
+			description: "Order operations",
+			admin: {
+				key: "commerce.orders",
+				label: "Purchases",
+				group: "Commerce",
+				order: 20,
+				icon: "shopping-cart",
+				hidden: false,
+				presentation: { create: "sheet", edit: "dialog", detail: "page" },
+				data: { rowsPath: "data.items", totalPath: "data.total" },
+				permissions: { list: "orders:read", update: "orders:write" },
+				actions: [
+					{
+						key: "refund",
+						label: "Refund",
+						operationId: "refundOrder",
+						scope: "row",
+						permission: "orders:refund",
+						presentation: "dialog",
+					},
+				],
+			},
+		},
+	]);
+	expect(spec.adminMetadataDiagnostics).toEqual([]);
+});
+
+test("parseSpec reports invalid and ambiguous tag admin metadata without accepting it", async () => {
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Backoffice", version: "1.0.0" },
+		tags: [
+			{
+				name: "Orders",
+				"x-fizzyx-admin": {
+					key: "Not Stable",
+					order: "first",
+					presentation: { create: "drawer" },
+					actions: [{ key: "refund" }, { key: "refund" }, { label: "Missing key" }],
+				},
+			},
+		],
+		paths: {},
+	});
+
+	expect(spec.tags?.[0]?.admin).toMatchObject({
+		presentation: {},
+		actions: [{ key: "refund" }],
+	});
+	expect(spec.tags?.[0]?.admin?.key).toBeUndefined();
+	expect(spec.adminMetadataDiagnostics).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ code: "invalid-admin-metadata", tag: "Orders" }),
+			expect.objectContaining({ code: "ambiguous-admin-metadata", tag: "Orders" }),
+		]),
+	);
+});

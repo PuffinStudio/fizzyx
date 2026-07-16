@@ -1,5 +1,10 @@
 import type {
 	ParsedAdminAuthConfig,
+	AdminPresentationDefaults,
+	AdminSurface,
+	ParsedAdminActionDescriptor,
+	ParsedAdminDataMapping,
+	ParsedAdminPermissionDescriptor,
 	ParsedEndpoint,
 	ParsedProperty,
 	ParsedSecurityScheme,
@@ -30,6 +35,7 @@ export interface AdminFilterField {
 }
 
 export interface AdminResourcePlan {
+	key: string;
 	id: string;
 	label: string;
 	path: string;
@@ -41,7 +47,55 @@ export interface AdminResourcePlan {
 		update?: ParsedProperty[];
 	};
 	listQuery?: AdminListQueryMapping;
+	group?: string;
+	order?: number;
+	icon?: AdminIconKey;
+	hidden?: boolean;
+	presentation: AdminPresentationDefaults;
+	list?: AdminListPlan;
+	permissions?: ParsedAdminPermissionDescriptor;
+	actions?: ParsedAdminActionDescriptor[];
 	operations: Partial<Record<AdminOperationKind, AdminResourceOperation>>;
+}
+
+export type { AdminSurface };
+
+export type AdminIconKey =
+	| "database"
+	| "file"
+	| "folder"
+	| "home"
+	| "package"
+	| "settings"
+	| "shield"
+	| "shopping-cart"
+	| "user"
+	| "users";
+
+export interface AdminListPlan {
+	query?: AdminListQueryMapping;
+	data?: ParsedAdminDataMapping;
+	/** Additional runtime mappings may be added without changing resource identity. */
+	[key: string]: unknown;
+}
+
+export interface AdminNavigationItem {
+	resourceKey: string;
+	label: string;
+	path: string;
+	order: number;
+	icon?: AdminIconKey;
+}
+
+export interface AdminNavigationGroup {
+	id: string;
+	label: string;
+	order: number;
+	items: AdminNavigationItem[];
+}
+
+export interface AdminNavigationPlan {
+	groups: AdminNavigationGroup[];
 }
 
 export interface AdminPlanDiagnostic {
@@ -50,9 +104,13 @@ export interface AdminPlanDiagnostic {
 		| "ambiguous-operation"
 		| "auth-candidate"
 		| "auth-missing"
-		| "auth-unsupported";
+		| "auth-unsupported"
+		| "invalid-admin-metadata"
+		| "ambiguous-admin-metadata";
 	message: string;
 	operationId?: string;
+	tag?: string;
+	resourceKey?: string;
 }
 
 export type AdminAuthRole = "login" | "logout" | "me" | "refresh";
@@ -72,8 +130,11 @@ export interface AdminAuthPlan {
 }
 
 export interface AdminAppPlan {
+	version: 2;
 	title: string;
 	resources: AdminResourcePlan[];
+	navigation: AdminNavigationPlan;
+	defaults: AdminPresentationDefaults;
 	diagnostics: AdminPlanDiagnostic[];
 	auth: AdminAuthPlan;
 }

@@ -746,9 +746,34 @@ const parseOpenapiAdminConfig = (raw: unknown): OpenApiAdminProjectConfig | unde
 	const createModeValue = stringValue(admin.create_mode);
 	const createMode =
 		createModeValue === "page" || createModeValue === "dialog" ? createModeValue : undefined;
+	const presentationRaw = objectValue(admin.presentation);
+	const surface = (value: unknown) => {
+		const candidate = stringValue(value);
+		return candidate === "page" || candidate === "dialog" || candidate === "sheet"
+			? candidate
+			: undefined;
+	};
+	const presentation = {
+		create: surface(presentationRaw.create),
+		edit: surface(presentationRaw.edit),
+		detail: surface(presentationRaw.detail),
+	};
+	const parsedPresentation = Object.values(presentation).some(Boolean)
+		? Object.fromEntries(Object.entries(presentation).filter(([, value]) => value !== undefined))
+		: undefined;
 	const auth = parseOpenapiAdminAuth(admin.auth);
-	if (!input && !output && !framework && !preset && !createMode && !auth) return undefined;
-	return { input, output, framework, preset, createMode, auth };
+	if (!input && !output && !framework && !preset && !createMode && !parsedPresentation && !auth) {
+		return undefined;
+	}
+	return {
+		input,
+		output,
+		framework,
+		preset,
+		createMode,
+		presentation: parsedPresentation,
+		auth,
+	};
 };
 
 const parseOpenapiEntries = (raw: unknown): OpenApiGenConfig[] | undefined => {
@@ -927,6 +952,13 @@ const renderOpenApiConfigFlat = (openapi: OpenApiProjectConfig): YamlObject => {
 		if (openapi.admin.framework) admin.framework = openapi.admin.framework;
 		if (openapi.admin.preset) admin.preset = openapi.admin.preset;
 		if (openapi.admin.createMode) admin.create_mode = openapi.admin.createMode;
+		if (openapi.admin.presentation) {
+			admin.presentation = {
+				...(openapi.admin.presentation.create ? { create: openapi.admin.presentation.create } : {}),
+				...(openapi.admin.presentation.edit ? { edit: openapi.admin.presentation.edit } : {}),
+				...(openapi.admin.presentation.detail ? { detail: openapi.admin.presentation.detail } : {}),
+			};
+		}
 		if (openapi.admin.auth) {
 			const auth = openapi.admin.auth;
 			admin.auth = {
