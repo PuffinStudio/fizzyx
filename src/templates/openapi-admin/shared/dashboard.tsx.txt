@@ -7,7 +7,7 @@ import { buttonVariants } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export function AdminDashboard() {
-  const authConfigured = adminPlan.auth.status === "configured"
+  const authConfigured = ["configured"].includes(adminPlan.auth.status)
   return <section className="space-y-8">
     <header className="space-y-2"><Badge variant="secondary" className="gap-1.5"><Boxes aria-hidden="true" className="size-3.5" />Control Panel</Badge><h1 className="text-3xl font-semibold tracking-tight text-balance md:text-4xl">Admin Overview</h1><p className="max-w-2xl text-muted-foreground text-pretty">Explore the resources and runtime capabilities generated from your OpenAPI contract.</p></header>
     <div className="grid gap-4 md:grid-cols-3">

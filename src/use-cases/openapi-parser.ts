@@ -343,6 +343,87 @@ function isObjectSchema(schema: Record<string, unknown>): boolean {
 	return false;
 }
 
+const primitiveEnumValues = (value: unknown): Array<string | number | boolean> | undefined => {
+	if (!Array.isArray(value)) return undefined;
+	const values = value.filter(
+		(item): item is string | number | boolean =>
+			typeof item === "string" || typeof item === "number" || typeof item === "boolean",
+	);
+	return values.length ? values : undefined;
+};
+
+const propertyKind = (schema: Record<string, unknown>): ParsedProperty["kind"] => {
+	if (schema.type === "integer") return "integer";
+	if (
+		schema.type === "string" ||
+		schema.type === "number" ||
+		schema.type === "boolean" ||
+		schema.type === "array" ||
+		schema.type === "object"
+	) {
+		return schema.type;
+	}
+	if (schema.properties) return "object";
+	return undefined;
+};
+
+const parseProperty = (
+	name: string,
+	schema: Record<string, unknown>,
+	required: boolean,
+	tsType: string,
+	resolveSchemaName: SchemaNameResolver,
+	seen: Set<Record<string, unknown>> = new Set(),
+): ParsedProperty => {
+	const property: ParsedProperty = {
+		name,
+		tsType,
+		required,
+		kind: propertyKind(schema),
+		description: (schema.description as string) || undefined,
+		format: typeof schema.format === "string" ? schema.format : undefined,
+		enumValues: primitiveEnumValues(schema.enum),
+		nullable: schema.nullable === true ? true : undefined,
+		minimum: typeof schema.minimum === "number" ? schema.minimum : undefined,
+		maximum: typeof schema.maximum === "number" ? schema.maximum : undefined,
+		minItems: typeof schema.minItems === "number" ? schema.minItems : undefined,
+		maxItems: typeof schema.maxItems === "number" ? schema.maxItems : undefined,
+		minLength: typeof schema.minLength === "number" ? schema.minLength : undefined,
+		maxLength: typeof schema.maxLength === "number" ? schema.maxLength : undefined,
+		pattern: typeof schema.pattern === "string" ? schema.pattern : undefined,
+		readOnly: schema.readOnly === true ? true : undefined,
+		writeOnly: schema.writeOnly === true ? true : undefined,
+	};
+	if (seen.has(schema)) return property;
+	const nextSeen = new Set(seen).add(schema);
+	if (property.kind === "array" && schema.items && typeof schema.items === "object") {
+		const items = schema.items as Record<string, unknown>;
+		property.items = parseProperty(
+			"item",
+			items,
+			true,
+			schemaToTsType(items, resolveSchemaName),
+			resolveSchemaName,
+			nextSeen,
+		);
+	}
+	if (property.kind === "object" && schema.properties) {
+		const requiredNames = new Set(Array.isArray(schema.required) ? schema.required : []);
+		property.properties = Object.entries(schema.properties as Record<string, unknown>).map(
+			([childName, childSchema]) =>
+				parseProperty(
+					childName,
+					childSchema as Record<string, unknown>,
+					requiredNames.has(childName),
+					schemaToTsType(childSchema as Record<string, unknown>, resolveSchemaName),
+					resolveSchemaName,
+					nextSeen,
+				),
+		);
+	}
+	return property;
+};
+
 function buildPropertyRefs(
 	doc: Record<string, unknown>,
 	resolveSchemaName: SchemaNameResolver,
@@ -431,20 +512,9 @@ function parseSchema(
 				const context = `${name}.${propName}`;
 				const namedRef = propRefs.get(context);
 				const tsType = namedRef ?? schemaToTsType(ps, resolveSchemaName);
-				properties.push({
-					name: propName,
-					tsType,
-					required: required.includes(propName),
-					description: (ps.description as string) || undefined,
-					format: typeof ps.format === "string" ? ps.format : undefined,
-					minimum: typeof ps.minimum === "number" ? ps.minimum : undefined,
-					maximum: typeof ps.maximum === "number" ? ps.maximum : undefined,
-					minLength: typeof ps.minLength === "number" ? ps.minLength : undefined,
-					maxLength: typeof ps.maxLength === "number" ? ps.maxLength : undefined,
-					pattern: typeof ps.pattern === "string" ? ps.pattern : undefined,
-					readOnly: ps.readOnly === true ? true : undefined,
-					writeOnly: ps.writeOnly === true ? true : undefined,
-				});
+				properties.push(
+					parseProperty(propName, ps, required.includes(propName), tsType, resolveSchemaName),
+				);
 			}
 		}
 		return { name, kind: "interface", description, properties };
@@ -586,6 +656,8 @@ function parseAllEndpoints(
 						typeRef: tsType,
 						required: pRequired,
 						description: pDesc,
+						format: typeof pSchema?.format === "string" ? pSchema.format : undefined,
+						enumValues: primitiveEnumValues(pSchema?.enum),
 					});
 				}
 			}

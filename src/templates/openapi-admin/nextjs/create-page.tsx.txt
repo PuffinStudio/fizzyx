@@ -4,11 +4,11 @@
 
 import { {{FIZZYX_HOOK_NAME}} } from "@/lib/api/generated"
 import { DynamicForm } from "@/components/admin/dynamic-form"
+import { {{FIZZYX_SCHEMA_NAME}} } from "@/generated/admin/forms/{{FIZZYX_RESOURCE_ID}}"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-const fields = {{FIZZYX_FIELDS}} as const
 const resourceLabel = {{FIZZYX_LABEL}}
 export default function {{FIZZYX_COMPONENT_NAME}}() {
   const mutation = {{FIZZYX_HOOK_NAME}}()
-  return <section className="mx-auto max-w-4xl space-y-6"><header className="space-y-1"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">New Record</p><h1 className="text-3xl font-semibold tracking-tight text-balance">Create {resourceLabel}</h1><p className="text-sm text-muted-foreground text-pretty">Complete the fields below to add a new record.</p></header><Card><CardHeader className="border-b"><CardTitle>Record Details</CardTitle><CardDescription>Required fields are marked with an asterisk.</CardDescription></CardHeader><CardContent><DynamicForm fields={fields} initialValue={{}} pending={mutation.isPending} error={mutation.error} success={mutation.isSuccess} onSubmit={async (value) => { await mutation.mutateAsync(value as never) }} /></CardContent></Card></section>
+  return <section className="mx-auto max-w-4xl space-y-6"><header className="space-y-1"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">New Record</p><h1 className="text-3xl font-semibold tracking-tight text-balance">Create {resourceLabel}</h1><p className="text-sm text-muted-foreground text-pretty">Complete the fields below to add a new record.</p></header><Card><CardHeader className="border-b"><CardTitle>Record Details</CardTitle><CardDescription>Required fields are marked with an asterisk.</CardDescription></CardHeader><CardContent><DynamicForm schema={{{FIZZYX_SCHEMA_NAME}}} initialValue={{}} pending={mutation.isPending} error={mutation.error} success={mutation.isSuccess} onSubmit={async (value) => { await mutation.mutateAsync(value as never) }} /></CardContent></Card></section>
 }

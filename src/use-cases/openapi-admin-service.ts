@@ -19,6 +19,7 @@ import { renderAdminApp } from "./openapi-admin-render";
 import {
 	planAdminScaffold,
 	planAdminScaffoldBootstrap,
+	planAdminScaffoldFinalize,
 	FIZZYX_ADMIN_PRESET,
 	type AdminScaffoldBootstrapFile,
 	type AdminScaffoldCommand,
@@ -68,6 +69,7 @@ const isBunCompatibilityFailure = (error: AdminGenerationError): boolean =>
 const runScaffold = (
 	commands: AdminScaffoldCommand[],
 	bootstrap: AdminScaffoldBootstrapFile[],
+	finalize: AdminScaffoldBootstrapFile[],
 	outputDir: string,
 ) =>
 	Effect.gen(function* () {
@@ -88,6 +90,17 @@ const runScaffold = (
 				new AdminGenerationError({ message: "failed to bootstrap shadcn config", cause }),
 		});
 		for (const command of remaining) yield* runner.run(command.argv);
+		yield* Effect.try({
+			try: () => {
+				for (const file of finalize) {
+					const destination = join(outputDir, file.path);
+					mkdirSync(dirname(destination), { recursive: true });
+					writeFileSync(destination, file.content);
+				}
+			},
+			catch: (cause) =>
+				new AdminGenerationError({ message: "failed to finalize admin scaffold", cause }),
+		});
 	});
 
 const runQualityCommands = (packageManager: AdminPackageManager, outputDir: string) =>
@@ -183,6 +196,13 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			packageManager,
 			preset,
 		});
+		let finalize = planAdminScaffoldFinalize({
+			framework: input.framework,
+			projectName,
+			targetDir: outputDir,
+			packageManager,
+			preset,
+		});
 		const commands = scaffold.map((command) => command.argv);
 
 		if (input.dryRun) {
@@ -214,7 +234,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 		}
 
 		if (!manifestExists) {
-			yield* runScaffold(scaffold, bootstrap, outputDir).pipe(
+			yield* runScaffold(scaffold, bootstrap, finalize, outputDir).pipe(
 				Effect.catch((error) => {
 					if (!isBunCompatibilityFailure(error)) return Effect.fail(error);
 					if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
@@ -233,7 +253,14 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 						packageManager,
 						preset,
 					});
-					return runScaffold(scaffold, bootstrap, outputDir);
+					finalize = planAdminScaffoldFinalize({
+						framework: input.framework,
+						projectName,
+						targetDir: outputDir,
+						packageManager,
+						preset,
+					});
+					return runScaffold(scaffold, bootstrap, finalize, outputDir);
 				}),
 			);
 		}

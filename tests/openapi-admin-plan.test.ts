@@ -179,6 +179,81 @@ test("preserves schema constraints and excludes read-only properties from admin 
 	]);
 });
 
+test("preserves enum choices for generated select controls and typed list filters", async () => {
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Pets", version: "1.0.0" },
+		components: {
+			schemas: {
+				PetStatus: {
+					type: "string",
+					enum: ["available", "pending", "adopted"],
+				},
+				Pet: {
+					type: "object",
+					properties: { id: { type: "string" }, status: { type: "string" } },
+				},
+				PetInput: {
+					type: "object",
+					required: ["status"],
+					properties: {
+						status: { $ref: "#/components/schemas/PetStatus" },
+					},
+				},
+			},
+		},
+		paths: {
+			"/pets": {
+				get: {
+					operationId: "listPets",
+					parameters: [
+						{
+							name: "status",
+							in: "query",
+							schema: { $ref: "#/components/schemas/PetStatus" },
+						},
+					],
+					responses: {
+						"200": {
+							description: "ok",
+							content: {
+								"application/json": {
+									schema: { type: "array", items: { $ref: "#/components/schemas/Pet" } },
+								},
+							},
+						},
+					},
+				},
+				post: {
+					operationId: "createPet",
+					requestBody: {
+						content: {
+							"application/json": { schema: { $ref: "#/components/schemas/PetInput" } },
+						},
+					},
+					responses: { "201": { description: "created" } },
+				},
+			},
+		},
+	});
+
+	const resource = planAdminApp(spec).resources[0];
+
+	expect(resource?.forms?.create).toEqual([
+		expect.objectContaining({
+			name: "status",
+			enumValues: ["available", "pending", "adopted"],
+		}),
+	]);
+	expect(resource?.listQuery?.filterFields).toEqual([
+		{
+			name: "status",
+			type: "select",
+			options: ["available", "pending", "adopted"],
+		},
+	]);
+});
+
 test("maps conventional list query parameters to server-side table state", () => {
 	const spec: ParsedSpec = {
 		...petStoreSpec,
@@ -209,5 +284,6 @@ test("maps conventional list query parameters to server-side table state", () =>
 		sort: "sort_by",
 		order: "sort_order",
 		filters: ["name"],
+		filterFields: [{ name: "name", type: "text" }],
 	});
 });

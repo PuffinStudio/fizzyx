@@ -1,5 +1,6 @@
 import type {
 	AdminAppPlan,
+	AdminFilterField,
 	AdminListQueryMapping,
 	AdminOperationKind,
 	AdminPlanDiagnostic,
@@ -48,6 +49,22 @@ const listQueryMapping = (
 	endpoint: ParsedEndpoint,
 	columns: AdminResourcePlan["columns"],
 ): AdminListQueryMapping | undefined => {
+	const filterParams = endpoint.queryParams.filter((param) =>
+		columns.some((column) => normalizedParam(column.name) === normalizedParam(param.name)),
+	);
+	const filterField = (param: (typeof filterParams)[number]): AdminFilterField => ({
+		name: param.name,
+		type: param.enumValues?.length
+			? "select"
+			: param.typeRef.includes("boolean")
+				? "boolean"
+				: param.format === "date" || param.format === "date-time"
+					? "date"
+					: param.typeRef.includes("number")
+						? "number"
+						: "text",
+		...(param.enumValues?.length ? { options: param.enumValues } : {}),
+	});
 	const mapping: AdminListQueryMapping = {
 		page: findParam(endpoint, ["page", "pagenumber"]),
 		offset: findParam(endpoint, ["offset", "skip"]),
@@ -55,11 +72,8 @@ const listQueryMapping = (
 		search: findParam(endpoint, ["search", "q", "query", "keyword"]),
 		sort: findParam(endpoint, ["sort", "sortby", "orderby"]),
 		order: findParam(endpoint, ["order", "direction", "sortorder"]),
-		filters: endpoint.queryParams
-			.filter((param) =>
-				columns.some((column) => normalizedParam(column.name) === normalizedParam(param.name)),
-			)
-			.map((param) => param.name),
+		filters: filterParams.map((param) => param.name),
+		filterFields: filterParams.map(filterField),
 	};
 	return Object.values(mapping).some((value) => (Array.isArray(value) ? value.length > 0 : !!value))
 		? mapping
@@ -117,9 +131,11 @@ export const planAdminApp = (spec: ParsedSpec): AdminAppPlan => {
 			if (kind === "list") current.listQuery = listQueryMapping(endpoint, current.columns);
 		}
 		if (kind === "create" || kind === "update") {
-			current.fields =
+			const fields =
 				typeDef(spec, endpoint.bodyTypeRef)?.properties?.filter((property) => !property.readOnly) ??
 				current.fields;
+			current.fields = fields;
+			current.forms = { ...current.forms, [kind]: fields };
 		}
 		resources.set(resourceId, current);
 	}

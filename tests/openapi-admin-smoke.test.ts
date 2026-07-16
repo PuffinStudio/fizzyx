@@ -27,17 +27,29 @@ for (const framework of ["nextjs", "tanstack-start"] as const) {
 						output,
 						"--framework",
 						framework,
+						"--create-mode",
+						"dialog",
 					],
 					{ cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe" },
 				);
-				expect(await generate.exited).toBe(0);
+				const [generateExit, generateStdout, generateStderr] = await Promise.all([
+					generate.exited,
+					new Response(generate.stdout).text(),
+					new Response(generate.stderr).text(),
+				]);
+				expect(generateExit, `${generateStdout}\n${generateStderr}`).toBe(0);
 
 				const build = Bun.spawn(["bun", "run", "build"], {
 					cwd: output,
 					stdout: "pipe",
 					stderr: "pipe",
 				});
-				expect(await build.exited).toBe(0);
+				const [buildExit, buildStdout, buildStderr] = await Promise.all([
+					build.exited,
+					new Response(build.stdout).text(),
+					new Response(build.stderr).text(),
+				]);
+				expect(buildExit, `${buildStdout}\n${buildStderr}`).toBe(0);
 			} finally {
 				rmSync(root, { recursive: true, force: true });
 			}

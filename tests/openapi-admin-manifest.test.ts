@@ -36,7 +36,7 @@ test("preserves a user-modified generated file and reports a regeneration confli
 		expect(manifest).toContain('"specSource": "./openapi.yaml"');
 		expect(manifest).toContain('"preset": "preset123"');
 		expect(manifest).toContain('"createMode": "dialog"');
-		expect(manifest).toStartWith('{\n\t"version"');
+		expect(manifest).toStartWith('{\n  "version"');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

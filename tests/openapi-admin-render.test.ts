@@ -19,6 +19,7 @@ const plan: AdminAppPlan = {
 			columns: [
 				{ name: "id", tsType: "string", required: true },
 				{ name: "name", tsType: "string", required: true },
+				{ name: "status", tsType: "string", required: true },
 			],
 			fields: [
 				{
@@ -28,12 +29,51 @@ const plan: AdminAppPlan = {
 					minLength: 2,
 					maxLength: 80,
 				},
+				{
+					name: "status",
+					tsType: "string",
+					required: true,
+					enumValues: ["available", "pending", "adopted"],
+				},
 			],
+			forms: {
+				create: [
+					{ name: "name", tsType: "string", required: true, minLength: 2, maxLength: 80 },
+					{
+						name: "status",
+						tsType: "string",
+						required: true,
+						enumValues: ["available", "pending", "adopted"],
+					},
+					{
+						name: "tags",
+						tsType: "string[]",
+						required: false,
+						kind: "array",
+						items: { name: "item", tsType: "string", required: true, kind: "string" },
+					},
+					{
+						name: "profile",
+						tsType: "Profile",
+						required: false,
+						kind: "object",
+						properties: [{ name: "nickname", tsType: "string", required: true, kind: "string" }],
+					},
+				],
+				update: [{ name: "name", tsType: "string", required: true }],
+			},
 			listQuery: {
 				page: "page",
 				limit: "limit",
 				search: "search",
-				filters: [],
+				filters: ["status"],
+				filterFields: [
+					{
+						name: "status",
+						type: "select",
+						options: ["available", "pending", "adopted"],
+					},
+				],
 			},
 			operations: {
 				list: {
@@ -125,6 +165,9 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(listPage).toContain("page: tableState.pagination.pageIndex + 1");
 	expect(listPage).toContain("limit: tableState.pagination.pageSize");
 	expect(listPage).toContain("search: tableState.globalFilter || undefined");
+	expect(listPage).toContain('status: tableState.columnFilters.find(({ id }) => id === "status")');
+	expect(listPage).toContain('"filter":{"name":"status","type":"select"');
+	expect(listPage).toContain("searchable");
 	expect(listPage).toContain('mode="server"');
 	const dataTable = files.find((file) => file.path.endsWith("admin/data-table.tsx"))?.content;
 	expect(dataTable).toContain("useReactTable");
@@ -132,6 +175,8 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(dataTable).toContain("manualSorting");
 	expect(dataTable).toContain("manualFiltering");
 	expect(dataTable).toContain("globalFilter: string");
+	expect(dataTable).toContain("AdminTableFilterDefinition");
+	expect(dataTable).toContain("filter.options");
 	expect(
 		files.find((file) => file.path === "src/components/admin/dynamic-form.tsx")?.content,
 	).toContain("noValidate");
@@ -164,6 +209,8 @@ test("renders Next.js create, detail, and edit experiences for mapped CRUD opera
 	const listPage = files.find((file) => file.path === "src/app/(admin)/pets/page.tsx")?.content;
 
 	expect(paths).toContain("src/components/admin/dynamic-form.tsx");
+	expect(paths).toContain("src/components/admin/inline-delete-confirm.tsx");
+	expect(paths).toContain("src/generated/admin/forms/pets.ts");
 	expect(paths).toContain("src/app/(admin)/pets/new/page.tsx");
 	expect(paths).toContain("src/app/(admin)/pets/[id]/page.tsx");
 	expect(paths).toContain("src/app/(admin)/pets/[id]/edit/page.tsx");
@@ -174,13 +221,20 @@ test("renders Next.js create, detail, and edit experiences for mapped CRUD opera
 		'router.replace("/pets")',
 	);
 	const dynamicForm = files.find((file) => file.path.endsWith("admin/dynamic-form.tsx"))?.content;
-	expect(dynamicForm).toContain('from "@tanstack/react-form"');
-	expect(dynamicForm).toContain("form.Field");
+	expect(dynamicForm).toContain('from "@/components/ui/autoform"');
+	expect(dynamicForm).toContain('from "@autoform/zod"');
+	const schemas = files.find((file) => file.path === "src/generated/admin/forms/pets.ts")?.content;
+	expect(schemas).toContain('import * as z from "zod"');
+	expect(schemas).toContain("export const createPetsSchema");
+	expect(schemas).toContain('z.enum(["available","pending","adopted"])');
+	expect(schemas).toContain('fieldType: "select"');
+	expect(schemas).toContain("tags: z.array(z.string()");
+	expect(schemas).toContain("profile: z.object({ nickname: z.string()");
 	expect(files.find((file) => file.path.endsWith("new/page.tsx"))?.content).toContain(
-		"DynamicForm",
+		"createPetsSchema",
 	);
 	expect(files.find((file) => file.path.endsWith("[id]/edit/page.tsx"))?.content).toContain(
-		"initialValue={(detail.data ?? {}) as Record<string, unknown>}",
+		"initialValue={(detail.data ?? {}) as unknown as Record<string, unknown>}",
 	);
 	expect(listPage).toContain("New Pets");
 	expect(listPage).toContain("View");
@@ -194,8 +248,11 @@ test("renders Next.js create, detail, and edit experiences for mapped CRUD opera
 		files.find((file) => file.path === "src/components/admin/data-table.tsx")?.content,
 	).toContain("<Card");
 	expect(files.find((file) => file.path.endsWith("[id]/page.tsx"))?.content).toContain(
-		"AlertDialog",
+		"InlineDeleteConfirm",
 	);
+	expect(
+		files.find((file) => file.path === "src/components/admin/inline-delete-confirm.tsx")?.content,
+	).toContain("Confirm delete");
 	expect(paths).toContain("src/components/admin/record-details.tsx");
 });
 
@@ -228,7 +285,16 @@ test("renders create actions as dialogs when configured", () => {
 				? "src/app/(admin)/pets/new/page.tsx"
 				: "src/routes/_admin/pets/new.tsx";
 		expect(files.find((file) => file.path === listPath)?.content).toContain("CreateResourceDialog");
+		expect(files.find((file) => file.path === listPath)?.content).toContain("EditPetsDialog");
 		expect(files.map((file) => file.path)).not.toContain(createPath);
+		const editPath =
+			framework === "nextjs"
+				? "src/app/(admin)/pets/[id]/edit/page.tsx"
+				: "src/routes/_admin/pets/$id.edit.tsx";
+		expect(files.map((file) => file.path)).not.toContain(editPath);
+		expect(files.map((file) => file.path)).toContain(
+			"src/components/admin/resources/pets-edit-dialog.tsx",
+		);
 	}
 });
 

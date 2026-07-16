@@ -121,7 +121,7 @@ export const writeAdminGeneratedFiles = (
 	};
 	const manifestPath = join(root, MANIFEST_PATH);
 	mkdirSync(dirname(manifestPath), { recursive: true });
-	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, "\t")}\n`);
+	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 	return result;
 };
 
@@ -135,5 +135,5 @@ export const refreshAdminGeneratedFileHashes = (root: string, paths: string[]): 
 			manifest.files[relative] = hash(readFileSync(fullPath, "utf8"));
 		}
 	}
-	writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, "\t")}\n`);
+	writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, 2)}\n`);
 };

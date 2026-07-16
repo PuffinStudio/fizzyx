@@ -1,4 +1,5 @@
 import { adminQualityBootstrapFiles } from "./openapi-admin-quality";
+import autoformSelectFieldTemplate from "../templates/openapi-admin/shared/autoform-select-field.tsx.txt" with { type: "text" };
 
 export type AdminFramework = "nextjs" | "tanstack-start";
 export type AdminPackageManager = "bun" | "pnpm";
@@ -23,6 +24,8 @@ export interface AdminScaffoldBootstrapFile {
 // Base UI + Mira, Mist, Indigo, Cyan charts, Inter, medium radius, inverted menu.
 // Inspect with: bunx --bun shadcn@latest preset decode b1tNoIJIf
 export const FIZZYX_ADMIN_PRESET = "b1tNoIJIf";
+export const AUTOFORM_TANSTACK_REGISTRY =
+	"https://raw.githubusercontent.com/vantezzen/autoform/refs/heads/main/packages/shadcn/registry/autoform-tanstack.json";
 
 const shadcnRunner = (packageManager: AdminPackageManager): string[] =>
 	packageManager === "bun" ? ["bunx", "--bun"] : ["pnpm", "dlx"];
@@ -121,6 +124,9 @@ const queryDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldCommand
 					"@tanstack/react-query",
 					"@tanstack/react-table",
 					"@tanstack/react-form",
+					"zod@latest",
+					"@autoform/zod",
+					"@autoform/react",
 					"class-variance-authority",
 					"clsx",
 					"tailwind-merge",
@@ -133,6 +139,9 @@ const queryDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldCommand
 					"@tanstack/react-query",
 					"@tanstack/react-table",
 					"@tanstack/react-form",
+					"zod@latest",
+					"@autoform/zod",
+					"@autoform/react",
 					"class-variance-authority",
 					"clsx",
 					"tailwind-merge",
@@ -147,6 +156,19 @@ const shadcnComponentsCommand = (input: AdminScaffoldInput): AdminScaffoldComman
 		"shadcn@latest",
 		"add",
 		"--all",
+		"--overwrite",
+		"-y",
+		"-c",
+		input.targetDir,
+	],
+});
+
+const autoformCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
+	argv: [
+		...shadcnRunner(input.packageManager),
+		"shadcn@latest",
+		"add",
+		AUTOFORM_TANSTACK_REGISTRY,
 		"-y",
 		"-c",
 		input.targetDir,
@@ -169,6 +191,7 @@ export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldComma
 				shadcnCommand(input),
 				queryDependencyCommand(input),
 				qualityDependencyCommand(input),
+				autoformCommand(input),
 				shadcnComponentsCommand(input),
 			]
 		: [
@@ -176,6 +199,7 @@ export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldComma
 				queryDependencyCommand(input),
 				qualityDependencyCommand(input),
 				shadcnApplyPresetCommand(input),
+				autoformCommand(input),
 				shadcnComponentsCommand(input),
 			];
 };
@@ -225,3 +249,12 @@ export const planAdminScaffoldBootstrap = (
 				...adminQualityBootstrapFiles(input.framework),
 			]
 		: adminQualityBootstrapFiles(input.framework);
+
+export const planAdminScaffoldFinalize = (
+	_input: AdminScaffoldInput,
+): AdminScaffoldBootstrapFile[] => [
+	{
+		path: "src/components/ui/autoform/components/tanstack/SelectField.tsx",
+		content: autoformSelectFieldTemplate,
+	},
+];

@@ -19,15 +19,23 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Database, Search } from "lucide-react"
+
+export interface AdminTableFilterDefinition {
+  name: string
+  type: "text" | "number" | "boolean" | "date" | "select"
+  options?: readonly (string | number | boolean)[]
+}
 
 export interface AdminColumnDefinition {
   key: string
   label: string
   sortable?: boolean
   filterable?: boolean
+  filter?: AdminTableFilterDefinition
 }
 
 export interface AdminDataTableState {
@@ -37,13 +45,14 @@ export interface AdminDataTableState {
   globalFilter: string
 }
 
-export function AdminDataTable({ data, columns, loading, error, onRetry, mode = "client", rowCount, state, onStateChange, renderRowActions }: {
+export function AdminDataTable({ data, columns, loading, error, onRetry, mode = "client", searchable = false, rowCount, state, onStateChange, renderRowActions }: {
   data: unknown
   columns: readonly AdminColumnDefinition[]
   loading: boolean
   error: Error | null
   onRetry: () => void
   mode?: "client" | "server"
+  searchable?: boolean
   rowCount?: number
   state?: AdminDataTableState
   onStateChange?: (state: AdminDataTableState) => void
@@ -62,7 +71,7 @@ export function AdminDataTable({ data, columns, loading, error, onRetry, mode = 
     const valueColumns: ColumnDef<Record<string, unknown>>[] = columns.map((column) => ({
       accessorKey: column.key,
       enableSorting: column.sortable ?? true,
-      enableColumnFilter: column.filterable ?? true,
+      enableColumnFilter: column.filterable ?? Boolean(column.filter),
       header: ({ column: tableColumn }) => <Button variant="ghost" className="-ml-3" onClick={() => tableColumn.toggleSorting(tableColumn.getIsSorted() === "asc")}>{column.label}</Button>,
       cell: ({ getValue }) => String(getValue() ?? "—"),
     }))
@@ -87,12 +96,21 @@ export function AdminDataTable({ data, columns, loading, error, onRetry, mode = 
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   })
+  const setFilterValue = (filter: AdminTableFilterDefinition, rawValue: string | null) => {
+    const column = table.getColumn(filter.name)
+    if (!column) return
+    if (!rawValue || rawValue === "__all__") return column.setFilterValue(undefined)
+    if (filter.type === "number") return column.setFilterValue(Number(rawValue))
+    if (filter.type === "boolean") return column.setFilterValue(rawValue === "true")
+    const option = filter.options?.find((value) => String(value) === rawValue)
+    column.setFilterValue(option ?? rawValue)
+  }
   if (loading) return <Card><CardHeader><Skeleton className="h-5 w-28" /><Skeleton className="h-4 w-52" /></CardHeader><CardContent className="space-y-3"><Skeleton className="h-9 w-full max-w-sm" /><Skeleton className="h-56 w-full" /></CardContent></Card>
   if (error) return <Alert variant="destructive"><AlertTitle>Unable to load data</AlertTitle><AlertDescription>{error.message}</AlertDescription><Button className="mt-3" variant="outline" onClick={onRetry}>Retry</Button></Alert>
   return <Card>
     <CardHeader className="border-b">
       <div><CardTitle>Records</CardTitle><CardDescription>Search, sort, and manage this resource.</CardDescription></div>
-      <div className="relative mt-3 max-w-sm"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" aria-label="Search records" placeholder="Search records…" value={globalFilter} onChange={(event) => table.setGlobalFilter(event.target.value)} /></div>
+      {searchable || columns.some((column) => column.filter) ? <div className="mt-3 flex flex-wrap items-end gap-3">{searchable ? <div className="relative min-w-56 flex-1"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" aria-label="Search records" placeholder="Search records…" value={globalFilter} onChange={(event) => table.setGlobalFilter(event.target.value)} /></div> : null}{columns.flatMap((column) => column.filter ? [column.filter] : []).map((filter) => { const value = columnFilters.find(({ id }) => id === filter.name)?.value; return <div className="min-w-40 space-y-1" key={filter.name}><span className="text-xs font-medium text-muted-foreground">{filter.name.replace(/[-_]+/g, " ")}</span>{filter.type === "select" || filter.type === "boolean" ? <Select value={value === undefined ? "__all__" : String(value)} onValueChange={(next) => setFilterValue(filter, next)}><SelectTrigger aria-label={`Filter by ${filter.name}`}><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value="__all__">All</SelectItem>{filter.type === "boolean" ? <><SelectItem value="true">Yes</SelectItem><SelectItem value="false">No</SelectItem></> : filter.options?.map((option) => <SelectItem key={String(option)} value={String(option)}>{String(option)}</SelectItem>)}</SelectContent></Select> : <Input aria-label={`Filter by ${filter.name}`} type={filter.type} value={value === undefined ? "" : String(value)} onChange={(event) => setFilterValue(filter, event.target.value)} />}</div> })}</div> : null}
     </CardHeader>
     <CardContent className="px-0">
       <div className="overflow-x-auto"><Table><TableHeader className="bg-muted/40">{table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader><TableBody>{table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow className="hover:bg-muted/35" key={row.id}>{row.getVisibleCells().map((cell) => <TableCell className="max-w-80 break-words" key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={tableColumns.length} className="h-56 text-center"><div className="mx-auto flex max-w-xs flex-col items-center gap-2 text-muted-foreground"><span className="flex size-10 items-center justify-center rounded-full bg-muted"><Database aria-hidden="true" className="size-5" /></span><p className="font-medium text-foreground">No records found</p><p className="text-sm">Try adjusting your search or create the first record.</p></div></TableCell></TableRow>}</TableBody></Table></div>

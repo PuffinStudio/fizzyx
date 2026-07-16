@@ -301,10 +301,12 @@ Generated admin projects include:
 
 - shadcn components installed with `shadcn add --all`
 - a Base UI Mira admin preset with persistent system/light/dark themes and a header toggle
-- TanStack Table list pages with OpenAPI-aware pagination, search, filtering, and sorting
-- schema-driven TanStack Form create/edit pages with shadcn Field controls
-- configurable `page` or `dialog` record creation with generated field-level validation messages
-- detail/delete routes and a typed fetch + TanStack Query client
+- declarative TanStack Table list pages whose search, typed filters, pagination, and sorting come
+  only from query capabilities declared by the list operation
+- operation-level Zod v4 schemas rendered by AutoForm's TanStack Form adapter and editable shadcn
+  source components, including enum selects, booleans, dates, numbers, arrays, and nested objects
+- consistent `page` or `dialog` create/edit presentation with generated validation messages
+- detail routes, reusable inline delete confirmation, and a typed fetch + TanStack Query client
 - OXC `fmt`, `lint`, `lint:fix`, and `check` scripts, run automatically after first generation
 - optional server-cookie authentication with a login page, server guard, logout, and same-origin BFF
 - `.fizzyx/admin-manifest.json` regeneration safety that preserves user-edited generated files
@@ -320,13 +322,14 @@ openapi:
     output: ./apps/admin
     framework: nextjs
     preset: b1tNoIJIf # optional shadcn preset override
-    create_mode: page # page or dialog
+    create_mode: page # create and edit both use page or dialog presentation
 ```
 
 On first generation, the precedence is `--preset`/`--create-mode`, then `openapi.admin` project
 defaults, then the FizzyX defaults (`b1tNoIJIf` and `page`). Presets customize the shadcn style,
 colors, font, radius, charts, and menu treatment; the generated theme provider always keeps light
-and dark mode available. Regeneration may safely switch `create_mode`. It preserves the recorded
+and dark mode available. Regeneration may safely switch `create_mode`; create and edit switch
+together so one resource does not mix interaction patterns. It preserves the recorded
 preset and rejects replacing it in place because shadcn component files may contain user changes;
 use a new output or review an explicit `shadcn apply` diff instead.
 

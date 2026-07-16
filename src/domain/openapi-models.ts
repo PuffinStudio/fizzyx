@@ -105,6 +105,8 @@ export interface QueryParam {
 	typeRef: string;
 	required: boolean;
 	description?: string;
+	format?: string;
+	enumValues?: Array<string | number | boolean>;
 }
 
 export interface ParsedTypeDef {
@@ -120,10 +122,17 @@ export interface ParsedProperty {
 	name: string;
 	tsType: string;
 	required: boolean;
+	kind?: "string" | "number" | "integer" | "boolean" | "array" | "object";
 	description?: string;
 	format?: string;
+	enumValues?: Array<string | number | boolean>;
+	nullable?: boolean;
+	items?: ParsedProperty;
+	properties?: ParsedProperty[];
 	minimum?: number;
 	maximum?: number;
+	minItems?: number;
+	maxItems?: number;
 	minLength?: number;
 	maxLength?: number;
 	pattern?: string;

@@ -307,7 +307,7 @@ const openapiAdminCmd = Command.make(
 		createMode: Flag.optional(
 			Flag.choice("create-mode", ["page", "dialog"] as const).pipe(
 				Flag.withDescription(
-					"Create records on a page or in a dialog (or openapi.admin.create_mode)",
+					"Create and edit records on pages or in dialogs (or openapi.admin.create_mode)",
 				),
 			),
 		),

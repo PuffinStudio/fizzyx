@@ -20,6 +20,13 @@ export interface AdminListQueryMapping {
 	sort?: string;
 	order?: string;
 	filters: string[];
+	filterFields?: AdminFilterField[];
+}
+
+export interface AdminFilterField {
+	name: string;
+	type: "text" | "number" | "boolean" | "date" | "select";
+	options?: Array<string | number | boolean>;
 }
 
 export interface AdminResourcePlan {
@@ -29,6 +36,10 @@ export interface AdminResourcePlan {
 	idParam?: string;
 	columns: ParsedProperty[];
 	fields: ParsedProperty[];
+	forms?: {
+		create?: ParsedProperty[];
+		update?: ParsedProperty[];
+	};
 	listQuery?: AdminListQueryMapping;
 	operations: Partial<Record<AdminOperationKind, AdminResourceOperation>>;
 }

@@ -56,6 +56,9 @@ test("plans a Bun-only official Next.js and shadcn scaffold", () => {
 		"@tanstack/react-query",
 		"@tanstack/react-table",
 		"@tanstack/react-form",
+		"zod@latest",
+		"@autoform/zod",
+		"@autoform/react",
 		"class-variance-authority",
 		"clsx",
 		"tailwind-merge",
@@ -68,6 +71,17 @@ test("plans a Bun-only official Next.js and shadcn scaffold", () => {
 		"shadcn@latest",
 		"add",
 		"--all",
+		"--overwrite",
+		"-y",
+		"-c",
+		"/tmp/pet-admin",
+	]);
+	expect(commands.at(-2)?.argv).toEqual([
+		"bunx",
+		"--bun",
+		"shadcn@latest",
+		"add",
+		"https://raw.githubusercontent.com/vantezzen/autoform/refs/heads/main/packages/shadcn/registry/autoform-tanstack.json",
 		"-y",
 		"-c",
 		"/tmp/pet-admin",
@@ -109,10 +123,14 @@ test("plans a Bun-only official TanStack Start and shadcn scaffold", () => {
 		"shadcn@latest",
 		"add",
 		"--all",
+		"--overwrite",
 		"-y",
 		"-c",
 		"/tmp/pet-admin",
 	]);
+	expect(commands.at(-2)?.argv.some((value) => value.endsWith("autoform-tanstack.json"))).toBe(
+		true,
+	);
 	const bootstrap = planAdminScaffoldBootstrap({
 		framework: "tanstack-start",
 		projectName: "pet-admin",

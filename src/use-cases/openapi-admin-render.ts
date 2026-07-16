@@ -1,5 +1,6 @@
 import type { AdminAppPlan, AdminResourcePlan } from "../domain/openapi-admin-models";
 import type { GeneratedFile } from "../domain/openapi-models";
+import type { ParsedProperty } from "../domain/openapi-models";
 import { toPascalCase } from "../domain/codegen-utils";
 import type { AdminFramework } from "./openapi-admin-scaffold";
 import { renderTemplate } from "./openapi-admin-template";
@@ -10,6 +11,9 @@ import dynamicFormTemplate from "../templates/openapi-admin/shared/dynamic-form.
 import dashboardTemplate from "../templates/openapi-admin/shared/dashboard.tsx.txt" with { type: "text" };
 import recordDetailsTemplate from "../templates/openapi-admin/shared/record-details.tsx.txt" with { type: "text" };
 import createDialogTemplate from "../templates/openapi-admin/shared/create-dialog.tsx.txt" with { type: "text" };
+import editDialogTemplate from "../templates/openapi-admin/shared/edit-dialog.tsx.txt" with { type: "text" };
+import inlineDeleteConfirmTemplate from "../templates/openapi-admin/shared/inline-delete-confirm.tsx.txt" with { type: "text" };
+import autoformSelectFieldTemplate from "../templates/openapi-admin/shared/autoform-select-field.tsx.txt" with { type: "text" };
 import themeProviderTemplate from "../templates/openapi-admin/shared/theme-provider.tsx.txt" with { type: "text" };
 import themeToggleTemplate from "../templates/openapi-admin/shared/theme-toggle.tsx.txt" with { type: "text" };
 import loginScreenTemplate from "../templates/openapi-admin/shared/login-screen.tsx.txt" with { type: "text" };
@@ -105,38 +109,104 @@ const renderAuthTemplate = (template: string, values: Record<string, string>): s
 		Object.fromEntries(Object.entries(values).filter(([name]) => template.includes(`{{${name}}}`))),
 	);
 
-const formFields = (resource: AdminResourcePlan) =>
-	resource.fields.map((field) => {
-		const control =
-			field.format === "email"
-				? "email"
-				: field.format === "uri" || field.format === "url"
-					? "url"
-					: field.format === "date"
-						? "date"
-						: field.format === "date-time"
-							? "datetime-local"
-							: field.tsType.includes("number")
-								? "number"
-								: field.tsType.includes("boolean")
-									? "checkbox"
-									: "text";
-		return {
-			name: field.name,
-			label: field.name.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
-			control,
-			required: field.required,
-			description: field.description,
-			minimum: field.minimum,
-			maximum: field.maximum,
-			minLength: field.minLength,
-			maxLength: field.maxLength,
-			pattern: field.pattern,
-		};
-	});
+const formSchemaName = (kind: "create" | "update", resource: AdminResourcePlan): string =>
+	identifier(`${kind}${toPascalCase(resource.id)}Schema`);
+
+const formFieldLabel = (field: ParsedProperty): string =>
+	field.name.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const formFieldConfig = (field: ParsedProperty): string => {
+	const config: string[] = [`label: ${JSON.stringify(formFieldLabel(field))}`];
+	if (field.description) config.push(`description: ${JSON.stringify(field.description)}`);
+	if (field.enumValues?.length) config.push('fieldType: "select"');
+	const inputType =
+		field.format === "date"
+			? "date"
+			: field.format === "date-time"
+				? "datetime-local"
+				: field.format === "email"
+					? "email"
+					: field.format === "uri" || field.format === "url"
+						? "url"
+						: undefined;
+	if (inputType) config.push(`inputProps: { type: ${JSON.stringify(inputType)} }`);
+	return `.check(fieldConfig({ ${config.join(", ")} }))`;
+};
+
+const zodFieldSchema = (field: ParsedProperty): string => {
+	const stringEnums = field.enumValues?.filter(
+		(value): value is string => typeof value === "string",
+	);
+	let schema: string;
+	if (stringEnums && stringEnums.length === field.enumValues?.length && stringEnums.length > 0) {
+		schema = `z.enum(${JSON.stringify(stringEnums)})`;
+	} else if (field.kind === "array" || field.tsType.endsWith("[]")) {
+		schema = `z.array(${field.items ? zodFieldSchema({ ...field.items, required: true }) : "z.unknown()"})`;
+		if (field.minItems !== undefined) schema += `.min(${field.minItems})`;
+		if (field.maxItems !== undefined) schema += `.max(${field.maxItems})`;
+	} else if (field.kind === "object" || field.properties) {
+		const shape = (field.properties ?? [])
+			.filter((property) => !property.readOnly)
+			.map((property) => `${propertyKey(property.name)}: ${zodFieldSchema(property)}`)
+			.join(", ");
+		schema = `z.object({ ${shape} })`;
+	} else if (field.kind === "boolean" || field.tsType.includes("boolean")) {
+		schema = "z.boolean()";
+	} else if (
+		field.kind === "number" ||
+		field.kind === "integer" ||
+		field.tsType.includes("number")
+	) {
+		schema = "z.number()";
+		if (field.kind === "integer") schema += ".int()";
+		if (field.minimum !== undefined) schema += `.min(${field.minimum})`;
+		if (field.maximum !== undefined) schema += `.max(${field.maximum})`;
+	} else {
+		schema = "z.string()";
+		if (field.format === "email") schema += ".email()";
+		if (field.format === "uri" || field.format === "url") schema += ".url()";
+		if (field.required && field.minLength === undefined) schema += ".min(1)";
+		if (field.minLength !== undefined) schema += `.min(${field.minLength})`;
+		if (field.maxLength !== undefined) schema += `.max(${field.maxLength})`;
+		if (field.pattern) schema += `.regex(new RegExp(${JSON.stringify(field.pattern)}))`;
+	}
+	if (field.nullable) schema += ".nullable()";
+	schema += formFieldConfig(field);
+	return field.required ? schema : `${schema}.optional()`;
+};
+
+const renderFormSchemas = (resource: AdminResourcePlan): GeneratedFile | undefined => {
+	const schemas: string[] = [];
+	for (const kind of ["create", "update"] as const) {
+		if (!resource.operations[kind]) continue;
+		const fields = resource.forms?.[kind] ?? resource.fields;
+		const shape = fields
+			.map((field) => `  ${propertyKey(field.name)}: ${zodFieldSchema(field)},`)
+			.join("\n");
+		schemas.push(`export const ${formSchemaName(kind, resource)} = z.object({\n${shape}\n})`);
+	}
+	if (!schemas.length) return undefined;
+	return {
+		path: `src/generated/admin/forms/${resource.id}.ts`,
+		content: `// Generated by fizzyx. Do not edit.\n\nimport * as z from "zod"\nimport { fieldConfig } from "@autoform/zod"\n\n${schemas.join("\n\n")}\n`,
+	};
+};
 
 const columnsLiteral = (resource: AdminResourcePlan): string =>
-	JSON.stringify(resource.columns.map((column) => ({ key: column.name, label: column.name })));
+	JSON.stringify(
+		resource.columns.map((column) => {
+			const filter = resource.listQuery?.filterFields?.find(
+				(candidate) => normalizedFilterName(candidate.name) === normalizedFilterName(column.name),
+			);
+			return {
+				key: column.name,
+				label: formFieldLabel(column),
+				...(filter ? { filter } : {}),
+			};
+		}),
+	);
+
+const normalizedFilterName = (value: string): string => value.toLowerCase().replace(/[-_]/g, "");
 
 const hookArgs = (resource: AdminResourcePlan): string =>
 	resource.operations.list?.endpoint.queryParams.length ? "({})" : "()";
@@ -180,7 +250,7 @@ const listTableValues = (resource: AdminResourcePlan) => {
 		FIZZYX_STATE_DECLARATION:
 			'const [tableState, setTableState] = useState<AdminDataTableState>({ pagination: { pageIndex: 0, pageSize: 20 }, sorting: [], columnFilters: [], globalFilter: "" })',
 		FIZZYX_HOOK_ARGS: `({ ${query.join(", ")} } as never)`,
-		FIZZYX_TABLE_PROPS: ' mode="server" state={tableState} onStateChange={setTableState}',
+		FIZZYX_TABLE_PROPS: ` mode="server"${mapping.search ? " searchable" : ""} state={tableState} onStateChange={setTableState}`,
 	};
 };
 
@@ -188,6 +258,39 @@ const listRowIdKey = (resource: AdminResourcePlan): string => {
 	const pathParam = resource.idParam ?? "id";
 	if (resource.columns.some((column) => column.name === pathParam)) return pathParam;
 	return resource.columns.find((column) => column.name.toLowerCase() === "id")?.name ?? pathParam;
+};
+
+const editDialogComponentName = (resource: AdminResourcePlan): string =>
+	identifier(`Edit${toPascalCase(resource.id)}Dialog`);
+
+const renderEditDialog = (
+	resource: AdminResourcePlan,
+	createMode: AdminCreateMode,
+): GeneratedFile | undefined => {
+	const update = resource.operations.update;
+	if (createMode !== "dialog" || !update) return undefined;
+	const detail = resource.operations.detail;
+	const detailHook = detail ? hookName(detail.operationId) : undefined;
+	return {
+		path: `src/components/admin/resources/${resource.id}-edit-dialog.tsx`,
+		content: renderTemplate(editDialogTemplate, {
+			FIZZYX_HOOK_IMPORTS: [hookName(update.operationId), detailHook].filter(Boolean).join(", "),
+			FIZZYX_SCHEMA_NAME: formSchemaName("update", resource),
+			FIZZYX_RESOURCE_ID: resource.id,
+			FIZZYX_ID_PARAM: JSON.stringify(resource.idParam ?? "id"),
+			FIZZYX_COMPONENT_NAME: editDialogComponentName(resource),
+			FIZZYX_FORM_COMPONENT: identifier(`${toPascalCase(resource.id)}EditForm`),
+			FIZZYX_LABEL: JSON.stringify(resource.label),
+			FIZZYX_DETAIL_DECLARATION: detailHook ? `const detail = ${detailHook}(params as never)` : "",
+			FIZZYX_DETAIL_GUARDS: detailHook
+				? 'if (detail.isPending) return <div className="space-y-3"><Skeleton className="h-10 w-full" /><Skeleton className="h-40 w-full" /></div>\n  if (detail.error) return <Alert variant="destructive"><AlertTitle>Unable to load record</AlertTitle><AlertDescription>{detail.error.message}</AlertDescription></Alert>'
+				: "",
+			FIZZYX_UPDATE_HOOK: hookName(update.operationId),
+			FIZZYX_INITIAL_VALUE: detailHook
+				? "(detail.data ?? {}) as unknown as Record<string, unknown>"
+				: "{}",
+		}),
+	};
 };
 
 type AdminCreateMode = "page" | "dialog";
@@ -204,9 +307,8 @@ const createDialogValues = (resource: AdminResourcePlan, createMode: AdminCreate
 	}
 	return {
 		FIZZYX_CREATE_HOOK_IMPORT: `, ${hookName(create.operationId)}`,
-		FIZZYX_CREATE_IMPORT:
-			'import { CreateResourceDialog } from "@/components/admin/create-dialog"\n',
-		FIZZYX_CREATE_FIELDS: `const createFields = ${JSON.stringify(formFields(resource))} as const`,
+		FIZZYX_CREATE_IMPORT: `import { CreateResourceDialog } from "@/components/admin/create-dialog"\nimport { ${formSchemaName("create", resource)} } from "@/generated/admin/forms/${resource.id}"\n`,
+		FIZZYX_CREATE_FIELDS: "",
 		FIZZYX_CREATE_DECLARATION: `const createMutation = ${hookName(create.operationId)}()`,
 	};
 };
@@ -215,19 +317,18 @@ const nextListNavigationValues = (resource: AdminResourcePlan, createMode: Admin
 	const canCreate = Boolean(resource.operations.create);
 	const canView = Boolean(resource.operations.detail);
 	const canEdit = Boolean(resource.operations.update);
-	const hasActions = (canCreate && createMode === "page") || canView || canEdit;
+	const hasLinkActions =
+		(canCreate && createMode === "page") || canView || (canEdit && createMode === "page");
 	const idKey = listRowIdKey(resource);
 	const rowActions =
 		canView || canEdit
-			? ` renderRowActions={(row) => { const value = row[${JSON.stringify(idKey)}]; if (value == null) return null; const id = encodeURIComponent(String(value)); return <div className="flex items-center gap-2">${canView ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}\`}>View</Link>` : ""}${canEdit ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}/edit\`}>Edit</Link>` : ""}</div> }}`
+			? ` renderRowActions={(row) => { const value = row[${JSON.stringify(idKey)}]; if (value == null) return null; const id = encodeURIComponent(String(value)); return <div className="flex items-center gap-2">${canView ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}\`}>View</Link>` : ""}${canEdit ? (createMode === "dialog" ? `<${editDialogComponentName(resource)} id={id} onSaved={async () => { await query.refetch() }} />` : `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}/edit\`}>Edit</Link>`) : ""}</div> }}`
 			: "";
 	return {
-		FIZZYX_NAV_IMPORTS: hasActions
-			? 'import Link from "next/link"\nimport { buttonVariants } from "@/components/ui/button"\n'
-			: "",
+		FIZZYX_NAV_IMPORTS: `${hasLinkActions ? 'import Link from "next/link"\nimport { buttonVariants } from "@/components/ui/button"\n' : ""}${canEdit && createMode === "dialog" ? `import { ${editDialogComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-dialog"\n` : ""}`,
 		FIZZYX_CREATE_ACTION: canCreate
 			? createMode === "dialog"
-				? `<CreateResourceDialog label={resourceLabel} fields={createFields} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`
+				? `<CreateResourceDialog label={resourceLabel} schema={${formSchemaName("create", resource)}} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`
 				: `<Link className={buttonVariants()} href=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
 			: "",
 		FIZZYX_ROW_ACTIONS: rowActions,
@@ -238,20 +339,19 @@ const tanstackListNavigationValues = (resource: AdminResourcePlan, createMode: A
 	const canCreate = Boolean(resource.operations.create);
 	const canView = Boolean(resource.operations.detail);
 	const canEdit = Boolean(resource.operations.update);
-	const hasActions = (canCreate && createMode === "page") || canView || canEdit;
+	const hasLinkActions =
+		(canCreate && createMode === "page") || canView || (canEdit && createMode === "page");
 	const idKey = listRowIdKey(resource);
 	const rowActions =
 		canView || canEdit
-			? ` renderRowActions={(row) => { const value = row[${JSON.stringify(idKey)}]; if (value == null) return null; const id = String(value); return <div className="flex items-center gap-2">${canView ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} to=${JSON.stringify(`/${resource.id}/$id`)} params={{ id }}>View</Link>` : ""}${canEdit ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} to=${JSON.stringify(`/${resource.id}/$id/edit`)} params={{ id }}>Edit</Link>` : ""}</div> }}`
+			? ` renderRowActions={(row) => { const value = row[${JSON.stringify(idKey)}]; if (value == null) return null; const id = String(value); return <div className="flex items-center gap-2">${canView ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} to=${JSON.stringify(`/${resource.id}/$id`)} params={{ id }}>View</Link>` : ""}${canEdit ? (createMode === "dialog" ? `<${editDialogComponentName(resource)} id={id} onSaved={async () => { await query.refetch() }} />` : `<Link className={buttonVariants({ size: "sm", variant: "outline" })} to=${JSON.stringify(`/${resource.id}/$id/edit`)} params={{ id }}>Edit</Link>`) : ""}</div> }}`
 			: "";
 	return {
-		FIZZYX_ROUTER_IMPORTS: hasActions ? ", Link" : "",
-		FIZZYX_BUTTON_IMPORT: hasActions
-			? 'import { buttonVariants } from "@/components/ui/button"\n'
-			: "",
+		FIZZYX_ROUTER_IMPORTS: hasLinkActions ? ", Link" : "",
+		FIZZYX_BUTTON_IMPORT: `${hasLinkActions ? 'import { buttonVariants } from "@/components/ui/button"\n' : ""}${canEdit && createMode === "dialog" ? `import { ${editDialogComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-dialog"\n` : ""}`,
 		FIZZYX_CREATE_ACTION: canCreate
 			? createMode === "dialog"
-				? `<CreateResourceDialog label={resourceLabel} fields={createFields} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`
+				? `<CreateResourceDialog label={resourceLabel} schema={${formSchemaName("create", resource)}} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`
 				: `<Link className={buttonVariants()} to=${JSON.stringify(`/${resource.id}/new`)}>New ${resource.label}</Link>`
 			: "",
 		FIZZYX_ROW_ACTIONS: rowActions,
@@ -287,7 +387,8 @@ const renderNextCreate = (resource: AdminResourcePlan): GeneratedFile | undefine
 		path: `src/app/(admin)/${resource.id}/new/page.tsx`,
 		content: renderTemplate(nextCreateTemplate, {
 			FIZZYX_HOOK_NAME: hookName(operation.operationId),
-			FIZZYX_FIELDS: JSON.stringify(formFields(resource)),
+			FIZZYX_SCHEMA_NAME: formSchemaName("create", resource),
+			FIZZYX_RESOURCE_ID: resource.id,
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("New", resource),
 		}),
@@ -321,12 +422,12 @@ const detailValues = (resource: AdminResourcePlan, framework: AdminFramework) =>
 			: "",
 		FIZZYX_DELETE_DECLARATION: deleteHook ? `const remove = ${deleteHook}()` : "",
 		FIZZYX_DELETE_IMPORTS: deleteHook
-			? 'import { Button } from "@/components/ui/button"\nimport { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"\n'
+			? 'import { InlineDeleteConfirm } from "@/components/admin/inline-delete-confirm"\n'
 			: "",
 		FIZZYX_DELETE_BUTTON: deleteHook
 			? framework === "nextjs"
-				? `<AlertDialog><AlertDialogTrigger render={<Button variant="destructive" />}>Delete Record</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this record?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone. The record will be permanently removed from the API.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); router.replace(${listRoute}); router.refresh() }}>{remove.isPending ? "Deleting…" : "Delete Record"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>`
-				: `<AlertDialog><AlertDialogTrigger render={<Button variant="destructive" />}>Delete Record</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this record?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone. The record will be permanently removed from the API.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={remove.isPending} onClick={async () => { await remove.mutateAsync(params as never); await navigate({ to: ${listRoute} }) }}>{remove.isPending ? "Deleting…" : "Delete Record"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>`
+				? `<InlineDeleteConfirm pending={remove.isPending} error={remove.error} onConfirm={async () => { await remove.mutateAsync(params as never); router.replace(${listRoute}); router.refresh() }} />`
+				: `<InlineDeleteConfirm pending={remove.isPending} error={remove.error} onConfirm={async () => { await remove.mutateAsync(params as never); await navigate({ to: ${listRoute} }) }} />`
 			: "",
 		framework,
 	};
@@ -350,13 +451,16 @@ const editValues = (resource: AdminResourcePlan) => {
 	return {
 		FIZZYX_ROUTE: JSON.stringify(`/_admin/${resource.id}/$id/edit`),
 		FIZZYX_HOOK_IMPORTS: [hookName(update.operationId), detailHook].filter(Boolean).join(", "),
-		FIZZYX_FIELDS: JSON.stringify(formFields(resource)),
+		FIZZYX_SCHEMA_NAME: formSchemaName("update", resource),
+		FIZZYX_RESOURCE_ID: resource.id,
 		FIZZYX_ID_PARAM: JSON.stringify(resource.idParam ?? "id"),
 		FIZZYX_LABEL: JSON.stringify(resource.label),
 		FIZZYX_COMPONENT_NAME: componentName("Edit", resource),
 		FIZZYX_DETAIL_DECLARATION: detailHook ? `const detail = ${detailHook}(params as never)` : "",
 		FIZZYX_UPDATE_HOOK: hookName(update.operationId),
-		FIZZYX_INITIAL_VALUE: detailHook ? "(detail.data ?? {}) as Record<string, unknown>" : "{}",
+		FIZZYX_INITIAL_VALUE: detailHook
+			? "(detail.data ?? {}) as unknown as Record<string, unknown>"
+			: "{}",
 	};
 };
 
@@ -400,7 +504,8 @@ const renderTanstackCreate = (resource: AdminResourcePlan): GeneratedFile | unde
 		content: renderTemplate(tanstackCreateTemplate, {
 			FIZZYX_ROUTE: JSON.stringify(`/_admin/${resource.id}/new`),
 			FIZZYX_HOOK_NAME: hookName(operation.operationId),
-			FIZZYX_FIELDS: JSON.stringify(formFields(resource)),
+			FIZZYX_SCHEMA_NAME: formSchemaName("create", resource),
+			FIZZYX_RESOURCE_ID: resource.id,
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("New", resource),
 		}),
@@ -542,10 +647,21 @@ export const renderAdminApp = (
 		staticFile("src/components/admin/dashboard.tsx", dashboardTemplate),
 		staticFile("src/components/admin/record-details.tsx", recordDetailsTemplate),
 		staticFile("src/components/admin/create-dialog.tsx", createDialogTemplate),
+		staticFile("src/components/admin/inline-delete-confirm.tsx", inlineDeleteConfirmTemplate),
 		staticFile("src/components/admin/theme-provider.tsx", themeProviderTemplate),
 		staticFile("src/components/admin/theme-toggle.tsx", themeToggleTemplate),
 		staticFile("src/components/admin/login-screen.tsx", loginScreenTemplate),
 		staticFile("src/components/admin/query-provider.tsx", queryProviderTemplate),
+		staticFile(
+			"src/components/ui/autoform/components/tanstack/SelectField.tsx",
+			autoformSelectFieldTemplate,
+		),
+		...plan.resources
+			.map(renderFormSchemas)
+			.filter((file): file is GeneratedFile => file !== undefined),
+		...plan.resources
+			.map((resource) => renderEditDialog(resource, createMode))
+			.filter((file): file is GeneratedFile => file !== undefined),
 		{
 			path: "src/lib/api/admin-api.ts",
 			content: renderTemplate(adminApiTemplate, { FIZZYX_API_BASE_URL: apiBaseUrl }),
@@ -563,7 +679,7 @@ export const renderAdminApp = (
 				(resource) => renderNextList(resource, createMode),
 				...(createMode === "page" ? [renderNextCreate] : []),
 				renderNextDetail,
-				renderNextEdit,
+				...(createMode === "page" ? [renderNextEdit] : []),
 			]),
 		];
 	}
@@ -578,7 +694,7 @@ export const renderAdminApp = (
 			(resource) => renderTanstackList(resource, createMode),
 			...(createMode === "page" ? [renderTanstackCreate] : []),
 			renderTanstackDetail,
-			renderTanstackEdit,
+			...(createMode === "page" ? [renderTanstackEdit] : []),
 		]),
 	];
 };
