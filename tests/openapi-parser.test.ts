@@ -307,3 +307,51 @@ test("parseSpec reports invalid and ambiguous tag admin metadata without accepti
 		]),
 	);
 });
+
+test("parseSpec preserves OpenAPI 3.1 nullable array item types", async () => {
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Paged pets", version: "1.0.0" },
+		components: {
+			schemas: {
+				Pet: { type: "object", properties: { id: { type: "string" } } },
+				Page: {
+					type: "object",
+					properties: {
+						items: { type: ["array", "null"], items: { $ref: "#/components/schemas/Pet" } },
+					},
+				},
+			},
+		},
+		paths: {},
+	});
+
+	expect(spec.types.Page?.properties?.[0]).toMatchObject({
+		name: "items",
+		kind: "array",
+		nullable: true,
+		tsType: "Pet[]",
+		items: { tsType: "Pet", kind: "object" },
+	});
+});
+
+test("parseSpec resolves omitted operation path parameters from sibling operations", async () => {
+	const spec = await parseSpec({
+		openapi: "3.0.0",
+		info: { title: "Users", version: "1.0.0" },
+		paths: {
+			"/users/{id}": {
+				get: { operationId: "getUser", responses: { "200": { description: "ok" } } },
+				put: {
+					operationId: "updateUser",
+					parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+					responses: { "200": { description: "ok" } },
+				},
+			},
+		},
+	});
+
+	expect(spec.endpoints.find((endpoint) => endpoint.operationId === "getUser")?.pathParams).toEqual(
+		[{ name: "id", typeRef: "number" }],
+	);
+});

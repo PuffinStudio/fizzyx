@@ -17,4 +17,5 @@ export function configureAdminApi({ token, headers, ...config }: AdminApiConfig)
   if (token !== undefined) setToken(token)
 }
 
-configureAdminApi({ baseUrl: {{FIZZYX_API_BASE_URL}} })
+// Keep the raw OpenAPI response shape so generated TypeScript types and admin data paths agree.
+configureAdminApi({ baseUrl: {{FIZZYX_API_BASE_URL}}, responseExtractor: (raw) => raw })

@@ -10,8 +10,10 @@ import { ResourceForm } from "@/components/admin/resource-form"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+{{FIZZYX_DETAIL_DATA_IMPORT}}
 
 const apiIdParam = {{FIZZYX_ID_PARAM}}
+{{FIZZYX_DETAIL_PATH_DECLARATION}}
 
 export function {{FIZZYX_COMPONENT_NAME}}({ id, onSaved }: { id: string; onSaved: () => Promise<void> }) {
   const [open, setOpen] = useState(false)

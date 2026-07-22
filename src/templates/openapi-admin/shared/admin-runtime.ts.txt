@@ -22,6 +22,16 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined
 }
 
+export function readAdminPath(value: unknown, path?: string): unknown {
+  if (!path) return value
+  return path.split(".").reduce<unknown>((current, segment) => asRecord(current)?.[segment], value)
+}
+
+export function readAdminNumberPath(value: unknown, path?: string): number | undefined {
+  const candidate = readAdminPath(value, path)
+  return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : undefined
+}
+
 export function normalizeAdminApiError(error: unknown, fallback = "Something went wrong."): AdminApiError {
   if (typeof error === "string") return { message: error }
   const source = asRecord(error)

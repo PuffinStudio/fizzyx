@@ -5,10 +5,12 @@ import { {{FIZZYX_HOOK_IMPORTS}} } from "@/lib/api/generated"
 import { DynamicForm } from "@/components/admin/dynamic-form"
 import { {{FIZZYX_SCHEMA_NAME}} } from "@/generated/admin/forms/{{FIZZYX_RESOURCE_ID}}"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+{{FIZZYX_DETAIL_DATA_IMPORT}}
 
 export const Route = createFileRoute({{FIZZYX_ROUTE}})({ component: {{FIZZYX_COMPONENT_NAME}} })
 const apiIdParam = {{FIZZYX_ID_PARAM}}
 const resourceLabel = {{FIZZYX_LABEL}}
+{{FIZZYX_DETAIL_PATH_DECLARATION}}
 function {{FIZZYX_COMPONENT_NAME}}() {
   const routeParams = Route.useParams()
   const params = { [apiIdParam]: routeParams.id as never }

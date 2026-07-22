@@ -29,7 +29,11 @@ export const adminQualityBootstrapFiles = (framework: AdminFramework): AdminQual
 	},
 	{
 		path: ".oxfmtrc.json",
-		content: `${JSON.stringify({ ignorePatterns: ["src/routeTree.gen.ts"] }, null, 2)}\n`,
+		content: `${JSON.stringify(
+			{ ignorePatterns: ["src/routeTree.gen.ts", ".fizzyx/**"] },
+			null,
+			2,
+		)}\n`,
 	},
 ];
 

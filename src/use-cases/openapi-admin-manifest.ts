@@ -157,7 +157,7 @@ export const preflightAdminGeneratedFiles = (
 const writeManifest = (root: string, manifest: AdminManifestV2): void => {
 	const manifestPath = join(root, MANIFEST_PATH);
 	mkdirSync(dirname(manifestPath), { recursive: true });
-	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, "\t")}\n`);
 };
 
 export const readAdminManifestMetadata = (root: string): AdminManifestMetadata | undefined => {
@@ -321,5 +321,5 @@ export const refreshAdminGeneratedFileHashes = (root: string, paths: string[]): 
 			}
 		}
 	}
-	writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, 2)}\n`);
+	writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify(manifest, null, "\t")}\n`);
 };

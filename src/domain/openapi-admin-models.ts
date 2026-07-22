@@ -53,6 +53,7 @@ export interface AdminResourcePlan {
 	hidden?: boolean;
 	presentation: AdminPresentationDefaults;
 	list?: AdminListPlan;
+	data?: ParsedAdminDataMapping;
 	permissions?: ParsedAdminPermissionDescriptor;
 	actions?: ParsedAdminActionDescriptor[];
 	operations: Partial<Record<AdminOperationKind, AdminResourceOperation>>;

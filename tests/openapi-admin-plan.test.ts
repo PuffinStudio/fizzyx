@@ -145,6 +145,81 @@ test("uses an OpenAPI operation tag instead of a versioned URL prefix for the re
 	expect(plan.resources[0]).toMatchObject({ id: "users", label: "Users", path: "/users" });
 });
 
+test("separates operationId resource families within one tag and limits default table columns", async () => {
+	const fields = Object.fromEntries(
+		["id", "title", "status", "type", "city", "capacity", "start_at", "fee", "notes", "phone"].map(
+			(name) => [name, { type: name === "capacity" || name === "fee" ? "number" : "string" }],
+		),
+	);
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Events", version: "1.0.0" },
+		components: {
+			schemas: {
+				Activity: { type: "object", properties: fields },
+				ActivityList: {
+					type: "object",
+					properties: {
+						items: { type: "array", items: { $ref: "#/components/schemas/Activity" } },
+					},
+				},
+			},
+		},
+		paths: {
+			"/admin/v1/activities": {
+				get: {
+					operationId: "admin.activity.list",
+					tags: ["Activity"],
+					responses: {
+						"200": {
+							description: "ok",
+							content: {
+								"application/json": { schema: { $ref: "#/components/schemas/ActivityList" } },
+							},
+						},
+					},
+				},
+			},
+			"/admin/v1/activity-categories": {
+				get: { ...operation("admin.activityCategory.list", "Activity") },
+			},
+			"/admin/v1/activities/{id}/photos": {
+				get: {
+					...operation("admin.photo.list", "Activity"),
+					parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+				},
+			},
+			"/admin/v1/photos/{id}": {
+				get: {
+					...operation("admin.photo.detail", "Activity"),
+					parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+				},
+			},
+		},
+	});
+
+	const plan = planAdminApp(spec);
+	expect(plan.resources.map((resource) => resource.id)).toEqual([
+		"activity",
+		"activity-category",
+		"photo",
+	]);
+	expect(plan.resources[0]?.columns).toHaveLength(8);
+	expect(plan.resources[0]?.columns.map((column) => column.name)).toContain("title");
+	expect(
+		plan.resources.find((resource) => resource.id === "photo")?.operations.list,
+	).toBeUndefined();
+	expect(plan.navigation.groups.flatMap((group) => group.items)).not.toContainEqual(
+		expect.objectContaining({ resourceKey: "photo" }),
+	);
+	expect(plan.diagnostics).toContainEqual(
+		expect.objectContaining({
+			code: "unsupported-operation",
+			operationId: "admin.photo.list",
+		}),
+	);
+});
+
 test("preserves schema constraints and excludes read-only properties from admin forms", async () => {
 	const spec = await parseSpec({
 		openapi: "3.0.0",
@@ -295,6 +370,74 @@ test("maps conventional list query parameters to server-side table state", () =>
 		order: "sort_order",
 		filters: ["name"],
 		filterFields: [{ name: "name", type: "text" }],
+	});
+});
+
+test("infers list rows, totals, and detail records from response envelopes", async () => {
+	const spec = await parseSpec({
+		openapi: "3.1.0",
+		info: { title: "Pets", version: "1.0.0" },
+		components: {
+			schemas: {
+				Pet: {
+					type: "object",
+					required: ["id", "name"],
+					properties: { id: { type: "string" }, name: { type: "string" } },
+				},
+				PetPage: {
+					type: "object",
+					properties: {
+						items: { type: ["array", "null"], items: { $ref: "#/components/schemas/Pet" } },
+						total: { type: "integer" },
+					},
+				},
+				PetListEnvelope: {
+					type: "object",
+					properties: { code: { type: "integer" }, data: { $ref: "#/components/schemas/PetPage" } },
+				},
+				PetEnvelope: {
+					type: "object",
+					properties: { code: { type: "integer" }, data: { $ref: "#/components/schemas/Pet" } },
+				},
+			},
+		},
+		paths: {
+			"/pets": {
+				get: {
+					operationId: "listPets",
+					responses: {
+						"200": {
+							description: "ok",
+							content: {
+								"application/json": { schema: { $ref: "#/components/schemas/PetListEnvelope" } },
+							},
+						},
+					},
+				},
+			},
+			"/pets/{id}": {
+				get: {
+					operationId: "getPet",
+					parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+					responses: {
+						"200": {
+							description: "ok",
+							content: {
+								"application/json": { schema: { $ref: "#/components/schemas/PetEnvelope" } },
+							},
+						},
+					},
+				},
+			},
+		},
+	});
+
+	const resource = planAdminApp(spec).resources[0];
+	expect(resource?.columns.map((column) => column.name)).toEqual(["id", "name"]);
+	expect(resource?.data).toEqual({
+		rowsPath: "data.items",
+		totalPath: "data.total",
+		detailPath: "data",
 	});
 });
 

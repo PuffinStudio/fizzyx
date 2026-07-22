@@ -173,6 +173,10 @@ const prepareDashboardRoute = (
 	framework: AdminFramework,
 	freshScaffold: boolean,
 ): void => {
+	if (framework === "nextjs" && freshScaffold) {
+		const rootLayout = join(outputDir, "src/app/layout.tsx");
+		if (existsSync(rootLayout)) unlinkSync(rootLayout);
+	}
 	const relative = framework === "nextjs" ? "src/app/page.tsx" : "src/routes/index.tsx";
 	const path = join(outputDir, relative);
 	if (!existsSync(path)) return;
@@ -190,6 +194,25 @@ const prepareDashboardRoute = (
 	throw new AdminGenerationError({
 		message: `custom root route conflicts with the generated dashboard: ${relative}; move or remove it, then regenerate`,
 	});
+};
+
+const scopeTailwindSources = (
+	outputDir: string,
+	framework: AdminFramework,
+	freshScaffold: boolean,
+): void => {
+	if (!freshScaffold) return;
+	const relative = framework === "nextjs" ? "src/app/globals.css" : "src/styles.css";
+	const path = join(outputDir, relative);
+	if (!existsSync(path)) return;
+	const content = readFileSync(path, "utf8");
+	const importStatement = '@import "tailwindcss";';
+	if (!content.includes(importStatement)) return;
+	const source = framework === "nextjs" ? ".." : ".";
+	writeFileSync(
+		path,
+		content.replace(importStatement, `@import "tailwindcss" source("${source}");`),
+	);
 };
 
 export const generateAdminProject = (input: GenerateAdminProjectInput) =>
@@ -302,7 +325,10 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			);
 		}
 		yield* Effect.try({
-			try: () => prepareDashboardRoute(outputDir, input.framework, !manifestExists),
+			try: () => {
+				prepareDashboardRoute(outputDir, input.framework, !manifestExists);
+				scopeTailwindSources(outputDir, input.framework, !manifestExists);
+			},
 			catch: (cause) =>
 				cause instanceof AdminGenerationError
 					? cause

@@ -27,5 +27,5 @@
 		"noUnusedParameters": false,
 		"noPropertyAccessFromIndexSignature": false
 	},
-	"exclude": ["tests/pet-admin-*"]
+	"exclude": ["tests/pet-admin-*", "tests/admin"]
 }

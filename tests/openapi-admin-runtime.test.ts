@@ -17,7 +17,7 @@ test("runtime templates expose the shared component contracts", () => {
 	expect(actionSurface).toContain("@/components/ui/sheet");
 	expect(dataGrid).toContain("export function DataGrid");
 	expect(dataGrid).toContain("export { AdminDataTable }");
-	expect(dataGrid).toContain('requireRegistryEntry("cell", adminRegistries.cells, cell)');
+	expect(dataGrid).toContain('requireRegistryEntry<NonNullable<AdminColumnDefinition["render"]>>');
 	expect(resourceForm).toContain("export function ResourceForm");
 	expect(resourceMutation).toContain("export function useResourceMutation");
 	expect(resourceList).toContain("export function ResourceList");

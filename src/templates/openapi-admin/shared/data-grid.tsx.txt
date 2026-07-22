@@ -19,7 +19,7 @@ export function DataGrid({ rows, columns, loading = false, error = null, onRetry
   onStateChange?: (state: AdminDataTableState) => void
   renderRowActions?: (row: Record<string, unknown>) => ReactNode
 }) {
-  const resolvedColumns = columns.map(({ cell, ...column }) => ({ ...column, render: cell ? requireRegistryEntry("cell", adminRegistries.cells, cell) : undefined }))
+  const resolvedColumns = columns.map(({ cell, ...column }) => ({ ...column, render: cell ? requireRegistryEntry<NonNullable<AdminColumnDefinition["render"]>>("cell", adminRegistries.cells, cell) : undefined }))
   return <AdminDataTable data={rows} columns={resolvedColumns} loading={loading} error={error} onRetry={onRetry} mode={state ? "server" : "client"} rowCount={rowCount} state={state} onStateChange={onStateChange} renderRowActions={renderRowActions} />
 }
 

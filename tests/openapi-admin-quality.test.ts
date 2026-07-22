@@ -3,10 +3,16 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+	adminQualityBootstrapFiles,
 	configureAdminQualityScripts,
 	planAdminQualityCommands,
 	planAdminTargetedQualityCommands,
 } from "../src/use-cases/openapi-admin-quality";
+
+test("excludes the machine-owned manifest from source formatting", () => {
+	const config = adminQualityBootstrapFiles("nextjs").find((file) => file.path === ".oxfmtrc.json");
+	expect(JSON.parse(config?.content ?? "{}").ignorePatterns).toContain(".fizzyx/**");
+});
 
 test("adds OXC quality scripts without removing official scaffold scripts", () => {
 	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-quality-"));

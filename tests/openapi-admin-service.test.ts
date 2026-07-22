@@ -110,6 +110,11 @@ test("replaces and owns the official scaffold welcome route on first generation"
 					JSON.stringify({ scripts: { build: "next build" } }),
 				);
 				writeFileSync(join(output, "src/app/page.tsx"), "export default function Welcome() {}\n");
+				writeFileSync(
+					join(output, "src/app/layout.tsx"),
+					'import { Geist } from "next/font/google"\n',
+				);
+				writeFileSync(join(output, "src/app/globals.css"), '@import "tailwindcss";\n');
 			}
 			return Effect.succeed({ stdout: "", stderr: "" });
 		},
@@ -127,6 +132,10 @@ test("replaces and owns the official scaffold welcome route on first generation"
 		expect(existsSync(join(output, "src/app/page.tsx"))).toBe(false);
 		expect(readFileSync(join(output, "src/app/(admin)/page.tsx"), "utf8")).toContain(
 			"AdminDashboard",
+		);
+		expect(readFileSync(join(output, "src/app/layout.tsx"), "utf8")).not.toContain("next/font");
+		expect(readFileSync(join(output, "src/app/globals.css"), "utf8")).toContain(
+			'@import "tailwindcss" source("..");',
 		);
 		expect(readFileSync(join(output, ".fizzyx/admin-manifest.json"), "utf8")).toContain(
 			'"src/app/(admin)/page.tsx"',

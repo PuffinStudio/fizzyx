@@ -554,15 +554,16 @@ const primitiveEnumValues = (value: unknown): Array<string | number | boolean> |
 };
 
 const propertyKind = (schema: Record<string, unknown>): ParsedProperty["kind"] => {
-	if (schema.type === "integer") return "integer";
+	const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+	if (types.includes("integer")) return "integer";
 	if (
-		schema.type === "string" ||
-		schema.type === "number" ||
-		schema.type === "boolean" ||
-		schema.type === "array" ||
-		schema.type === "object"
+		types.includes("string") ||
+		types.includes("number") ||
+		types.includes("boolean") ||
+		types.includes("array") ||
+		types.includes("object")
 	) {
-		return schema.type;
+		return types.find((type) => type !== "null") as ParsedProperty["kind"];
 	}
 	if (schema.properties) return "object";
 	return undefined;
@@ -575,6 +576,7 @@ const parseProperty = (
 	tsType: string,
 	resolveSchemaName: SchemaNameResolver,
 	seen: Set<Record<string, unknown>> = new Set(),
+	expand = true,
 ): ParsedProperty => {
 	const property: ParsedProperty = {
 		name,
@@ -584,7 +586,10 @@ const parseProperty = (
 		description: (schema.description as string) || undefined,
 		format: typeof schema.format === "string" ? schema.format : undefined,
 		enumValues: primitiveEnumValues(schema.enum),
-		nullable: schema.nullable === true ? true : undefined,
+		nullable:
+			schema.nullable === true || (Array.isArray(schema.type) && schema.type.includes("null"))
+				? true
+				: undefined,
 		minimum: typeof schema.minimum === "number" ? schema.minimum : undefined,
 		maximum: typeof schema.maximum === "number" ? schema.maximum : undefined,
 		minItems: typeof schema.minItems === "number" ? schema.minItems : undefined,
@@ -595,17 +600,20 @@ const parseProperty = (
 		readOnly: schema.readOnly === true ? true : undefined,
 		writeOnly: schema.writeOnly === true ? true : undefined,
 	};
-	if (seen.has(schema)) return property;
+	if (!expand || seen.has(schema)) return property;
 	const nextSeen = new Set(seen).add(schema);
 	if (property.kind === "array" && schema.items && typeof schema.items === "object") {
 		const items = schema.items as Record<string, unknown>;
+		const normalizedType = tsType.replace(/\s*\|\s*null/g, "");
+		const namedItemType = normalizedType.endsWith("[]") ? normalizedType.slice(0, -2) : undefined;
 		property.items = parseProperty(
 			"item",
 			items,
 			true,
-			schemaToTsType(items, resolveSchemaName),
+			namedItemType ?? schemaToTsType(items, resolveSchemaName),
 			resolveSchemaName,
 			nextSeen,
+			!namedItemType,
 		);
 	}
 	if (property.kind === "object" && schema.properties) {
@@ -742,25 +750,33 @@ function maybeUnwrapEnvelope(schema: Record<string, unknown>): Record<string, un
 function schemaToTsType(
 	schema: Record<string, unknown>,
 	resolveSchemaName: SchemaNameResolver,
+	seen: Set<Record<string, unknown>> = new Set(),
 ): string {
-	if (schema.nullable) {
+	if (seen.has(schema)) return "unknown";
+	const nextSeen = new Set(seen).add(schema);
+	const typeUnion = Array.isArray(schema.type) ? schema.type : undefined;
+	if (schema.nullable || typeUnion?.includes("null")) {
 		const { nullable: _nullable, ...withoutNullable } = schema;
 		void _nullable;
-		return `${schemaToTsType(withoutNullable, resolveSchemaName)} | null`;
+		if (typeUnion) withoutNullable.type = typeUnion.filter((type) => type !== "null");
+		if (Array.isArray(withoutNullable.type) && withoutNullable.type.length === 1) {
+			withoutNullable.type = withoutNullable.type[0];
+		}
+		return `${schemaToTsType(withoutNullable, resolveSchemaName, nextSeen)} | null`;
 	}
 	if (schema.oneOf) {
 		return (schema.oneOf as Record<string, unknown>[])
-			.map((s) => schemaToTsType(s, resolveSchemaName))
+			.map((s) => schemaToTsType(s, resolveSchemaName, nextSeen))
 			.join(" | ");
 	}
 	if (schema.anyOf) {
 		return (schema.anyOf as Record<string, unknown>[])
-			.map((s) => schemaToTsType(s, resolveSchemaName))
+			.map((s) => schemaToTsType(s, resolveSchemaName, nextSeen))
 			.join(" | ");
 	}
 	if (schema.allOf) {
 		return (schema.allOf as Record<string, unknown>[])
-			.map((s) => schemaToTsType(s, resolveSchemaName))
+			.map((s) => schemaToTsType(s, resolveSchemaName, nextSeen))
 			.join(" & ");
 	}
 
@@ -769,7 +785,9 @@ function schemaToTsType(
 		return refName === "unknown" ? "unknown" : resolveSchemaName(refName);
 	}
 
-	const type = schema.type as string | undefined;
+	const type = Array.isArray(schema.type)
+		? schema.type.find((candidate): candidate is string => typeof candidate === "string")
+		: (schema.type as string | undefined);
 	switch (type) {
 		case "string":
 			return "string";
@@ -781,7 +799,7 @@ function schemaToTsType(
 		case "array": {
 			const items = schema.items as Record<string, unknown> | undefined;
 			if (!items) return "unknown[]";
-			return `${schemaToTsType(items, resolveSchemaName)}[]`;
+			return `${schemaToTsType(items, resolveSchemaName, nextSeen)}[]`;
 		}
 		case "object": {
 			const props = schema.properties as Record<string, unknown> | undefined;
@@ -789,13 +807,13 @@ function schemaToTsType(
 				const required = (schema.required as string[]) ?? [];
 				const fields = Object.entries(props).map(
 					([k, v]) =>
-						`${k}${required.includes(k) ? "" : "?"}: ${schemaToTsType(v as Record<string, unknown>, resolveSchemaName)}`,
+						`${k}${required.includes(k) ? "" : "?"}: ${schemaToTsType(v as Record<string, unknown>, resolveSchemaName, nextSeen)}`,
 				);
 				return `{ ${fields.join("; ")} }`;
 			}
 			const additional = schema.additionalProperties;
 			if (additional !== undefined && additional !== true) {
-				return `Record<string, ${schemaToTsType(additional as Record<string, unknown>, resolveSchemaName)}>`;
+				return `Record<string, ${schemaToTsType(additional as Record<string, unknown>, resolveSchemaName, nextSeen)}>`;
 			}
 			return "Record<string, unknown>";
 		}
@@ -829,6 +847,20 @@ function parseAllEndpoints(
 
 	for (const [path, pathItem] of Object.entries(paths)) {
 		const item = pathItem as Record<string, unknown>;
+		const pathLevelParams = Array.isArray(item.parameters)
+			? (item.parameters as Record<string, unknown>[])
+			: [];
+		const siblingPathParams = new Map<string, Record<string, unknown>>();
+		for (const candidate of Object.values(item)) {
+			if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+			const candidateParams = (candidate as Record<string, unknown>).parameters;
+			if (!Array.isArray(candidateParams)) continue;
+			for (const param of candidateParams as Record<string, unknown>[]) {
+				if (param.in === "path" && typeof param.name === "string") {
+					siblingPathParams.set(param.name, param);
+				}
+			}
+		}
 		for (const [method, operation] of Object.entries(item)) {
 			const httpMethod = methodMap[method];
 			if (!httpMethod) continue;
@@ -839,7 +871,27 @@ function parseAllEndpoints(
 			const description = (op.description as string) || undefined;
 			const security = parseSecurityRequirements(op.security);
 
-			const params = (op.parameters ?? []) as Record<string, unknown>[];
+			const operationParams = Array.isArray(op.parameters)
+				? (op.parameters as Record<string, unknown>[])
+				: [];
+			const paramsByLocationAndName = new Map<string, Record<string, unknown>>();
+			for (const param of [...pathLevelParams, ...operationParams]) {
+				paramsByLocationAndName.set(`${String(param.in)}:${String(param.name)}`, param);
+			}
+			for (const name of [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!)) {
+				const key = `path:${name}`;
+				if (paramsByLocationAndName.has(key)) continue;
+				paramsByLocationAndName.set(
+					key,
+					siblingPathParams.get(name) ?? {
+						name,
+						in: "path",
+						required: true,
+						schema: { type: "string" },
+					},
+				);
+			}
+			const params = [...paramsByLocationAndName.values()];
 			const pathParams: PathParam[] = [];
 			const queryParams: QueryParam[] = [];
 			for (const param of params) {

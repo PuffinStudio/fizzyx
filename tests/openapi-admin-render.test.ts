@@ -156,6 +156,12 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(paths).toContain("src/components/admin/theme-provider.tsx");
 	expect(paths).toContain("src/components/admin/theme-toggle.tsx");
 	expect(paths).toContain("src/app/(admin)/layout.tsx");
+	expect(files.find((file) => file.path === "src/app/layout.tsx")?.content).toContain(
+		'title: "Pet Store Admin"',
+	);
+	expect(files.find((file) => file.path === "src/app/layout.tsx")?.content).not.toContain(
+		"next/font",
+	);
 	expect(paths).toContain("src/app/(admin)/pets/page.tsx");
 	expect(paths).toContain("src/components/admin/data-table.tsx");
 	expect(paths).toContain("src/lib/api/admin-api.ts");
@@ -172,6 +178,9 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	);
 	expect(files.find((file) => file.path.endsWith("lib/api/admin-api.ts"))?.content).toContain(
 		"configureAdminApi",
+	);
+	expect(files.find((file) => file.path.endsWith("lib/api/admin-api.ts"))?.content).toContain(
+		"responseExtractor: (raw) => raw",
 	);
 	const listPage = files.find((file) => file.path.endsWith("pets/page.tsx"))?.content;
 	expect(listPage).toContain("useListPets");
@@ -248,7 +257,7 @@ test("renders Next.js create, detail, and edit experiences for mapped CRUD opera
 		"createPetsSchema",
 	);
 	expect(files.find((file) => file.path.endsWith("[id]/edit/page.tsx"))?.content).toContain(
-		"initialValue={(detail.data ?? {}) as unknown as Record<string, unknown>}",
+		"initialValue={(readAdminPath(detail.data, detailPath) ?? {}) as Record<string, unknown>}",
 	);
 	expect(listPage).toContain("New Pets");
 	expect(listPage).toContain("View");
@@ -361,6 +370,7 @@ test("serializes grouped navigation and v2 presentation metadata", () => {
 	expect(generatedPlan).toContain('"resourceKey": "pets"');
 	expect(generatedPlan).toContain('"presentation"');
 	expect(shell).toContain("adminPlan.navigation.groups.map");
+	expect(shell).toContain('("icon" in item ? item.icon : undefined) as never');
 	expect(shell).toContain("AdminNavigation");
 });
 
@@ -439,7 +449,7 @@ test("renders server-cookie login, guard, and BFF routes for Next.js", () => {
 		(file) => file.path === "src/components/admin/dashboard.tsx",
 	)?.content;
 	expect(dashboard).toContain("Admin Overview");
-	expect(dashboard).toContain("adminPlan.resources.length");
+	expect(dashboard).toContain("resource.hasList");
 	expect(files.find((file) => file.path.endsWith("login-screen.tsx"))?.content).toContain(
 		"ShieldCheck",
 	);
