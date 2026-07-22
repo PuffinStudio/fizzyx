@@ -189,6 +189,7 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(listPage).toContain("limit: tableState.pagination.pageSize");
 	expect(listPage).toContain("search: tableState.globalFilter || undefined");
 	expect(listPage).toContain('status: tableState.columnFilters.find(({ id }) => id === "status")');
+	expect(listPage).toContain('"sortable":false');
 	expect(listPage).toContain('"filter":{"name":"status","type":"select"');
 	expect(listPage).toContain("searchable");
 	expect(listPage).toContain('mode="server"');

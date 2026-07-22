@@ -359,12 +359,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to write admin project", cause }),
 		});
-		if (manifestExists) {
-			yield* runTargetedQualityCommands(packageManager, outputDir, writeResult.written);
-		} else {
-			yield* runQualityCommands(packageManager, outputDir);
-		}
-		yield* Effect.try({
+		const refreshFormattedHashes = Effect.try({
 			try: () => refreshAdminGeneratedFileHashes(outputDir, writeResult.written),
 			catch: (cause) =>
 				new AdminGenerationError({
@@ -372,6 +367,17 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 					cause,
 				}),
 		});
+		const quality = manifestExists
+			? runTargetedQualityCommands(packageManager, outputDir, writeResult.written)
+			: runQualityCommands(packageManager, outputDir);
+		const qualityResult = yield* quality.pipe(
+			Effect.match({
+				onFailure: (error) => ({ error }) as const,
+				onSuccess: () => ({ error: undefined }) as const,
+			}),
+		);
+		yield* refreshFormattedHashes;
+		if (qualityResult.error) return yield* Effect.fail(qualityResult.error);
 
 		return {
 			outputDir,

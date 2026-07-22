@@ -259,6 +259,7 @@ const columnsLiteral = (resource: AdminResourcePlan): string =>
 			return {
 				key: column.name,
 				label: formFieldLabel(column),
+				...(resource.listQuery ? { sortable: Boolean(resource.listQuery.sort) } : {}),
 				...(filter ? { filter } : {}),
 			};
 		}),

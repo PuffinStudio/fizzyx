@@ -175,3 +175,48 @@ test("rejects a malformed spec before executing any scaffold command", async () 
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("refreshes generated hashes after a quality failure so regeneration does not conflict", async () => {
+	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-quality-recovery-"));
+	const output = join(root, "pet-admin");
+	let failQuality = true;
+	const runner = {
+		run: (argv: string[]) => {
+			if (argv[0] === "bun" && argv.includes("next-app@latest")) {
+				mkdirSync(join(output, "src/app"), { recursive: true });
+				writeFileSync(
+					join(output, "package.json"),
+					JSON.stringify({ scripts: { build: "next build" } }),
+				);
+			}
+			if (failQuality && argv[0] === "bun" && argv[1] === "run" && argv[2] === "fmt") {
+				failQuality = false;
+				return Effect.fail(
+					new AdminGenerationError({ message: "formatter failed", command: argv }),
+				);
+			}
+			return Effect.succeed({ stdout: "", stderr: "" });
+		},
+	};
+
+	try {
+		await expect(
+			Effect.runPromise(
+				generateAdminProject({ input: fixture, output, framework: "nextjs" }).pipe(
+					Effect.provideService(AdminProcessRunner, runner),
+					Effect.provide(GeneratorRegistryLive),
+				),
+			),
+		).rejects.toMatchObject({ message: "formatter failed" });
+
+		const regenerated = await Effect.runPromise(
+			generateAdminProject({ input: fixture, output, framework: "nextjs" }).pipe(
+				Effect.provideService(AdminProcessRunner, runner),
+				Effect.provide(GeneratorRegistryLive),
+			),
+		);
+		expect(regenerated.conflicts).toEqual([]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
