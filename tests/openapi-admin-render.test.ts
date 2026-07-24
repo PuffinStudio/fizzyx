@@ -375,6 +375,34 @@ test("serializes grouped navigation and v2 presentation metadata", () => {
 	expect(shell).toContain("AdminNavigation");
 });
 
+test("generated navigation icon registry covers every planner-accepted icon key", () => {
+	const files = renderAdminApp(plan, "nextjs");
+	const nav = files.find(
+		(file) => file.path === "src/components/admin/admin-navigation.tsx",
+	)?.content;
+
+	// Must stay in sync with ADMIN_ICON_KEYS in openapi-admin-plan.ts, otherwise
+	// valid planner icons silently fall back to the database icon.
+	for (const key of [
+		"database",
+		"file",
+		"folder",
+		"home",
+		"package",
+		"settings",
+		"shield",
+		"shopping-cart",
+		"user",
+		"users",
+	] as const) {
+		expect(nav).toContain(`"${key}"`);
+	}
+	// The non-overlapping keys must resolve to their own Lucide component, not fall back.
+	expect(nav).toContain("ShoppingCart");
+	expect(nav).toContain("Package");
+	expect(nav).toContain("Folder");
+});
+
 test("legacy createMode page overrides resource dialog and sheet presentation", () => {
 	const resource = plan.resources[0];
 	if (!resource) throw new Error("expected pets resource");

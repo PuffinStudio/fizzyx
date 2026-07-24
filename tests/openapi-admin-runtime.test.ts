@@ -32,8 +32,10 @@ test("runtime templates expose the shared component contracts", () => {
 });
 
 test("navigation icons use a controlled static registry", () => {
+	// Must cover every key in ADMIN_ICON_KEYS (openapi-admin-plan.ts) so valid
+	// planner icons never silently fall back to the database icon.
 	expect(navigation).toContain(
-		'export type AdminIconKey = "boxes" | "database" | "settings" | "shield" | "users"',
+		'export type AdminIconKey = "database" | "file" | "folder" | "home" | "package" | "settings" | "shield" | "shopping-cart" | "user" | "users"',
 	);
 	expect(navigation).toContain("resolveAdminIcon(item.icon)");
 	expect(navigation).toContain('aria-current={active ? "page" : undefined}');

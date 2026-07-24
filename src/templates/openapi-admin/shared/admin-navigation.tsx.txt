@@ -3,11 +3,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Boxes, Database, Settings, Shield, Users, type LucideIcon } from "lucide-react"
+import { Database, File, Folder, Home, Package, Settings, Shield, ShoppingCart, User, Users, type LucideIcon } from "lucide-react"
 
-export type AdminIconKey = "boxes" | "database" | "settings" | "shield" | "users"
+export type AdminIconKey = "database" | "file" | "folder" | "home" | "package" | "settings" | "shield" | "shopping-cart" | "user" | "users"
 
-export const adminIconRegistry: Readonly<Record<AdminIconKey, LucideIcon>> = Object.freeze({ boxes: Boxes, database: Database, settings: Settings, shield: Shield, users: Users })
+export const adminIconRegistry: Readonly<Record<AdminIconKey, LucideIcon>> = Object.freeze({ database: Database, file: File, folder: Folder, home: Home, package: Package, settings: Settings, shield: Shield, "shopping-cart": ShoppingCart, user: User, users: Users })
 
 export function resolveAdminIcon(key: unknown): LucideIcon {
   return typeof key === "string" && Object.hasOwn(adminIconRegistry, key) ? adminIconRegistry[key as AdminIconKey] : adminIconRegistry.database
