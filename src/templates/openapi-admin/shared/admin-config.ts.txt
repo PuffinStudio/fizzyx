@@ -11,6 +11,6 @@ export interface AdminConfig {
   resources?: Record<string, AdminResourceConfig>
 }
 
-export function defineAdminConfig<const T extends AdminConfig>(config: T): T { return config }
+export function defineAdminConfig(config: AdminConfig): AdminConfig { return config }
 
 export const adminConfig = defineAdminConfig({ resources: {} })

@@ -465,6 +465,7 @@ const renderNextList = (
 		content: renderTemplate(nextListTemplate, {
 			FIZZYX_HOOK_NAME: hook,
 			FIZZYX_COLUMNS: columnsLiteral(resource),
+			FIZZYX_RESOURCE_ID: JSON.stringify(resource.id),
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("", resource),
 			...nextListNavigationValues(resource, presentation),
@@ -634,6 +635,7 @@ const renderTanstackList = (
 			FIZZYX_ROUTE: JSON.stringify(`/_admin/${resource.id}/`),
 			FIZZYX_HOOK_NAME: hookName(operation.operationId),
 			FIZZYX_COLUMNS: columnsLiteral(resource),
+			FIZZYX_RESOURCE_ID: JSON.stringify(resource.id),
 			FIZZYX_LABEL: JSON.stringify(resource.label),
 			FIZZYX_COMPONENT_NAME: componentName("", resource),
 			...tanstackListNavigationValues(resource, presentation),

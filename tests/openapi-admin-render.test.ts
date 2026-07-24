@@ -403,6 +403,28 @@ test("generated navigation icon registry covers every planner-accepted icon key"
 	expect(nav).toContain("Folder");
 });
 
+test("list routes wire adminConfig column overrides through the cell registry", () => {
+	for (const framework of ["nextjs", "tanstack-start"] as const) {
+		const files = renderAdminApp(plan, framework);
+		const listPath =
+			framework === "nextjs" ? "src/app/(admin)/pets/page.tsx" : "src/routes/_admin/pets/index.tsx";
+		const list = files.find((file) => file.path === listPath)?.content;
+
+		expect(list).toContain('import { adminConfig } from "@/admin/config"');
+		expect(list).toContain('import { adminRegistries } from "@/admin/registries"');
+		expect(list).toContain(
+			'const resolvedColumns = applyAdminColumns(columns, adminConfig.resources?.["pets"]?.columns, adminRegistries.cells)',
+		);
+		expect(list).toContain("columns={resolvedColumns}");
+		expect(list).not.toContain("columns={columns}");
+	}
+
+	const runtime = renderAdminApp(plan, "nextjs").find(
+		(file) => file.path === "src/components/admin/admin-runtime.ts",
+	)?.content;
+	expect(runtime).toContain("export function applyAdminColumns");
+});
+
 test("legacy createMode page overrides resource dialog and sheet presentation", () => {
 	const resource = plan.resources[0];
 	if (!resource) throw new Error("expected pets resource");
