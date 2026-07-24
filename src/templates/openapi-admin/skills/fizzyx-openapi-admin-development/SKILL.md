@@ -40,10 +40,19 @@ the task is explicitly a one-off fork.
   OpenAPI source, then regenerate.
 - Change reusable generator behavior in FizzyX itself, not in one generated copy.
 - Keep team defaults in optional `.fizzyx.yaml`. Direct CLI flags remain valid without that file.
-- Keep visual defaults in `openapi.admin.preset` and create/edit UX in `openapi.admin.create_mode`;
-  direct `--preset` and `--create-mode` flags override them for a generation.
+- Keep visual defaults in `openapi.admin.preset`; the `--preset` flag overrides it for a generation.
+- Control create/edit/detail surfaces with `openapi.admin.presentation`, where each of `create`,
+  `edit`, and `detail` is `page`, `dialog`, or `sheet`. `page` emits a route; `dialog`/`sheet` emit a
+  component surfaced from the list. `detail` currently always renders as a page. `openapi.admin.create_mode`
+  (and the `--create-mode` flag) is the legacy `page`/`dialog` alias that sets both create and edit.
 - Keep API-specific admin semantics in `x-fizzyx-admin`, especially confirmed auth operation IDs and
   response paths.
+- Drive the sidebar and per-resource presentation from OpenAPI top-level tag `x-fizzyx-admin`
+  metadata: `group` and `order` shape the grouped navigation, `label`/`icon`/`hidden` style each item
+  (icon must be one of the controlled keys: database, file, folder, home, package, settings, shield,
+  shopping-cart, user, users), and `presentation` overrides surfaces per resource. Resources without a
+  list operation never appear in the sidebar. Precedence: resource `x-fizzyx-admin` over
+  `.fizzyx.yaml` defaults over generator built-ins.
 - Never place secrets, real tokens, passwords, or private keys in OpenAPI, `.fizzyx.yaml`, generated
   source, or diagnostics. Use environment variables or the deployment secret store.
 
