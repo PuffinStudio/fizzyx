@@ -8,7 +8,11 @@ import { ensureFlowConfig } from "./flow-bootstrap";
 import { convertDescription, parseTemplateDescription } from "./flow-card-content";
 import { buildBoardUsers, resolveAssignableUser, resolveMineUser } from "./flow-user-resolution";
 import { makeFlowApiWithAuthRetry } from "./flow-auth";
-import { buildStandardizedCommentBody, getStandardizedCommentTemplate } from "./flow-comment";
+import {
+	buildNoteCommentBody,
+	buildStandardizedCommentBody,
+	getStandardizedCommentTemplate,
+} from "./flow-comment";
 import {
 	makeEnv,
 	makeFlowEnv,
@@ -42,7 +46,7 @@ export type { Env, InitializedEnv };
 export { makeEnv, makeFlowEnv, makeFlowRuntimeEnv, bootstrapFlowConfig };
 export { analyzeDoctor, repairDoctor };
 export type { DoctorResult };
-export { buildStandardizedCommentBody, getStandardizedCommentTemplate };
+export { buildNoteCommentBody, buildStandardizedCommentBody, getStandardizedCommentTemplate };
 
 export const setup = (input: SetupProjectConfigInput) =>
 	Effect.gen(function* () {
@@ -197,7 +201,7 @@ export const addComment = (env: Env, number: number, body: string) =>
 	Effect.gen(function* () {
 		const normalized = body.trim();
 		if (!normalized) return yield* new ValidationError({ message: "Comment body is required" });
-		yield* env.api.comment(number, buildStandardizedCommentBody("note", normalized));
+		yield* env.api.comment(number, buildNoteCommentBody(normalized));
 		return { number, body: normalized };
 	});
 

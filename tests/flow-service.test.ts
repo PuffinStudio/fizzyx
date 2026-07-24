@@ -14,6 +14,7 @@ import {
 	nextOrStart,
 	mine,
 	completeSteps,
+	buildNoteCommentBody,
 	buildStandardizedCommentBody,
 	convertDescription,
 	getStandardizedCommentTemplate,
@@ -1323,6 +1324,31 @@ test("buildStandardizedCommentBody escapes html in values", () => {
 	const body = buildStandardizedCommentBody("done", 'feat: <a> & b "c" d\'');
 
 	expect(body).toBe("<p>done: feat: &lt;a&gt; &amp; b &quot;c&quot; d&#39;</p>");
+});
+
+test("buildNoteCommentBody renders safe multiline markdown for Fizzy rich text", () => {
+	const body = buildNoteCommentBody(`[VERIFY-QUEUE]
+
+- agent: \`/root\`
+- state: **green**
+- unsafe: <script>alert("x")</script>
+- blocked link: [open](javascript:alert(1))
+- encoded link: [open](java%73cript:alert(1))
+- safe link: [card](https://example.com/cards/1)`);
+
+	expect(body).toBe(`<p>note: [VERIFY-QUEUE]</p>
+<ul>
+<li>agent: <code>/root</code></li>
+<li>state: <strong>green</strong></li>
+<li>unsafe: &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;</li>
+<li>blocked link: <a>open</a></li>
+<li>encoded link: <a>open</a></li>
+<li>safe link: <a href="https://example.com/cards/1">card</a></li>
+</ul>`);
+});
+
+test("buildNoteCommentBody preserves compact single-line note output", () => {
+	expect(buildNoteCommentBody("ready <now>")).toBe("<p>note: ready &lt;now&gt;</p>");
 });
 
 test("getStandardizedCommentTemplate returns English placeholders", () => {

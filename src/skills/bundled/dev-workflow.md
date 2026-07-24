@@ -35,7 +35,8 @@ When editing an existing card, keep the same contract:
 5. Use `flow repair` only to normalize legacy or malformed cards; it is not the normal edit path.
 
 Use `fizzyx flow list` for structured filters on the project board and `fizzyx flow search` for
-full-text search. Add execution notes with `fizzyx flow comment <card> <body>`. For agent parsing,
+full-text search. Add single-line notes with `fizzyx flow comment <card> <body>`. Send multiline
+Markdown with `fizzyx flow comment <card> --body-file -` and a quoted heredoc. For agent parsing,
 prefer `--json` where offered and follow the returned breadcrumbs instead of guessing command names.
 
 ## Custom Fizzy columns

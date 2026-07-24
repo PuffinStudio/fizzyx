@@ -46,10 +46,10 @@ export const flowCommentCmd = Command.make(
 		),
 		body: Argument.string("body").pipe(Argument.withDescription("Comment text"), Argument.optional),
 		bodyFile: Flag.string("body-file").pipe(
-			Flag.withDescription("Comment file path ('-' for stdin)"),
+			Flag.withDescription("Markdown comment file path ('-' for stdin)"),
 			Flag.optional,
 		),
 		json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
 	},
 	handleComment,
-).pipe(Command.withDescription("Add a note comment to a card"));
+).pipe(Command.withDescription("Add a Markdown note comment to a card"));

@@ -25,7 +25,8 @@ fizzyx flow create "<title>" --assign <user> --desc <draft-path>
 fizzyx flow edit <card> --draft
 fizzyx flow edit <card> [--title "<title>"] [--desc <file|->]
 fizzyx flow assign <card> <user>
-fizzyx flow comment <card> "<body>"
+fizzyx flow comment <card> "<single-line body>"
+fizzyx flow comment <card> --body-file <markdown-file|->
 fizzyx flow show <card>
 fizzyx flow move <card> <column-id-or-name>
 fizzyx flow start <card>
@@ -46,7 +47,7 @@ Drafts are stored outside the worktree in Git-local state (or the user state dir
 `flow edit` updates the title, description, or both. Description input accepts a standard card draft file or `-` for stdin and synchronizes its `## Steps` task list.
 `flow columns` lists the real columns and IDs on the configured board. `flow move` is the column-agnostic primitive for custom Fizzy boards. `flow start` uses the configured `in_progress` column; `flow review` is a convenience command for the built-in REVIEW preset.
 `flow move` also accepts the Fizzy system targets `maybe`/`triage` and `not-now`; closing remains guarded by `flow done`.
-`flow list` filters cards on the configured board, while `flow search` uses Fizzy full-text search and filters results back to the project board unless `--all-boards` is passed. `flow comment` records a standardized note.
+`flow list` filters cards on the configured board, while `flow search` uses Fizzy full-text search and filters results back to the project board unless `--all-boards` is passed. `flow comment` records a standardized note and renders safe Markdown as Fizzy rich text; use `--body-file -` for multiline stdin.
 `flow reopen`, `flow unblock`, and `flow untriage` provide the inverse lifecycle actions. Unblock returns the card to the configured default column; untriage returns it to Fizzy's system Maybe state.
 High-frequency flow commands accept `--json` and return an `ok`/`data`/`summary` envelope with next-action breadcrumbs for agents.
 Normal flow commands never create or rename board columns. When `flow:` is missing, explicit `fizzyx init` installs the bundled preset; custom boards can map their existing default and in-progress column IDs in `.fizzyx.yaml` and use `flow move` for all other transitions.
