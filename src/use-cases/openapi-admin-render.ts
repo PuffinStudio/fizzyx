@@ -88,7 +88,7 @@ const renderPlan = (plan: AdminAppPlan): GeneratedFile => ({
 			defaults: plan.defaults,
 			navigation: plan.navigation,
 			resources: plan.resources.map(
-				({ key, id, label, path, group, order, icon, hidden, presentation, operations }) => ({
+				({
 					key,
 					id,
 					label,
@@ -98,6 +98,21 @@ const renderPlan = (plan: AdminAppPlan): GeneratedFile => ({
 					icon,
 					hidden,
 					presentation,
+					permissions,
+					actions,
+					operations,
+				}) => ({
+					key,
+					id,
+					label,
+					path,
+					group,
+					order,
+					icon,
+					hidden,
+					presentation,
+					permissions,
+					actions,
 					hasList: Boolean(operations.list),
 				}),
 			),
@@ -393,10 +408,22 @@ const createDialogValues = (resource: AdminResourcePlan, createMode: AdminSurfac
 	};
 };
 
+const resourceScopedActions = (resource: AdminResourcePlan) =>
+	(resource.actions ?? []).filter((action) => (action.scope ?? "resource") === "resource");
+
+const resourceActionButtons = (resource: AdminResourcePlan): string =>
+	resourceScopedActions(resource)
+		.map(
+			(action) =>
+				`<button type="button" className={buttonVariants({ variant: "outline", size: "sm" })} onClick={() => void Promise.resolve(requireRegistryEntry("operation", adminRegistries.operations, ${JSON.stringify(action.key)})(undefined)).then(() => query.refetch())}>${action.label ?? action.key}</button>`,
+		)
+		.join("");
+
 const nextListNavigationValues = (
 	resource: AdminResourcePlan,
 	presentation: ResourcePresentation,
 ) => {
+	const hasResourceActions = resourceScopedActions(resource).length > 0;
 	const canCreate = Boolean(resource.operations.create);
 	const canView = Boolean(resource.operations.detail);
 	const canEdit = Boolean(resource.operations.update);
@@ -410,7 +437,9 @@ const nextListNavigationValues = (
 			? ` renderRowActions={(row) => { const value = row[${JSON.stringify(idKey)}]; if (value == null) return null; const id = encodeURIComponent(String(value)); return <div className="flex items-center gap-2">${canView ? `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}\`}>View</Link>` : ""}${canEdit ? (presentation.edit === "dialog" ? `<${editDialogComponentName(resource)} id={id} onSaved={async () => { await query.refetch() }} />` : presentation.edit === "sheet" ? `<${editSheetComponentName(resource)} id={id} onSaved={async () => { await query.refetch() }} />` : `<Link className={buttonVariants({ size: "sm", variant: "outline" })} href={\`/${resource.id}/\${id}/edit\`}>Edit</Link>`) : ""}</div> }}`
 			: "";
 	return {
-		FIZZYX_NAV_IMPORTS: `${hasLinkActions ? 'import Link from "next/link"\nimport { buttonVariants } from "@/components/ui/button"\n' : ""}${canEdit && presentation.edit === "dialog" ? `import { ${editDialogComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-dialog"\n` : ""}${canEdit && presentation.edit === "sheet" ? `import { ${editSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-sheet"\n` : ""}${canCreate && presentation.create === "sheet" ? `import { ${createSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-create-sheet"\n` : ""}`,
+		FIZZYX_NAV_IMPORTS: `${hasLinkActions ? 'import Link from "next/link"\n' : ""}${hasLinkActions || hasResourceActions ? 'import { buttonVariants } from "@/components/ui/button"\n' : ""}${canEdit && presentation.edit === "dialog" ? `import { ${editDialogComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-dialog"\n` : ""}${canEdit && presentation.edit === "sheet" ? `import { ${editSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-sheet"\n` : ""}${canCreate && presentation.create === "sheet" ? `import { ${createSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-create-sheet"\n` : ""}`,
+		FIZZYX_REGISTRY_IMPORTS: hasResourceActions ? ", requireRegistryEntry" : "",
+		FIZZYX_RESOURCE_ACTIONS: resourceActionButtons(resource),
 		FIZZYX_CREATE_ACTION: canCreate
 			? presentation.create === "dialog"
 				? `<CreateResourceDialog label={resourceLabel} schema={${formSchemaName("create", resource)}} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`
@@ -426,6 +455,7 @@ const tanstackListNavigationValues = (
 	resource: AdminResourcePlan,
 	presentation: ResourcePresentation,
 ) => {
+	const hasResourceActions = resourceScopedActions(resource).length > 0;
 	const canCreate = Boolean(resource.operations.create);
 	const canView = Boolean(resource.operations.detail);
 	const canEdit = Boolean(resource.operations.update);
@@ -440,7 +470,9 @@ const tanstackListNavigationValues = (
 			: "";
 	return {
 		FIZZYX_ROUTER_IMPORTS: hasLinkActions ? ", Link" : "",
-		FIZZYX_BUTTON_IMPORT: `${hasLinkActions ? 'import { buttonVariants } from "@/components/ui/button"\n' : ""}${canEdit && presentation.edit === "dialog" ? `import { ${editDialogComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-dialog"\n` : ""}${canEdit && presentation.edit === "sheet" ? `import { ${editSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-sheet"\n` : ""}${canCreate && presentation.create === "sheet" ? `import { ${createSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-create-sheet"\n` : ""}`,
+		FIZZYX_BUTTON_IMPORT: `${hasLinkActions || hasResourceActions ? 'import { buttonVariants } from "@/components/ui/button"\n' : ""}${canEdit && presentation.edit === "dialog" ? `import { ${editDialogComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-dialog"\n` : ""}${canEdit && presentation.edit === "sheet" ? `import { ${editSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-edit-sheet"\n` : ""}${canCreate && presentation.create === "sheet" ? `import { ${createSheetComponentName(resource)} } from "@/components/admin/resources/${resource.id}-create-sheet"\n` : ""}`,
+		FIZZYX_REGISTRY_IMPORTS: hasResourceActions ? ", requireRegistryEntry" : "",
+		FIZZYX_RESOURCE_ACTIONS: resourceActionButtons(resource),
 		FIZZYX_CREATE_ACTION: canCreate
 			? presentation.create === "dialog"
 				? `<CreateResourceDialog label={resourceLabel} schema={${formSchemaName("create", resource)}} pending={createMutation.isPending} error={createMutation.error} onSubmit={async (value) => { await createMutation.mutateAsync(value as never); await query.refetch() }} />`

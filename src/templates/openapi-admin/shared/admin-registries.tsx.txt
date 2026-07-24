@@ -13,7 +13,7 @@ export interface AdminRegistries {
   operations: Record<string, AdminOperation>
 }
 
-export function defineAdminRegistries<const T extends AdminRegistries>(registries: T): T { return registries }
+export function defineAdminRegistries(registries: AdminRegistries): AdminRegistries { return registries }
 
 export function requireRegistryEntry<T>(registryName: string, registry: Record<string, T>, key: string): T {
   const entry = registry[key]

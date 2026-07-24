@@ -406,6 +406,46 @@ test("generated navigation icon registry covers every planner-accepted icon key"
 	expect(nav).toContain("Folder");
 });
 
+test("serializes resource actions and permissions and renders resource-scoped action buttons", () => {
+	const base = plan.resources[0];
+	if (!base) throw new Error("expected pets resource");
+	const actionPlan: AdminAppPlan = {
+		...plan,
+		resources: [
+			{
+				...base,
+				permissions: { create: "pets.create", delete: "pets.delete" },
+				actions: [
+					{ key: "syncPets", label: "Sync catalog", scope: "resource" },
+					{ key: "archivePet", label: "Archive", scope: "row" },
+				],
+			},
+		],
+	};
+
+	for (const framework of ["nextjs", "tanstack-start"] as const) {
+		const files = renderAdminApp(actionPlan, framework);
+		const generatedPlan = files.find(
+			(file) => file.path === "src/generated/admin-plan.ts",
+		)?.content;
+		const listPath =
+			framework === "nextjs" ? "src/app/(admin)/pets/page.tsx" : "src/routes/_admin/pets/index.tsx";
+		const list = files.find((file) => file.path === listPath)?.content;
+
+		// actions and permissions reach the generated intermediate plan
+		expect(generatedPlan).toContain('"syncPets"');
+		expect(generatedPlan).toContain('"pets.create"');
+
+		// resource-scoped action renders a button wired to the operations registry
+		expect(list).toContain("Sync catalog");
+		expect(list).toContain(
+			'requireRegistryEntry("operation", adminRegistries.operations, "syncPets")',
+		);
+		// row-scoped actions are not rendered as header buttons yet
+		expect(list).not.toContain("Archive");
+	}
+});
+
 test("detail view formats values with badges and chips instead of raw text", () => {
 	const details = renderAdminApp(plan, "nextjs").find(
 		(file) => file.path === "src/components/admin/record-details.tsx",
