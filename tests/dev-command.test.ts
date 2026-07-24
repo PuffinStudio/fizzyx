@@ -1047,3 +1047,43 @@ devTest("dev start --agent emits machine-readable worktree path and next_action"
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+devTest("dev doctor --agent emits section counts", async () => {
+	const root = createWorkflowRepo();
+	try {
+		runGit(root, ["checkout", "main"]);
+		const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+		expect(result.exitCode).toBe(0);
+		expect(output).toMatch(/merged:\s*\d/);
+		expect(output).toMatch(/worktrees:\s*\d/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev checkpoint --agent reports no changes machine-readably", async () => {
+	const root = createWorkflowRepo();
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		const result = await runCli(["dev", "checkpoint", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("checkpointed: no");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev cleanup --agent reports preview mode", async () => {
+	const root = createWorkflowRepo();
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		const result = await runCli(["dev", "cleanup", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("mode: preview");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

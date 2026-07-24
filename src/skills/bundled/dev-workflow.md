@@ -72,7 +72,9 @@ generic move to bypass the guarded `flow done` completion checks.
 10. Before moving a card to review or reporting completion, run `fizzyx dev ready --agent`.
 11. Move cards with `fizzyx flow review <card>` only after ready checks pass.
 12. Close cards with `fizzyx flow done <card> <ref>` only after the relevant commit, branch,
-    or accepted change is complete according to project policy.
+    or accepted change is complete according to project policy. `flow done` blocks while the
+    card has unfinished steps — finish them or pass `--complete-steps`. Provide `<ref>`
+    explicitly when git cannot infer the closing commit/branch.
 13. For movement between environments or release, use `fizzyx dev promote --dry-run` first.
 14. Use `fizzyx dev cleanup` only as a cleanup preview, then report pending branch deletions.
 15. When blocked by config/guardrail checks, report the blocker and next safe step.

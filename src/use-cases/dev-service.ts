@@ -1356,7 +1356,8 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 		};
 	});
 
-export const formatDoctor = (report: DoctorReport): string => {
+export const formatDoctor = (report: DoctorReport, agent = false): string => {
+	if (agent) return formatDoctorAgent(report);
 	const lines: string[] = [];
 	const addSection = (title: string, items: ReadonlyArray<DoctorBranchInfo>) => {
 		lines.push(`${title}:`);
@@ -1383,4 +1384,23 @@ export const formatDoctor = (report: DoctorReport): string => {
 	addSection("Linked worktrees", report.worktrees);
 
 	return lines.join("\n").trim();
+};
+
+const formatDoctorAgent = (report: DoctorReport): string => {
+	const sections: ReadonlyArray<readonly [string, ReadonlyArray<DoctorBranchInfo>]> = [
+		["stale_branches", report.staleBranches],
+		["no_upstream", report.noUpstreamBranches],
+		["merged", report.mergedBranches],
+		["environment_ahead", report.environmentAhead],
+		["feature_on_env_base", report.featureOnEnvBase],
+		["wip_commits", report.wipOnReady],
+		["protected_dirty", report.protectedDirty],
+		["worktrees", report.worktrees],
+	];
+	const lines: string[] = [];
+	for (const [key, items] of sections) {
+		lines.push(`${key}: ${items.length}`);
+		for (const item of items) lines.push(`  - ${item.name}: ${item.detail}`);
+	}
+	return lines.join("\n");
 };

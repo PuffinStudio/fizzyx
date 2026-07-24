@@ -5,6 +5,7 @@ import { createFlowDraft } from "../flow-content";
 import { readDescription } from "../flow-input";
 import { runWithFlowEnv } from "../flow-workflow";
 import { formatCreatingCardMessage } from "../flow-output";
+import { flowJson } from "../flow-json";
 
 const handleCreate = (config: {
 	title: Option.Option<string>;
@@ -12,6 +13,7 @@ const handleCreate = (config: {
 	draft: boolean;
 	assign: Option.Option<string>;
 	skill: ReadonlyArray<string>;
+	json: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const title = Option.getOrElse(config.title, () => "");
@@ -23,7 +25,17 @@ const handleCreate = (config: {
 				title,
 				suggestedSkills: config.skill,
 			});
-			yield* Console.log(draft.path);
+			yield* Console.log(
+				config.json
+					? flowJson({ path: draft.path }, `Created draft at ${draft.path}`, [
+							{
+								action: "create",
+								cmd: `fizzyx flow create "<title>" --desc ${draft.path}`,
+								description: "Fill the draft, then create the card from it",
+							},
+						])
+					: draft.path,
+			);
 			return;
 		}
 
@@ -44,7 +56,14 @@ const handleCreate = (config: {
 				});
 			}),
 		);
-		yield* Console.log(`${number}`);
+		yield* Console.log(
+			config.json
+				? flowJson({ number }, `Created card ${number}`, [
+						{ action: "show", cmd: `fizzyx flow show ${number}`, description: "View the card" },
+						{ action: "start", cmd: `fizzyx flow start ${number}`, description: "Start the card" },
+					])
+				: `${number}`,
+		);
 	});
 
 export const flowCreateCmd = Command.make(
@@ -67,6 +86,7 @@ export const flowCreateCmd = Command.make(
 			Flag.withDescription("Suggested skill to add to the card body"),
 			Flag.atLeast(0),
 		),
+		json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
 	},
 	handleCreate,
 ).pipe(Command.withDescription("Create a new card"));
