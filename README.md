@@ -272,6 +272,124 @@ src/api/
   └── api.ts          # tree-shakeable export functions + param types
 ```
 
+### Admin App
+
+Generate a standalone shadcn admin project with a typed fetch client and TanStack Query hooks:
+
+Prerequisites are Bun, Git, and network access to the framework and shadcn registries. pnpm is
+only needed for the guarded compatibility fallback.
+
+```sh
+fizzyx openapi admin \
+  --input ./openapi.json \
+  --output ./pet-admin \
+  --framework nextjs \
+  --create-mode dialog
+```
+
+URLs work as input too:
+
+```sh
+fizzyx openapi admin -i https://api.example.com/openapi.json -o ./admin --framework tanstack-start
+```
+
+Use `--framework tanstack-start` for TanStack Start, or add `--dry-run` to inspect the
+scaffold commands without creating files. The generator uses the official framework
+scaffolds, Bun and `bunx` by default, and only falls back to pnpm for a known Bun
+compatibility failure. It never invokes npm or npx.
+
+Generated admin projects include:
+
+- shadcn components installed with `shadcn add --all`
+- a Base UI Mira admin preset with persistent system/light/dark themes and a header toggle
+- declarative TanStack Table list pages whose search, typed filters, pagination, and sorting come
+  only from query capabilities declared by the list operation
+- operation-level Zod v4 schemas rendered by AutoForm's TanStack Form adapter and editable shadcn
+  source components, including enum selects, booleans, dates, numbers, arrays, and nested objects
+- consistent `page` or `dialog` create/edit presentation with generated validation messages
+- detail routes, reusable inline delete confirmation, and a typed fetch + TanStack Query client
+- OXC `fmt`, `lint`, `lint:fix`, and `check` scripts, run automatically after first generation
+- optional server-cookie authentication with a login page, server guard, logout, and same-origin BFF
+- `.fizzyx/admin-manifest.json` regeneration safety that preserves user-edited generated files
+- project-local AI skills for auth discovery and conflict-safe generated-project development
+
+The command works without `.fizzyx.yaml` when all three flags are provided. Teams may keep defaults
+in the optional project config; explicit flags fill or override those values:
+
+```yaml
+openapi:
+  admin:
+    input: ./openapi.yaml
+    output: ./apps/admin
+    framework: nextjs
+    preset: b1tNoIJIf # optional shadcn preset override
+    create_mode: page # create and edit both use page or dialog presentation
+```
+
+On first generation, the precedence is `--preset`/`--create-mode`, then `openapi.admin` project
+defaults, then the FizzyX defaults (`b1tNoIJIf` and `page`). Presets customize the shadcn style,
+colors, font, radius, charts, and menu treatment; the generated theme provider always keeps light
+and dark mode available. Regeneration may safely switch `create_mode`; create and edit switch
+together so one resource does not mix interaction patterns. It preserves the recorded
+preset and rejects replacing it in place because shadcn component files may contain user changes;
+use a new output or review an explicit `shadcn apply` diff instead.
+
+Authentication is never enabled from endpoint names alone. Without an explicit contract, FizzyX
+reports ranked login/logout/me/refresh candidates and tells the user what must be confirmed. Put the
+durable API semantics in the OpenAPI document (preferred):
+
+```yaml
+x-fizzyx-admin:
+  auth:
+    mode: server-cookie
+    loginOperationId: authLogin
+    logoutOperationId: authLogout
+    meOperationId: usersMe
+    usernameField: email # optional when inferable from the login request schema
+    passwordField: password # optional when inferable
+    accessTokenPath: data.access_token
+    refreshTokenPath: data.refresh_token
+    routes:
+      login: /login
+      afterLogin: /users
+```
+
+For a remote or immutable spec, the equivalent optional `.fizzyx.yaml` override uses snake-case keys
+under `openapi.admin.auth` (`login_operation_id`, `access_token_path`, and so on). An OpenAPI
+`x-fizzyx-admin.auth` block takes precedence when both exist. Server-cookie mode uses the server-only
+`API_BASE_URL`; tokens stay in HttpOnly, Secure-in-production, SameSite cookies and browser API calls
+go through `/api/admin`. If auth is not configured, the existing public
+`NEXT_PUBLIC_API_BASE_URL`/`VITE_API_BASE_URL` hook remains available.
+
+The main generated structure is:
+
+```text
+src/
+  components/admin/       # shell, DataTable, DynamicForm, query provider
+  lib/api/generated/      # fetch runtime, types, endpoints, query hooks
+  lib/api/admin-api.ts    # environment and runtime API configuration
+  app/(admin)/            # Next.js routes (Next.js target)
+  routes/_admin/          # file routes (TanStack Start target)
+.fizzyx/admin-manifest.json
+.agents/skills/             # generated-project development and auth discovery guidance
+```
+
+The output directory must be empty on the first run. Re-run the same command to update
+unchanged generated files; local edits are reported and preserved as conflicts. Files listed in the
+manifest are generator-owned. Prefer new wrapper/adapter/route files for durable customization; edit
+the OpenAPI or auth configuration and regenerate for contract changes.
+
+Resource inference intentionally targets tagged, conventional collection/member CRUD paths.
+Unmapped operations remain callable through the generated client and are reported as diagnostics.
+List parameter inference recognizes common page/offset/limit/search/sort names; custom envelopes,
+ambiguous authorization contracts, relationships, file inputs, and router-only TanStack projects are
+not inferred. `upstream-cookie` is parsed but remains disabled until an application-specific cookie
+rewrite policy is supplied; `server-cookie` is the safe generated default.
+
+For a complete local login + protected CRUD walkthrough, use
+[`examples/openapi-admin-auth`](./examples/openapi-admin-auth/README.md). It includes an OpenAPI
+document, a localhost-only Bun mock API, fixed demo credentials, and commands for both frameworks.
+
 ### Generated Runtime API
 
 ```ts

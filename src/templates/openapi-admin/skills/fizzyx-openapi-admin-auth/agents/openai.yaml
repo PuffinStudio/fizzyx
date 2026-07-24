@@ -1,0 +1,4 @@
+interface:
+  display_name: "FizzyX Admin Auth"
+  short_description: "Discover and configure OpenAPI admin authentication"
+  default_prompt: "Use $fizzyx-openapi-admin-auth to inspect this OpenAPI admin project and configure authentication safely."

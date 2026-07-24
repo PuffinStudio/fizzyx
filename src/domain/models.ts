@@ -145,6 +145,7 @@ export interface Step {
 }
 
 export interface Comment {
+	id?: string;
 	created_at?: string;
 	creator?: { name?: string };
 	body?: { plain_text?: string };

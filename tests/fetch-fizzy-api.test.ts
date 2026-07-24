@@ -428,6 +428,21 @@ test("comment sends official comment body", async () => {
 	expect(JSON.parse(summary.bodyText)).toEqual({ body: "hello" });
 });
 
+test("updateComment sends the official PATCH request", async () => {
+	const config = makeConfig();
+	const response = jsonResponse({});
+
+	const { calls } = await withMockFetch(response, () =>
+		Effect.runPromise(makeFetchFizzyApi(config, "token").updateComment(42, "comment-7", "fixed")),
+	);
+
+	expect(calls).toHaveLength(1);
+	const summary = await getFetchCallSummary(calls[0]!);
+	expect(summary.method).toBe("PATCH");
+	expect(summary.url).toContain("/acme/cards/42/comments/comment-7");
+	expect(JSON.parse(summary.bodyText)).toEqual({ body: "fixed" });
+});
+
 test("createStep sends official step body", async () => {
 	const config = makeConfig();
 	const response = jsonResponse({});

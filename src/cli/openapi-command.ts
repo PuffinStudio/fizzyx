@@ -5,6 +5,9 @@ import {
 	listGenerators,
 	runOpenApiGenerateLifecycle,
 } from "../use-cases/openapi-service";
+import { generateAdminProject } from "../use-cases/openapi-admin-service";
+import { syncAdminProject } from "../use-cases/openapi-admin-sync";
+import { ConfigRepo } from "../ports/config-repository";
 import {
 	formatGeneratedDetails,
 	formatGeneratedOutput,
@@ -231,7 +234,182 @@ const openapiListCmd = Command.make("list", {}, handleList).pipe(
 	Command.withDescription("List available client generators"),
 );
 
+const handleAdmin = (config: {
+	input: Option.Option<string>;
+	output: Option.Option<string>;
+	framework: Option.Option<"nextjs" | "tanstack-start">;
+	preset: Option.Option<string>;
+	createMode: Option.Option<"page" | "dialog">;
+	dryRun: boolean;
+}): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const repository = yield* ConfigRepo;
+		const project = yield* repository.loadProjectConfigOptional();
+		const defaults = project?.openapi?.admin;
+		const input = Option.getOrUndefined(config.input) ?? defaults?.input;
+		const output = Option.getOrUndefined(config.output) ?? defaults?.output;
+		const framework = Option.getOrUndefined(config.framework) ?? defaults?.framework;
+		const preset = Option.getOrUndefined(config.preset) ?? defaults?.preset;
+		const createMode = Option.getOrUndefined(config.createMode) ?? defaults?.createMode;
+		if (!input || !output || !framework) {
+			return yield* Effect.fail(
+				new Error(
+					"admin generation requires --input, --output, and --framework (or matching openapi.admin defaults in .fizzyx.yaml)",
+				),
+			);
+		}
+		const result = yield* withSpinner(
+			config.dryRun ? "Planning admin project" : "Generating admin project",
+			generateAdminProject({
+				input,
+				output,
+				framework,
+				dryRun: config.dryRun,
+				auth: defaults?.auth,
+				preset,
+				createMode,
+				presentation: defaults?.presentation,
+			}),
+		);
+		if (config.dryRun) {
+			for (const command of result.commands) yield* Console.log(command.join(" "));
+		}
+		yield* logSuccess(
+			`${config.dryRun ? "planned" : "generated"} ${result.framework} admin with ${result.resources} resource(s) at ${result.outputDir}`,
+		);
+		for (const diagnostic of result.diagnostics) yield* logInfo(`skipped: ${diagnostic}`);
+		for (const conflict of result.conflicts) yield* logInfo(`conflict preserved: ${conflict}`);
+	});
+
+const openapiAdminCmd = Command.make(
+	"admin",
+	{
+		input: Flag.optional(
+			Flag.string("input").pipe(
+				Flag.withAlias("i"),
+				Flag.withDescription("OpenAPI spec URL or file path (or openapi.admin.input)"),
+			),
+		),
+		output: Flag.optional(
+			Flag.string("output").pipe(
+				Flag.withAlias("o"),
+				Flag.withDescription("New admin project directory (or openapi.admin.output)"),
+			),
+		),
+		framework: Flag.optional(
+			Flag.choice("framework", ["nextjs", "tanstack-start"] as const).pipe(
+				Flag.withDescription("Application framework (or openapi.admin.framework)"),
+			),
+		),
+		preset: Flag.optional(
+			Flag.string("preset").pipe(
+				Flag.withDescription("shadcn preset code (or openapi.admin.preset)"),
+			),
+		),
+		createMode: Flag.optional(
+			Flag.choice("create-mode", ["page", "dialog"] as const).pipe(
+				Flag.withDescription(
+					"Create and edit records on pages or in dialogs (or openapi.admin.create_mode)",
+				),
+			),
+		),
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDescription("Print Bun-first scaffold commands without writing a project"),
+		),
+	},
+	handleAdmin,
+);
+
+const handleAdminSync = (config: {
+	input: Option.Option<string>;
+	output: Option.Option<string>;
+	framework: Option.Option<"nextjs" | "tanstack-start">;
+	plan: boolean;
+	apply: boolean;
+	check: boolean;
+}): Effect.Effect<void, any, any> =>
+	Effect.gen(function* () {
+		const selected = [config.plan, config.apply, config.check].filter(Boolean).length;
+		if (selected !== 1) {
+			return yield* Effect.fail(
+				new Error("admin sync requires exactly one of --plan, --apply, or --check"),
+			);
+		}
+		const repository = yield* ConfigRepo;
+		const project = yield* repository.loadProjectConfigOptional();
+		const defaults = project?.openapi?.admin;
+		const input = Option.getOrUndefined(config.input) ?? defaults?.input;
+		const output = Option.getOrUndefined(config.output) ?? defaults?.output;
+		const framework = Option.getOrUndefined(config.framework) ?? defaults?.framework;
+		if (!input || !output || !framework) {
+			return yield* Effect.fail(
+				new Error(
+					"admin sync requires --input, --output, and --framework (or matching openapi.admin defaults in .fizzyx.yaml)",
+				),
+			);
+		}
+		const mode = config.plan ? "plan" : config.apply ? "apply" : "check";
+		const result = yield* withSpinner(
+			`${mode === "apply" ? "Applying" : "Checking"} admin sync`,
+			syncAdminProject({
+				input,
+				output,
+				framework,
+				mode,
+				auth: defaults?.auth,
+				preset: defaults?.preset,
+				createMode: defaults?.createMode,
+				presentation: defaults?.presentation,
+			}),
+		);
+		for (const item of result.diff) yield* Console.log(item);
+		for (const conflict of result.conflicts) yield* logInfo(`conflict: ${conflict}`);
+		for (const issue of result.qualityIssues) yield* logInfo(`quality issue: ${issue}`);
+		if (mode === "check" && result.status !== "clean") {
+			return yield* Effect.fail(new Error(`admin sync check failed with status ${result.status}`));
+		}
+		if (mode === "apply" && (result.status === "blocked" || result.status === "quality-failed")) {
+			return yield* Effect.fail(new Error(`admin sync apply failed with status ${result.status}`));
+		}
+		yield* logSuccess(
+			mode === "apply"
+				? result.status === "applied"
+					? `applied admin sync at ${output}`
+					: `admin sync at ${output} is clean`
+				: `${mode} found ${result.changed ? "changes" : "no drift"}`,
+		);
+	});
+
+const openapiAdminSyncCmd = Command.make(
+	"sync",
+	{
+		input: Flag.optional(Flag.string("input").pipe(Flag.withAlias("i"))),
+		output: Flag.optional(Flag.string("output").pipe(Flag.withAlias("o"))),
+		framework: Flag.optional(Flag.choice("framework", ["nextjs", "tanstack-start"] as const)),
+		plan: Flag.boolean("plan").pipe(
+			Flag.withDescription("Print drift and conflicts without writing"),
+		),
+		apply: Flag.boolean("apply").pipe(
+			Flag.withDescription("Atomically apply a conflict-free sync"),
+		),
+		check: Flag.boolean("check").pipe(
+			Flag.withDescription("Fail on drift, conflicts, or quality errors"),
+		),
+	},
+	handleAdminSync,
+).pipe(Command.withDescription("Safely synchronize an existing generated admin project"));
+
+const openapiAdminWithSyncCmd = openapiAdminCmd.pipe(
+	Command.withDescription("Generate a runnable shadcn admin app from an OpenAPI spec"),
+	Command.withSubcommands([openapiAdminSyncCmd]),
+);
+
 export const openapiCmd = Command.make("openapi").pipe(
 	Command.withDescription("Generate API client code from OpenAPI specs"),
-	Command.withSubcommands([openapiGenerateCmd, openapiInitCmd, openapiListCmd]),
+	Command.withSubcommands([
+		openapiGenerateCmd,
+		openapiInitCmd,
+		openapiListCmd,
+		openapiAdminWithSyncCmd,
+	]),
 );

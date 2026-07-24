@@ -21,7 +21,7 @@ const standardizedCommentTemplate = (kind: StandardizedCommentKind): string => {
 export const buildStandardizedCommentBody = (
 	kind: StandardizedCommentKind,
 	value: string,
-): string => `<p>${standardizedCommentTemplate(kind)}${escapeHtml(value)}</p>`;
+): string => Bun.markdown.html(`${standardizedCommentTemplate(kind)}${escapeHtml(value)}`).trim();
 
 const safeMarkdownUrl = (value: string): boolean => {
 	const entityDecoded = value

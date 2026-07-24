@@ -1,0 +1,212 @@
+openapi: 3.0.3
+info:
+  title: Local Pet Admin API
+  version: 1.0.0
+  description: Local-only API for testing FizzyX admin authentication and CRUD generation.
+servers:
+  - url: http://127.0.0.1:4010
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: demo-token
+  schemas:
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 1
+    TokenResponse:
+      type: object
+      required: [access_token]
+      properties:
+        access_token:
+          type: string
+    CurrentUser:
+      type: object
+      required: [id, email, role]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin]
+    Pet:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        status:
+          type: string
+          enum: [available, adopted]
+    PetInput:
+      type: object
+      required: [name, status]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        status:
+          type: string
+          enum: [available, adopted]
+security:
+  - bearerAuth: []
+x-fizzyx-admin:
+  auth:
+    mode: server-cookie
+    loginOperationId: authLogin
+    meOperationId: authMe
+    usernameField: email
+    passwordField: password
+    accessTokenPath: access_token
+    routes:
+      login: /login
+      afterLogin: /pets
+paths:
+  /auth/login:
+    post:
+      operationId: authLogin
+      tags: [Auth]
+      summary: Sign in to the local demo
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Invalid credentials
+  /auth/me:
+    get:
+      operationId: authMe
+      tags: [Auth]
+      summary: Get the current demo administrator
+      responses:
+        "200":
+          description: Current administrator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          description: Authentication required
+  /pets:
+    get:
+      operationId: listPets
+      tags: [Pets]
+      summary: List pets
+      responses:
+        "200":
+          description: Pet list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+        "401":
+          description: Authentication required
+    post:
+      operationId: createPet
+      tags: [Pets]
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetInput"
+      responses:
+        "201":
+          description: Pet created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "401":
+          description: Authentication required
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      tags: [Pets]
+      summary: Get a pet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pet details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          description: Pet not found
+    patch:
+      operationId: updatePet
+      tags: [Pets]
+      summary: Update a pet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetInput"
+      responses:
+        "200":
+          description: Pet updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          description: Pet not found
+    delete:
+      operationId: deletePet
+      tags: [Pets]
+      summary: Delete a pet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Pet deleted
+        "404":
+          description: Pet not found

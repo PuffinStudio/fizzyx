@@ -205,6 +205,20 @@ export const addComment = (env: Env, number: number, body: string) =>
 		return { number, body: normalized };
 	});
 
+export const editComment = (env: Env, number: number, commentId: string, body: string) =>
+	Effect.gen(function* () {
+		const normalizedId = commentId.trim();
+		const normalized = body.trim();
+		if (!normalizedId) return yield* new ValidationError({ message: "Comment id is required" });
+		if (!normalized) return yield* new ValidationError({ message: "Comment body is required" });
+		yield* env.api.updateComment(
+			number,
+			normalizedId,
+			buildStandardizedCommentBody("note", normalized),
+		);
+		return { number, commentId: normalizedId, body: normalized };
+	});
+
 export const show = (env: Env, number: number) =>
 	Effect.gen(function* () {
 		const card = yield* env.api.showCard(number);

@@ -1,0 +1,30 @@
+// Seeded by fizzyx. This file is user-owned after creation.
+
+import type { ComponentType, ReactNode } from "react"
+
+export type AdminRenderer<Props = Record<string, unknown>> = ComponentType<Props>
+export type AdminOperation = (input: unknown) => Promise<unknown>
+
+export interface AdminRegistries {
+  fields: Record<string, AdminRenderer>
+  cells: Record<string, (value: unknown, row: Record<string, unknown>) => ReactNode>
+  actions: Record<string, AdminRenderer>
+  pages: Record<string, AdminRenderer>
+  operations: Record<string, AdminOperation>
+}
+
+export function defineAdminRegistries(registries: AdminRegistries): AdminRegistries { return registries }
+
+export function requireRegistryEntry<T>(registryName: string, registry: Record<string, T>, key: string): T {
+  const entry = registry[key]
+  if (!entry) throw new Error(`Unknown admin ${registryName} registry key: ${key}`)
+  return entry
+}
+
+export const adminRegistries = defineAdminRegistries({
+  fields: {},
+  cells: {},
+  actions: {},
+  pages: {},
+  operations: {},
+})

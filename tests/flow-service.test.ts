@@ -21,6 +21,7 @@ import {
 	done,
 	edit,
 	addComment,
+	editComment,
 	listFlowCards,
 	move,
 	reopen,
@@ -98,6 +99,7 @@ const defaultApi = () =>
 		triageCard: () => Effect.fail(new ApiError({ message: "triageCard not mocked" })),
 		untriageCard: () => Effect.fail(new ApiError({ message: "untriageCard not mocked" })),
 		comment: () => Effect.fail(new ApiError({ message: "comment not mocked" })),
+		updateComment: () => Effect.fail(new ApiError({ message: "updateComment not mocked" })),
 		closeCard: () => Effect.fail(new ApiError({ message: "closeCard not mocked" })),
 		reopenCard: () => Effect.fail(new ApiError({ message: "reopenCard not mocked" })),
 		postponeCard: () => Effect.fail(new ApiError({ message: "postponeCard not mocked" })),
@@ -1323,7 +1325,34 @@ test("assign supports current-user aliases and skips already assigned users", as
 test("buildStandardizedCommentBody escapes html in values", () => {
 	const body = buildStandardizedCommentBody("done", 'feat: <a> & b "c" d\'');
 
-	expect(body).toBe("<p>done: feat: &lt;a&gt; &amp; b &quot;c&quot; d&#39;</p>");
+	expect(body).toBe("<p>done: feat: &lt;a&gt; &amp; b &quot;c&quot; d'</p>");
+});
+
+test("buildStandardizedCommentBody preserves markdown paragraphs, lists, and inline code", () => {
+	const body = buildStandardizedCommentBody(
+		"note",
+		"Implemented safely.\n\n- Added `flow comment --edit`\n- Escaped <script>alert(1)</script>",
+	);
+
+	expect(body).toContain("<p>note: Implemented safely.</p>");
+	expect(body).toContain("<ul>");
+	expect(body).toContain("<li>Added <code>flow comment --edit</code></li>");
+	expect(body).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+	expect(body).not.toContain("<script>");
+});
+
+test("editComment updates an existing comment with the standardized safe body", async () => {
+	const api = defaultApi();
+	const calls: string[] = [];
+	api.updateComment = (number, commentId, body) => {
+		calls.push(`${number}:${commentId}:${body}`);
+		return Effect.succeed(undefined);
+	};
+
+	const result = await Effect.runPromise(editComment(makeEnv(api), 438, "comment-1", "fixed"));
+
+	expect(result).toEqual({ number: 438, commentId: "comment-1", body: "fixed" });
+	expect(calls).toEqual(["438:comment-1:<p>note: fixed</p>"]);
 });
 
 test("buildNoteCommentBody renders safe multiline markdown for Fizzy rich text", () => {

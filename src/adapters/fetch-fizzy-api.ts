@@ -283,6 +283,7 @@ export const makeFetchFizzyApi = (
 		if (!obj) return {};
 
 		return {
+			id: readString(obj.id),
 			created_at: readString(obj.created_at),
 			creator: decodeCommentCreator(obj.creator),
 			body: decodeCommentBody(obj.body),
@@ -497,6 +498,12 @@ export const makeFetchFizzyApi = (
 		comment: (number, body) =>
 			asVoid(
 				runGenerated(FizzyEffect.createComment({ ...accountParams, cardNumber: number }, { body })),
+			),
+		updateComment: (number, commentId, body) =>
+			asVoid(
+				runGenerated(
+					FizzyEffect.updateComment({ ...accountParams, cardNumber: number, commentId }, { body }),
+				),
 			),
 		closeCard: (number) =>
 			asVoid(runGenerated(FizzyEffect.closeCard({ ...accountParams, cardNumber: number }))),
