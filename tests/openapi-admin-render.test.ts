@@ -201,6 +201,9 @@ test("renders native Next.js App Router files backed by generated query hooks", 
 	expect(dataTable).toContain("globalFilter: string");
 	expect(dataTable).toContain("AdminTableFilterDefinition");
 	expect(dataTable).toContain("filter.options");
+	// filter dropdown shows a friendly "All" label instead of the raw sentinel value
+	expect(dataTable).toContain('selected === "__all__" ? "All"');
+	expect(dataTable).not.toContain('<SelectValue placeholder="All" />');
 	expect(
 		files.find((file) => file.path === "src/components/admin/dynamic-form.tsx")?.content,
 	).toContain("noValidate");
@@ -401,6 +404,19 @@ test("generated navigation icon registry covers every planner-accepted icon key"
 	expect(nav).toContain("ShoppingCart");
 	expect(nav).toContain("Package");
 	expect(nav).toContain("Folder");
+});
+
+test("detail view formats values with badges and chips instead of raw text", () => {
+	const details = renderAdminApp(plan, "nextjs").find(
+		(file) => file.path === "src/components/admin/record-details.tsx",
+	)?.content;
+
+	expect(details).toContain('from "@/components/ui/badge"');
+	// booleans render as Yes/No badges, arrays as chips, empties as an em dash
+	expect(details).toContain('"Yes"');
+	expect(details).toContain('"No"');
+	expect(details).toContain("Array.isArray");
+	expect(details).not.toContain("JSON.stringify(value, null, 2)");
 });
 
 test("list routes wire adminConfig column overrides through the cell registry", () => {
