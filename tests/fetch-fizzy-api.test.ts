@@ -56,6 +56,31 @@ const withMockFetch = <T>(
 			});
 	});
 
+const withMockFetchSequence = <T>(
+	responses: ReadonlyArray<Response>,
+	handler: () => Promise<T>,
+): Promise<{ calls: FetchCall[]; result: T }> =>
+	new Promise((resolve, reject) => {
+		const calls: FetchCall[] = [];
+		delete (FetchHttpClient.Fetch as unknown as { [key: string]: unknown })[
+			"~effect/Context/defaultValue"
+		];
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+			calls.push({ input: String(input), init });
+			const response = responses[calls.length - 1];
+			if (!response) throw new Error(`Unexpected fetch call ${calls.length}`);
+			return Promise.resolve(response);
+		}) as typeof fetch;
+
+		handler()
+			.then((result) => resolve({ calls, result }))
+			.catch((error) => reject(error))
+			.finally(() => {
+				globalThis.fetch = originalFetch;
+			});
+	});
+
 const getFetchCallSummary = async (call: FetchCall) => {
 	const headers = call.init?.headers ?? {};
 
@@ -134,6 +159,29 @@ test("listCards sends official lane and term filters", async () => {
 	expect(url.searchParams.get("indexed_by")).toBe("closed");
 	expect(url.searchParams.getAll("terms[]")).toEqual(["login", "bug"]);
 	expect(url.searchParams.getAll("board_ids[]")).toEqual(["board-1"]);
+});
+
+test("listCards with all follows next links and combines every page", async () => {
+	const firstPage = jsonResponse({
+		data: [{ id: "card-2", number: 2, title: "Second" }],
+	});
+	firstPage.headers.set(
+		"link",
+		'<https://api.example.com/acme/cards.json?board_ids%5B%5D=board-1&page=2>; rel="next"',
+	);
+	const secondPage = jsonResponse({
+		data: [{ id: "card-1", number: 1, title: "First" }],
+	});
+
+	const { calls, result } = await withMockFetchSequence([firstPage, secondPage], () =>
+		Effect.runPromise(makeFetchFizzyApi(makeConfig(), "token").listCards({ all: true })),
+	);
+
+	expect(calls).toHaveLength(2);
+	expect(calls[1]?.input).toContain("page=2");
+	expect(new URL(calls[0]!.input).searchParams.has("all")).toBe(false);
+	expect((await getFetchCallSummary(calls[1]!)).headers.get("authorization")).toBe("Bearer token");
+	expect(result.map((card) => card.number)).toEqual([2, 1]);
 });
 
 test("searchCards uses full-text search endpoint and decodes board context", async () => {

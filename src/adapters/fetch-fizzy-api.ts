@@ -16,6 +16,7 @@ import { FizzyApi } from "../ports/fizzy-api";
 import { ConfigRepo, type ConfigRepository } from "../ports/config-repository";
 import * as FizzyEffect from "../fizzy-effect/effect-client";
 import type { EffectHttpClientError } from "../fizzy-effect/effect-client";
+import { execute } from "../fizzy-effect/effect-http";
 import type { UpdateStepRequestContent } from "../fizzy-effect/types";
 
 export const Live = Layer.effect(FizzyApi)(
@@ -429,11 +430,14 @@ export const makeFetchFizzyApi = (
 				query["board_ids[]"] = [config.board];
 			}
 			if (options?.indexedBy) query.indexed_by = options.indexedBy;
-			if (options?.all) query.all = true;
 			if (options?.terms?.length) query["terms[]"] = [...options.terms];
-			return runGenerated(FizzyEffect.listCards(accountParams, query)).pipe(
-				Effect.flatMap(decodeCards),
-			);
+			const request = options?.all
+				? execute<unknown>("GET", `/${config.account}/cards.json`, {
+						query,
+						paginate: true,
+					})
+				: FizzyEffect.listCards(accountParams, query);
+			return runGenerated(request).pipe(Effect.flatMap(decodeCards));
 		},
 		searchCards: (query) =>
 			runGenerated(FizzyEffect.searchCards(accountParams, { q: query })).pipe(

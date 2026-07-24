@@ -41,3 +41,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 /.fizzyx.yaml
 /tests/my-app
 /.agents/skills
+/tests/admin
+/tests/pet-admin-tanstack

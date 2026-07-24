@@ -51,6 +51,13 @@ export interface EffectClientConfig {
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS"
 
+export interface ExecuteOptions<B = unknown> {
+  query?: Record<string, unknown>
+  body?: B
+  headers?: Record<string, string>
+  paginate?: boolean
+}
+
 export const FetchLayer = FetchHttpClient.layer
 
 let _config: EffectClientConfig = {}
@@ -104,19 +111,22 @@ function readResponse(response: HttpClientResponse.HttpClientResponse): Effect.E
   return contentType.includes("application/json") ? response.json : response.text
 }
 
-/**
- * Typed Effect request using Effect 4's HttpClient service.
- *
- * Provide a transport at the program boundary, for example:
- * \`program.pipe(Effect.provide(FetchLayer))\`
- */
-export function execute<T, B = unknown>(
+function nextLink(linkHeader: string | undefined, currentUrl: string): string | undefined {
+  if (!linkHeader) return undefined
+  for (const part of linkHeader.split(/,(?=\\s*<)/)) {
+    if (!/\\brel\\s*=\\s*"?next"?/i.test(part)) continue
+    const match = part.match(/<([^>]+)>/)
+    if (match?.[1]) return new URL(match[1], currentUrl).toString()
+  }
+  return undefined
+}
+
+function makeRequest<B>(
   method: HttpMethod,
   url: string,
-  options?: { query?: Record<string, unknown>; body?: B; headers?: Record<string, string> }
-): Effect.Effect<T, EffectHttpClientError, HttpClient.HttpClient> {
-  const httpRequest = Effect.sync(() => {
-    const finalUrl = buildUrl(url, options?.query)
+  options: ExecuteOptions<B> | undefined
+): Effect.Effect<HttpClientRequest.HttpClientRequest, HttpBody.HttpBodyError> {
+  return Effect.sync(() => {
     const headers: Record<string, string> = {
       ..._config.headers,
       ..._defaultHeaders,
@@ -124,7 +134,7 @@ export function execute<T, B = unknown>(
     }
     if (_token) headers["Authorization"] = \`Bearer \${_token}\`
 
-    return HttpClientRequest.make(method)(finalUrl, {
+    return HttpClientRequest.make(method)(url, {
       headers,
       acceptJson: true,
     })
@@ -135,16 +145,55 @@ export function execute<T, B = unknown>(
         : HttpClientRequest.bodyJson(options.body)(baseRequest)
     )
   )
+}
 
-  return httpRequest.pipe(
-    Effect.flatMap((request) => HttpClient.execute(request)),
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap(readResponse),
-    Effect.map((raw) => {
-      const extractor = _config.responseExtractor || defaultExtractor
-      return extractor(raw) as T
-    })
-  )
+/**
+ * Typed Effect request using Effect 4's HttpClient service.
+ *
+ * Provide a transport at the program boundary, for example:
+ * \`program.pipe(Effect.provide(FetchLayer))\`
+ */
+export function execute<T, B = unknown>(
+  method: HttpMethod,
+  url: string,
+  options?: ExecuteOptions<B>
+): Effect.Effect<T, EffectHttpClientError, HttpClient.HttpClient> {
+  const fetchPage = (pageUrl: string) =>
+    makeRequest(method, pageUrl, options).pipe(
+      Effect.flatMap((request) => HttpClient.execute(request)),
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap((response) =>
+        readResponse(response).pipe(
+          Effect.map((raw) => ({
+            response,
+            value: (_config.responseExtractor || defaultExtractor)(raw),
+          }))
+        )
+      )
+    )
+
+  if (!options?.paginate) {
+    return Effect.sync(() => buildUrl(url, options?.query)).pipe(
+      Effect.flatMap(fetchPage),
+      Effect.map(({ value }) => value as T)
+    )
+  }
+
+  return Effect.gen(function* () {
+    const combined: unknown[] = []
+    const visited = new Set<string>()
+    let pageUrl: string | undefined = buildUrl(url, options?.query)
+
+    while (pageUrl && !visited.has(pageUrl)) {
+      visited.add(pageUrl)
+      const { response, value } = yield* fetchPage(pageUrl)
+      if (!Array.isArray(value)) return value as T
+      combined.push(...value)
+      pageUrl = nextLink(response.headers.link, pageUrl)
+    }
+
+    return combined as T
+  })
 }
 `;
 
