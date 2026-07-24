@@ -130,6 +130,7 @@ const queryDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldCommand
 					"class-variance-authority",
 					"clsx",
 					"tailwind-merge",
+					"next-themes",
 					"--cwd",
 					input.targetDir,
 				]
@@ -145,6 +146,7 @@ const queryDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldCommand
 					"class-variance-authority",
 					"clsx",
 					"tailwind-merge",
+					"next-themes",
 					"--dir",
 					input.targetDir,
 				],

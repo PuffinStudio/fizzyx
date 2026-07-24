@@ -62,6 +62,7 @@ test("plans a Bun-only official Next.js and shadcn scaffold", () => {
 		"class-variance-authority",
 		"clsx",
 		"tailwind-merge",
+		"next-themes",
 		"--cwd",
 		"/tmp/pet-admin",
 	]);
