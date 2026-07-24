@@ -25,9 +25,11 @@ import {
 	stepsFromDescription,
 } from "../../use-cases/flow-service";
 import { runWithFlowEnv } from "../flow-workflow";
+import { flowJson } from "../flow-json";
 
 const handleRepairMetadata = (config: {
 	apply: boolean;
+	json: boolean;
 	defaultPriority: Option.Option<"p0" | "p1" | "p2">;
 	defaultType: Option.Option<string>;
 }): Effect.Effect<void, any, any> =>
@@ -38,6 +40,10 @@ const handleRepairMetadata = (config: {
 				config.defaultPriority._tag === "Some" ? config.defaultPriority.value : undefined,
 			defaultType: config.defaultType._tag === "Some" ? config.defaultType.value : undefined,
 		});
+		if (config.json) {
+			yield* Console.log(flowJson(result, formatRepairMetadataSummary(result)));
+			return;
+		}
 		yield* Console.log(formatRepairMetadataSummary(result));
 		for (const change of result.changes.filter((item) => item.action === "tag_card")) {
 			yield* Console.log(
@@ -54,6 +60,7 @@ const handleRepair = (config: {
 	all: boolean;
 	kind: Option.Option<"standardize" | "steps" | "metadata" | "markdown">;
 	apply: boolean;
+	json: boolean;
 	defaultPriority: Option.Option<"p0" | "p1" | "p2">;
 	defaultType: Option.Option<string>;
 }): Effect.Effect<void, any, any> =>
@@ -63,6 +70,7 @@ const handleRepair = (config: {
 		if (kind === "metadata") {
 			yield* handleRepairMetadata({
 				apply: config.apply,
+				json: config.json,
 				defaultPriority: config.defaultPriority,
 				defaultType: config.defaultType,
 			});
@@ -73,6 +81,10 @@ const handleRepair = (config: {
 			const result = yield* runWithFlowEnv(formatStandardizingBoardMessage(), (env) =>
 				standardizeBoard(env),
 			);
+			if (config.json) {
+				yield* Console.log(flowJson(result, formatStandardizeBoardSummary(result)));
+				return;
+			}
 			yield* Console.log(formatStandardizeBoardResults(result.results));
 			yield* Console.log(formatStandardizeBoardSummary(result));
 			return;
@@ -89,13 +101,19 @@ const handleRepair = (config: {
 				const steps = yield* runWithFlowEnv(formatSyncingDoneWhenStepsMessage(), (env) =>
 					stepsFromDescription(env, card),
 				);
-				yield* Console.log(printSteps(steps));
+				yield* Console.log(
+					config.json ? flowJson({ steps }, `${steps.length} step(s)`) : printSteps(steps),
+				);
 				return;
 			}
 			case "markdown": {
 				const repaired = yield* runWithFlowEnv(formatRepairingDescriptionMessage(), (env) =>
 					repairMarkdownDescription(env, card),
 				);
+				if (config.json) {
+					yield* Console.log(flowJson(repaired, formatRepairedCard(repaired)));
+					return;
+				}
 				yield* logSuccess(formatRepairedCard(repaired));
 				return;
 			}
@@ -103,7 +121,9 @@ const handleRepair = (config: {
 				const result = yield* runWithFlowEnv(formatStandardizingCardMessage(), (env) =>
 					standardizeCard(env, card),
 				);
-				yield* Console.log(formatStandardizeResult(result));
+				yield* Console.log(
+					config.json ? flowJson(result, formatStandardizeResult(result)) : formatStandardizeResult(result),
+				);
 			}
 		}
 	});
@@ -124,6 +144,7 @@ export const flowRepairCmd = Command.make(
 		apply: Flag.boolean("apply").pipe(
 			Flag.withDescription("Apply metadata tag repairs to Fizzy cards"),
 		),
+		json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
 		defaultPriority: Flag.choice("default-priority", ["p0", "p1", "p2"] as const).pipe(
 			Flag.withDescription("Default priority for cards without priority metadata"),
 			Flag.optional,
