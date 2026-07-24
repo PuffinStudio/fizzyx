@@ -65,6 +65,7 @@ export interface DoctorReport {
 	wipOnReady: ReadonlyArray<DoctorBranchInfo>;
 	protectedDirty: ReadonlyArray<DoctorBranchInfo>;
 	featureOnEnvBase: ReadonlyArray<DoctorBranchInfo>;
+	worktrees: ReadonlyArray<DoctorBranchInfo>;
 }
 
 export interface DoctorBranchInfo {
@@ -1321,10 +1322,26 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 		}
 
 		const mergedList = yield* getMergedBranches(productionBranch, config);
+		const mergedSet = new Set(mergedList);
 		for (const b of mergedList) {
 			if (branchList.includes(b)) {
 				mergedBranches.push({ name: b, detail: `Merged into ${productionBranch}` });
 			}
+		}
+
+		const worktrees: DoctorBranchInfo[] = [];
+		const linkedWorktrees = (yield* listWorktrees().pipe(Effect.catch(() => Effect.succeed([])))).slice(
+			1,
+		);
+		for (const wt of linkedWorktrees) {
+			const branch = wt.branch ?? "(detached)";
+			const merged = wt.branch ? mergedSet.has(wt.branch) : false;
+			worktrees.push({
+				name: branch,
+				detail: merged
+					? `merged — run 'fizzyx dev cleanup --confirm-delete' (${wt.path})`
+					: `active (${wt.path})`,
+			});
 		}
 
 		return {
@@ -1335,6 +1352,7 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 			wipOnReady,
 			protectedDirty,
 			featureOnEnvBase,
+			worktrees,
 		};
 	});
 
@@ -1362,6 +1380,7 @@ export const formatDoctor = (report: DoctorReport): string => {
 	);
 	addSection("WIP commits on feature branches", report.wipOnReady);
 	addSection("Protected branch dirty state", report.protectedDirty);
+	addSection("Linked worktrees", report.worktrees);
 
 	return lines.join("\n").trim();
 };

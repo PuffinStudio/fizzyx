@@ -1006,3 +1006,22 @@ devTest("dev cleanup --confirm-delete removes a merged worktree and its branch",
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+devTest("dev doctor lists linked worktrees and flags merged ones", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		await runCli(["dev", "start", "wt-doc", "--kind", "feature", "--worktree"], { cwd: root });
+
+		const result = await runCli(["dev", "doctor"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("linked worktrees");
+		expect(output).toContain("feature/wt-doc");
+		expect(output).toMatch(/merged.*cleanup/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
