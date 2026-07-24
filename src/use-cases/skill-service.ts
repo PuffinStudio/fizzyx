@@ -36,7 +36,7 @@ import { BUNDLED_OPENAI_METADATA } from "../skills/bundled/openai-metadata";
 
 // Matt-derived content checked against mattpocock/skills@66898f6 (2026-07-13).
 // The bundle version also covers FizzyX-authored skills.
-const BUILTIN_SKILL_VERSION = "1.5.0";
+const BUILTIN_SKILL_VERSION = "1.6.0";
 
 type BuiltinSkill = {
 	name: string;
