@@ -15,7 +15,9 @@ const handle = (config: {
 		);
 		if (config.agent) {
 			const checkpointed = !msg.startsWith("No changes");
-			yield* Console.log([`checkpointed: ${checkpointed ? "yes" : "no"}`, `message: ${msg}`].join("\n"));
+			yield* Console.log(
+				[`checkpointed: ${checkpointed ? "yes" : "no"}`, `message: ${msg}`].join("\n"),
+			);
 			return;
 		}
 		yield* logSuccess(msg);
@@ -32,7 +34,9 @@ export const devCheckpointCmd = Command.make(
 		all: Flag.boolean("all").pipe(
 			Flag.withDescription("Stage all tracked changes before committing"),
 		),
-		agent: Flag.boolean("agent").pipe(Flag.withDescription("Machine-readable output for AI agents")),
+		agent: Flag.boolean("agent").pipe(
+			Flag.withDescription("Machine-readable output for AI agents"),
+		),
 	},
 	handle,
 ).pipe(Command.withDescription("Create a local checkpoint commit"));

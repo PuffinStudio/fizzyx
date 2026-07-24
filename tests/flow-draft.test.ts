@@ -53,16 +53,16 @@ test("flow create --draft --json emits the agent envelope with a next-step bread
 		);
 
 		const entry = join(import.meta.dir, "..", "src", "main.ts");
-		const proc = Bun.spawn(["bun", "run", entry, "flow", "create", "Draft card", "--draft", "--json"], {
-			cwd: root,
-			stdout: "pipe",
-			stderr: "pipe",
-			stdin: "ignore",
-		});
-		const [stdout, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			proc.exited,
-		]);
+		const proc = Bun.spawn(
+			["bun", "run", entry, "flow", "create", "Draft card", "--draft", "--json"],
+			{
+				cwd: root,
+				stdout: "pipe",
+				stderr: "pipe",
+				stdin: "ignore",
+			},
+		);
+		const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
 		expect(exitCode).toBe(0);
 
 		const parsed = JSON.parse(stdout);

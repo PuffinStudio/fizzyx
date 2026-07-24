@@ -40,7 +40,9 @@ const requireGitRaw = (args: ReadonlyArray<string>, cwd?: string) =>
 
 const gitStatePath = (kind: "baselines" | "ready" | "drafts", name?: string, cwd?: string) =>
 	Effect.gen(function* () {
-		const gitPath = yield* requireGitCommand(["rev-parse", "--git-path", `fizzyx/${kind}`], { cwd });
+		const gitPath = yield* requireGitCommand(["rev-parse", "--git-path", `fizzyx/${kind}`], {
+			cwd,
+		});
 		const directory = resolve(cwd ?? process.cwd(), gitPath);
 		return name ? join(directory, `${stateName(name)}.json`) : directory;
 	});
@@ -130,14 +132,7 @@ export const snapshotWorktree = (
 ): Effect.Effect<ReadonlyArray<WorktreeEntry>, ValidationError> =>
 	Effect.gen(function* () {
 		const output = yield* requireGitRaw(
-			[
-				"-c",
-				"core.quotepath=false",
-				"status",
-				"--porcelain=v1",
-				"-z",
-				"--untracked-files=all",
-			],
+			["-c", "core.quotepath=false", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
 			cwd,
 		);
 		if (!output) return [];

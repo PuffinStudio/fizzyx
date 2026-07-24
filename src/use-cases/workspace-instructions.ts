@@ -7,13 +7,7 @@ export const WORKSPACE_INSTRUCTIONS_FILE = "AGENTS.md";
 export const WORKSPACE_INSTRUCTIONS_START = "<!-- fizzyx:workspace:start -->";
 export const WORKSPACE_INSTRUCTIONS_END = "<!-- fizzyx:workspace:end -->";
 
-const IGNORED_DIRECTORIES = new Set([
-	"node_modules",
-	"dist",
-	"build",
-	"coverage",
-	".git",
-]);
+const IGNORED_DIRECTORIES = new Set(["node_modules", "dist", "build", "coverage", ".git"]);
 
 export type WorkspaceInstructionsAction = "created" | "updated" | "unchanged";
 
@@ -102,7 +96,14 @@ export const syncWorkspaceInstructions = (
 		const suffixStart = end + WORKSPACE_INSTRUCTIONS_END.length;
 		next = `${current.slice(0, start)}${section}${current.slice(suffixStart)}`;
 	} else {
-		const separator = current.length === 0 ? "" : current.endsWith("\n\n") ? "" : current.endsWith("\n") ? "\n" : "\n\n";
+		const separator =
+			current.length === 0
+				? ""
+				: current.endsWith("\n\n")
+					? ""
+					: current.endsWith("\n")
+						? "\n"
+						: "\n\n";
 		next = `${current}${separator}${section}\n`;
 	}
 

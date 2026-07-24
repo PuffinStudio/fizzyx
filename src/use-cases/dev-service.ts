@@ -1156,7 +1156,9 @@ export const cleanup = (options?: {
 			const pending =
 				mergedBranches.length > 0
 					? ` ${mergedBranches
-							.map((b) => (worktreeByBranch.has(b) ? `${b} (worktree: ${worktreeByBranch.get(b)})` : b))
+							.map((b) =>
+								worktreeByBranch.has(b) ? `${b} (worktree: ${worktreeByBranch.get(b)})` : b,
+							)
 							.join(", ")}`
 					: " none";
 			return `Cleanup preview: ${mergedBranches.length} merged branch(es) pending deletion:${pending}. No branches deleted. Add --confirm-delete to delete local branches.`;
@@ -1330,9 +1332,9 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 		}
 
 		const worktrees: DoctorBranchInfo[] = [];
-		const linkedWorktrees = (yield* listWorktrees().pipe(Effect.catch(() => Effect.succeed([])))).slice(
-			1,
-		);
+		const linkedWorktrees = (yield* listWorktrees().pipe(
+			Effect.catch(() => Effect.succeed([])),
+		)).slice(1);
 		for (const wt of linkedWorktrees) {
 			const branch = wt.branch ?? "(detached)";
 			const merged = wt.branch ? mergedSet.has(wt.branch) : false;

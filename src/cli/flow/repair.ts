@@ -122,7 +122,9 @@ const handleRepair = (config: {
 					standardizeCard(env, card),
 				);
 				yield* Console.log(
-					config.json ? flowJson(result, formatStandardizeResult(result)) : formatStandardizeResult(result),
+					config.json
+						? flowJson(result, formatStandardizeResult(result))
+						: formatStandardizeResult(result),
 				);
 			}
 		}

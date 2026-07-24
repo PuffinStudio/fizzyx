@@ -12,7 +12,9 @@ const handle = (config: { agent: boolean }): Effect.Effect<void, any, any> =>
 export const devDoctorCmd = Command.make(
 	"doctor",
 	{
-		agent: Flag.boolean("agent").pipe(Flag.withDescription("Machine-readable output for AI agents")),
+		agent: Flag.boolean("agent").pipe(
+			Flag.withDescription("Machine-readable output for AI agents"),
+		),
 	},
 	handle,
 ).pipe(Command.withDescription("Audit workflow hygiene"));

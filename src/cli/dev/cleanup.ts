@@ -33,7 +33,9 @@ export const devCleanupCmd = Command.make(
 		confirmDelete: Flag.boolean("confirm-delete").pipe(
 			Flag.withDescription("Explicitly confirm local branch deletion"),
 		),
-		agent: Flag.boolean("agent").pipe(Flag.withDescription("Machine-readable output for AI agents")),
+		agent: Flag.boolean("agent").pipe(
+			Flag.withDescription("Machine-readable output for AI agents"),
+		),
 	},
 	handle,
 ).pipe(Command.withDescription("Clean local development state"));

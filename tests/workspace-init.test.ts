@@ -70,8 +70,14 @@ test("syncWorkspaceInstructions creates, is idempotent, and preserves outside co
 		expect(second.action).toBe("unchanged");
 
 		// Preserve content outside the markers on update.
-		writeFileSync(first.path, `# Keep me\n\n${readFileSync(first.path, "utf8")}\nTrailing.\n`, "utf8");
-		const third = syncWorkspaceInstructions(root, [{ name: "api", configured: true, board: "board-99" }]);
+		writeFileSync(
+			first.path,
+			`# Keep me\n\n${readFileSync(first.path, "utf8")}\nTrailing.\n`,
+			"utf8",
+		);
+		const third = syncWorkspaceInstructions(root, [
+			{ name: "api", configured: true, board: "board-99" },
+		]);
 		expect(third.action).toBe("updated");
 		content = readFileSync(third.path, "utf8");
 		expect(content).toContain("# Keep me");
@@ -98,10 +104,7 @@ test("init --workspace writes root AGENTS.md with configured defaults (non-TTY)"
 			stderr: "pipe",
 			stdin: "ignore",
 		});
-		const [stdout, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			proc.exited,
-		]);
+		const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain("AGENTS.md");
 

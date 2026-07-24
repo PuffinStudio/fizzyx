@@ -921,33 +921,39 @@ devTest("dev status --agent on detached HEAD reports detached branch", async () 
 	}
 });
 
-devTest("dev start --worktree creates a linked worktree without switching the main tree", async () => {
-	const root = createWorkflowRepo();
+devTest(
+	"dev start --worktree creates a linked worktree without switching the main tree",
+	async () => {
+		const root = createWorkflowRepo();
 
-	try {
-		runGit(root, ["checkout", "main"]);
-		const result = await runCli(["dev", "start", "pay-coupon", "--kind", "feature", "--worktree"], {
-			cwd: root,
-		});
-		const output = normalizeOutput(result);
+		try {
+			runGit(root, ["checkout", "main"]);
+			const result = await runCli(
+				["dev", "start", "pay-coupon", "--kind", "feature", "--worktree"],
+				{
+					cwd: root,
+				},
+			);
+			const output = normalizeOutput(result);
 
-		expect(result.exitCode).toBe(0);
-		expect(output).toContain("worktree");
-		expect(output).toContain("feature/pay-coupon");
+			expect(result.exitCode).toBe(0);
+			expect(output).toContain("worktree");
+			expect(output).toContain("feature/pay-coupon");
 
-		// Main working tree stays on main.
-		const branch = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: root });
-		expect(branch.stdout.toString().trim()).toBe("main");
+			// Main working tree stays on main.
+			const branch = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: root });
+			expect(branch.stdout.toString().trim()).toBe("main");
 
-		// The branch exists and is checked out in a linked worktree under .git/fizzyx/worktrees.
-		const worktrees = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], { cwd: root });
-		const wtText = worktrees.stdout.toString();
-		expect(wtText).toContain("fizzyx/worktrees");
-		expect(wtText).toContain("feature/pay-coupon");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
+			// The branch exists and is checked out in a linked worktree under .git/fizzyx/worktrees.
+			const worktrees = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], { cwd: root });
+			const wtText = worktrees.stdout.toString();
+			expect(wtText).toContain("fizzyx/worktrees");
+			expect(wtText).toContain("feature/pay-coupon");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	},
+);
 
 devTest("dev start --worktree fails when the branch is already checked out", async () => {
 	const root = createWorkflowRepo();

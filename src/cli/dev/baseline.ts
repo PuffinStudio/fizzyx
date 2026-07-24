@@ -32,7 +32,9 @@ const baselineShowCmd = Command.make("show", {}, show).pipe(
 const baselineAcceptCmd = Command.make(
 	"accept",
 	{
-		agent: Flag.boolean("agent").pipe(Flag.withDescription("Machine-readable output for AI agents")),
+		agent: Flag.boolean("agent").pipe(
+			Flag.withDescription("Machine-readable output for AI agents"),
+		),
 	},
 	accept,
 ).pipe(Command.withDescription("Accept the current worktree as the branch baseline"));
