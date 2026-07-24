@@ -17,6 +17,7 @@ export const AGENT_INSTRUCTIONS_SECTION = [
 	"- Start by running `fizzyx flow work` (or `fizzyx flow show <card>`) and `fizzyx dev status --agent`.",
 	"- Treat the initial dirty files as user-owned. Run `fizzyx dev baseline accept` only after inspecting them.",
 	"- Start local work with `fizzyx dev start <slug> --kind <kind> --card <number>`, then move the remote card with `fizzyx flow start <number>`.",
+	"- Default to branching in place. Add `--worktree` to `fizzyx dev start` only for parallel or long-running work (concurrent cards/agents, keeping another branch checked out). Use `fizzyx dev start ... --worktree --agent` and read `worktree_path`/`next_action`, then `cd` into that path before any further `fizzyx dev` command.",
 	"- Board columns are project-defined. Inspect them with `fizzyx flow columns` and use `fizzyx flow move <card> <column-id-or-name>` for custom transitions. `flow review` is only a convenience for boards using the bundled REVIEW preset.",
 	"- Before reporting completion, run `fizzyx dev ready --agent`. Use `fizzyx flow done <card> <ref>` only after the required checks and deliverable reference exist.",
 	"- Use `fizzyx dev sync`; do not merge protected or aggregate branches by hand. Production promotion requires a dry run and explicit confirmation.",

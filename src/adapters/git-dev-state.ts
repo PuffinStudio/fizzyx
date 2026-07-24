@@ -35,12 +35,13 @@ const runGitResult = (args: ReadonlyArray<string>) => gitCommand.run(args);
 
 const requireGit = (args: ReadonlyArray<string>) => requireGitCommand(args);
 
-const requireGitRaw = (args: ReadonlyArray<string>) => requireGitCommand(args, { raw: true });
+const requireGitRaw = (args: ReadonlyArray<string>, cwd?: string) =>
+	requireGitCommand(args, { raw: true, cwd });
 
-const gitStatePath = (kind: "baselines" | "ready" | "drafts", name?: string) =>
+const gitStatePath = (kind: "baselines" | "ready" | "drafts", name?: string, cwd?: string) =>
 	Effect.gen(function* () {
-		const gitPath = yield* requireGit(["rev-parse", "--git-path", `fizzyx/${kind}`]);
-		const directory = resolve(process.cwd(), gitPath);
+		const gitPath = yield* requireGitCommand(["rev-parse", "--git-path", `fizzyx/${kind}`], { cwd });
+		const directory = resolve(cwd ?? process.cwd(), gitPath);
 		return name ? join(directory, `${stateName(name)}.json`) : directory;
 	});
 
@@ -124,16 +125,21 @@ const fingerprint = async (path: string): Promise<string | undefined> => {
 	}
 };
 
-export const snapshotWorktree = (): Effect.Effect<ReadonlyArray<WorktreeEntry>, ValidationError> =>
+export const snapshotWorktree = (
+	cwd?: string,
+): Effect.Effect<ReadonlyArray<WorktreeEntry>, ValidationError> =>
 	Effect.gen(function* () {
-		const output = yield* requireGitRaw([
-			"-c",
-			"core.quotepath=false",
-			"status",
-			"--porcelain=v1",
-			"-z",
-			"--untracked-files=all",
-		]);
+		const output = yield* requireGitRaw(
+			[
+				"-c",
+				"core.quotepath=false",
+				"status",
+				"--porcelain=v1",
+				"-z",
+				"--untracked-files=all",
+			],
+			cwd,
+		);
 		if (!output) return [];
 		const records = output.split("\0");
 		const entries: Array<{ status: string; path: string }> = [];
@@ -146,7 +152,8 @@ export const snapshotWorktree = (): Effect.Effect<ReadonlyArray<WorktreeEntry>, 
 		}
 		return yield* Effect.forEach(entries, (entry) =>
 			Effect.promise(async () => {
-				return { ...entry, fingerprint: await fingerprint(entry.path) };
+				const absolute = cwd ? join(cwd, entry.path) : entry.path;
+				return { ...entry, fingerprint: await fingerprint(absolute) };
 			}),
 		);
 	});
@@ -154,12 +161,12 @@ export const snapshotWorktree = (): Effect.Effect<ReadonlyArray<WorktreeEntry>, 
 export const readBaseline = (branch: string) =>
 	gitStatePath("baselines", branch).pipe(Effect.flatMap((path) => readJson<DevBaseline>(path)));
 
-export const writeBaseline = (branch: string) =>
+export const writeBaseline = (branch: string, options?: { cwd?: string }) =>
 	Effect.gen(function* () {
 		const [head, entries, path] = yield* Effect.all([
-			requireGit(["rev-parse", "HEAD"]),
-			snapshotWorktree(),
-			gitStatePath("baselines", branch),
+			requireGitCommand(["rev-parse", "HEAD"], { cwd: options?.cwd }),
+			snapshotWorktree(options?.cwd),
+			gitStatePath("baselines", branch, options?.cwd),
 		]);
 		const baseline: DevBaseline = {
 			version: 1,
@@ -170,6 +177,38 @@ export const writeBaseline = (branch: string) =>
 		};
 		yield* writeJson(path, baseline);
 		return baseline;
+	});
+
+export interface WorktreeInfo {
+	path: string;
+	branch?: string;
+}
+
+export const resolveWorktreePath = (branch: string): Effect.Effect<string, ValidationError> =>
+	Effect.gen(function* () {
+		const commonDir = yield* requireGit(["rev-parse", "--git-common-dir"]);
+		const absoluteCommon = resolve(process.cwd(), commonDir);
+		return join(absoluteCommon, "fizzyx", "worktrees", safeName(branch));
+	});
+
+export const listWorktrees = (): Effect.Effect<ReadonlyArray<WorktreeInfo>, ValidationError> =>
+	Effect.gen(function* () {
+		const output = yield* requireGitRaw(["worktree", "list", "--porcelain"]);
+		const infos: WorktreeInfo[] = [];
+		let current: Partial<WorktreeInfo> = {};
+		for (const line of output.split("\n")) {
+			if (line.startsWith("worktree ")) {
+				if (current.path) infos.push(current as WorktreeInfo);
+				current = { path: line.slice("worktree ".length) };
+			} else if (line.startsWith("branch ")) {
+				current.branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
+			} else if (line === "") {
+				if (current.path) infos.push(current as WorktreeInfo);
+				current = {};
+			}
+		}
+		if (current.path) infos.push(current as WorktreeInfo);
+		return infos;
 	});
 
 export const partitionWorktree = (

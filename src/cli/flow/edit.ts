@@ -6,12 +6,14 @@ import { formatEditingCardMessage } from "../flow-output";
 import { runWithFlowEnv } from "../flow-workflow";
 import { createCardEditDraft } from "../flow-content";
 import { ValidationError } from "../../domain/errors";
+import { flowJson } from "../flow-json";
 
 const handleEdit = (config: {
 	card: number;
 	title: Option.Option<string>;
 	desc: Option.Option<string>;
 	draft: boolean;
+	json: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		if (config.draft) {
@@ -23,7 +25,17 @@ const handleEdit = (config: {
 			const draft = yield* runWithFlowEnv(formatEditingCardMessage(), (env) =>
 				env.api.showCard(config.card).pipe(Effect.flatMap(createCardEditDraft)),
 			);
-			yield* Console.log(draft.path);
+			yield* Console.log(
+				config.json
+					? flowJson({ path: draft.path }, `Rebuilt edit draft at ${draft.path}`, [
+							{
+								action: "edit",
+								cmd: `fizzyx flow edit ${config.card} --desc ${draft.path}`,
+								description: "Apply the edited draft to the card",
+							},
+						])
+					: draft.path,
+			);
 			return;
 		}
 		const title = Option.getOrUndefined(config.title);
@@ -33,7 +45,13 @@ const handleEdit = (config: {
 		const number = yield* runWithFlowEnv(formatEditingCardMessage(), (env) =>
 			edit(env, config.card, { title, description }),
 		);
-		yield* Console.log(`${number}`);
+		yield* Console.log(
+			config.json
+				? flowJson({ number }, `Edited card ${number}`, [
+						{ action: "show", cmd: `fizzyx flow show ${number}`, description: "View the card" },
+					])
+				: `${number}`,
+		);
 	});
 
 export const flowEditCmd = Command.make(
@@ -51,6 +69,7 @@ export const flowEditCmd = Command.make(
 		draft: Flag.boolean("draft").pipe(
 			Flag.withDescription("Rebuild a standard edit draft from the remote card"),
 		),
+		json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
 	},
 	handleEdit,
 ).pipe(Command.withDescription("Edit a card title or description"));

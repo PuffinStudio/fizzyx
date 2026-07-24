@@ -8,11 +8,13 @@ import {
 	formatClosedCard,
 	formatCompletedSteps,
 } from "../flow-output";
+import { flowJson } from "../flow-json";
 
 const handleDone = (config: {
 	card: number;
 	ref: Option.Option<string>;
 	completeSteps: boolean;
+	json: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const explicitRef = Option.isSome(config.ref) ? config.ref.value : undefined;
@@ -20,6 +22,11 @@ const handleDone = (config: {
 		const result = yield* runWithFlowEnv(formatClosingCardMessage(), (env) =>
 			done(env, config.card, resolvedRef, { completeSteps: config.completeSteps }),
 		);
+
+		if (config.json) {
+			yield* Console.log(flowJson(result, formatClosedCard(result.number, result.ref)));
+			return;
+		}
 
 		if (result.completedSteps && result.completedSteps.updatedCount > 0) {
 			yield* Console.log(
@@ -47,6 +54,7 @@ export const flowDoneCmd = Command.make(
 		completeSteps: Flag.boolean("complete-steps").pipe(
 			Flag.withDescription("Complete pending steps before closing"),
 		),
+		json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
 	},
 	handleDone,
 ).pipe(Command.withDescription("Close a card"));

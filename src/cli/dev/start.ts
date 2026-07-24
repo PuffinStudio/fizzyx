@@ -15,6 +15,8 @@ const handle = (config: {
 	base: Option.Option<string>;
 	allowDirty: boolean;
 	fromCurrent: boolean;
+	worktree: boolean;
+	agent: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const kind = Option.getOrElse(config.kind, () => "feature");
@@ -41,13 +43,42 @@ const handle = (config: {
 			base: Option.getOrElse(config.base, () => undefined),
 			allowDirty: config.allowDirty,
 			fromCurrent: config.fromCurrent,
+			worktree: config.worktree,
 		});
 
-		yield* logSuccess(
-			result.created
-				? `Created and switched to branch '${result.branchName}'`
-				: `Switched to existing branch '${result.branchName}'`,
-		);
+		if (config.agent) {
+			const lines = [
+				`branch: ${result.branchName}`,
+				`created: ${result.created ? "yes" : "no"}`,
+				`worktree: ${result.worktreePath ? "yes" : "no"}`,
+			];
+			if (result.worktreePath) lines.push(`worktree_path: ${result.worktreePath}`);
+			lines.push(`card_recorded: ${result.metadataRecorded ? "yes" : "no"}`);
+			lines.push(
+				`next_action: ${
+					result.worktreePath
+						? `cd ${result.worktreePath} before any further 'fizzyx dev' command`
+						: "Run 'fizzyx dev status --agent' before editing."
+				}`,
+			);
+			yield* Console.log(lines.join("\n"));
+			return;
+		}
+
+		if (result.worktreePath) {
+			yield* logSuccess(
+				result.created
+					? `Created worktree for '${result.branchName}' at ${result.worktreePath}`
+					: `Attached worktree for '${result.branchName}' at ${result.worktreePath}`,
+			);
+			yield* logInfo(`Next: cd ${result.worktreePath}`);
+		} else {
+			yield* logSuccess(
+				result.created
+					? `Created and switched to branch '${result.branchName}'`
+					: `Switched to existing branch '${result.branchName}'`,
+			);
+		}
 		if (result.metadataRecorded) {
 			yield* logInfo("Recorded card association in local Git config");
 		}
@@ -72,6 +103,14 @@ export const devStartCmd = Command.make(
 		),
 		fromCurrent: Flag.boolean("from-current").pipe(
 			Flag.withDescription("Branch from current HEAD instead of base branch"),
+		),
+		worktree: Flag.boolean("worktree").pipe(
+			Flag.withDescription(
+				"Create the branch in an isolated git worktree instead of switching in place",
+			),
+		),
+		agent: Flag.boolean("agent").pipe(
+			Flag.withDescription("Machine-readable output for AI agents"),
 		),
 	},
 	handle,

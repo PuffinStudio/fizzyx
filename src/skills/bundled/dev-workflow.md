@@ -59,7 +59,11 @@ generic move to bypass the guarded `flow done` completion checks.
    `fizzyx dev baseline accept` before task edits.
 3. Classify work type: feature, fix, hotfix, ops, chore, docs, or tiny follow-up.
 4. Use a new branch only when the current branch is unsuitable for the classification.
-5. Start branch work with `fizzyx dev start <slug> --kind <kind> [--card <id>]`.
+5. Start branch work with `fizzyx dev start <slug> --kind <kind> [--card <id>] [--worktree]`.
+   Add `--worktree` for parallel or long-running work (see Worktrees below); then `cd` into
+   the reported path before any further `fizzyx dev` command. Prefer `--agent` on
+   `fizzyx dev start` when scripting: it prints `worktree_path` and `next_action` as
+   machine-readable fields.
 6. Commit or checkpoint only changes made during the current task. Do not include files that
    were already dirty before you started unless the user explicitly asks.
 7. Keep long-running work safe with `fizzyx dev checkpoint`.
@@ -68,12 +72,46 @@ generic move to bypass the guarded `flow done` completion checks.
 10. Before moving a card to review or reporting completion, run `fizzyx dev ready --agent`.
 11. Move cards with `fizzyx flow review <card>` only after ready checks pass.
 12. Close cards with `fizzyx flow done <card> <ref>` only after the relevant commit, branch,
-    or accepted change is complete according to project policy.
+    or accepted change is complete according to project policy. `flow done` blocks while the
+    card has unfinished steps — finish them or pass `--complete-steps`. Provide `<ref>`
+    explicitly when git cannot infer the closing commit/branch.
 13. For movement between environments or release, use `fizzyx dev promote --dry-run` first.
 14. Use `fizzyx dev cleanup` only as a cleanup preview, then report pending branch deletions.
 15. When blocked by config/guardrail checks, report the blocker and next safe step.
 16. Use `flow unblock` to return a blocked card to the configured default column, `flow reopen` for
     a closed card, and `flow untriage` only when intentionally returning a card to Fizzy Maybe.
+
+## Worktrees
+
+By default, `fizzyx dev start` switches branches in place. This is the right choice for
+normal single-threaded work: one task at a time, owning the working tree start to finish.
+
+Prefer an isolated worktree — `fizzyx dev start <slug> --kind <kind> --worktree` — when the
+work is **parallel or long-running**:
+
+- Multiple cards or agents are in flight at once and must not disturb each other's tree.
+- You need another branch to stay checked out (e.g. keep a review or a running dev server
+  on the current branch) while you work.
+- The work spans multiple sessions and switching branches would repeatedly churn the tree.
+
+`--worktree` creates the branch in a linked git worktree under
+`.git/fizzyx/worktrees/<branch>` and reports its path. `cd` into that path to work there;
+`fizzyx dev status`, `checkpoint`, `sync`, and `ready` all operate on the worktree you run
+them from. Do not mix worktree and in-place work on the same branch. Worktrees are cleaned up
+only by `fizzyx dev cleanup --confirm-delete` (which removes a merged branch's worktree before
+deleting the branch), and only when the user explicitly requests deletion.
+
+`fizzyx dev doctor` lists all linked worktrees and flags the ones whose branch is already
+merged, so you can see leftover worktrees without shelling out to raw `git worktree list`.
+
+## Multi-project workspaces
+
+Some repositories are opened at a parent folder that groups several projects (for example
+`api`, `web`, `app`). If the root `AGENTS.md` contains a `fizzyx:workspace` section, treat it
+as an index: before editing any member folder, read that member's own `AGENTS.md`, then run
+that member's `fizzyx dev` flow from inside the member directory. Apply a cross-cutting change
+in each affected member separately — do not assume one project's branch or checks cover another.
+Regenerate the index with `fizzyx init --workspace`.
 
 ## Must not do
 

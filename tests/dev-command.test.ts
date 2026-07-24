@@ -920,3 +920,170 @@ devTest("dev status --agent on detached HEAD reports detached branch", async () 
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+devTest("dev start --worktree creates a linked worktree without switching the main tree", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		const result = await runCli(["dev", "start", "pay-coupon", "--kind", "feature", "--worktree"], {
+			cwd: root,
+		});
+		const output = normalizeOutput(result);
+
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("worktree");
+		expect(output).toContain("feature/pay-coupon");
+
+		// Main working tree stays on main.
+		const branch = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: root });
+		expect(branch.stdout.toString().trim()).toBe("main");
+
+		// The branch exists and is checked out in a linked worktree under .git/fizzyx/worktrees.
+		const worktrees = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], { cwd: root });
+		const wtText = worktrees.stdout.toString();
+		expect(wtText).toContain("fizzyx/worktrees");
+		expect(wtText).toContain("feature/pay-coupon");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev start --worktree fails when the branch is already checked out", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		const first = await runCli(["dev", "start", "pay-coupon", "--kind", "feature", "--worktree"], {
+			cwd: root,
+		});
+		expect(first.exitCode).toBe(0);
+
+		const second = await runCli(["dev", "start", "pay-coupon", "--kind", "feature", "--worktree"], {
+			cwd: root,
+		});
+		const output = normalizeOutput(second);
+		expect(second.exitCode).not.toBe(0);
+		expect(output).toContain("already checked out");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev cleanup preview annotates worktree-backed merged branches", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		await runCli(["dev", "start", "wt-preview", "--kind", "feature", "--worktree"], { cwd: root });
+
+		const result = await runCli(["dev", "cleanup"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(output).toContain("feature/wt-preview");
+		expect(output).toContain("worktree:");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev cleanup --confirm-delete removes a merged worktree and its branch", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		await runCli(["dev", "start", "wt-gone", "--kind", "feature", "--worktree"], { cwd: root });
+
+		const result = await runCli(["dev", "cleanup", "--confirm-delete"], { cwd: root });
+		expect(result.exitCode).toBe(0);
+
+		const worktrees = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], { cwd: root });
+		expect(worktrees.stdout.toString()).not.toContain("feature/wt-gone");
+
+		const branchList = Bun.spawnSync(["git", "branch", "--list", "feature/wt-gone"], { cwd: root });
+		expect(branchList.stdout.toString()).not.toContain("feature/wt-gone");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev doctor lists linked worktrees and flags merged ones", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		await runCli(["dev", "start", "wt-doc", "--kind", "feature", "--worktree"], { cwd: root });
+
+		const result = await runCli(["dev", "doctor"], { cwd: root });
+		const output = normalizeOutput(result);
+
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("linked worktrees");
+		expect(output).toContain("feature/wt-doc");
+		expect(output).toMatch(/merged.*cleanup/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev start --agent emits machine-readable worktree path and next_action", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		const result = await runCli(
+			["dev", "start", "agent-wt", "--kind", "feature", "--worktree", "--agent"],
+			{ cwd: root },
+		);
+		const output = normalizeOutput(result);
+
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("branch: feature/agent-wt");
+		expect(output).toContain("worktree: yes");
+		expect(output).toContain("worktree_path:");
+		expect(output).toContain("next_action:");
+		expect(output).toMatch(/next_action:.*cd /);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev doctor --agent emits section counts", async () => {
+	const root = createWorkflowRepo();
+	try {
+		runGit(root, ["checkout", "main"]);
+		const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+		expect(result.exitCode).toBe(0);
+		expect(output).toMatch(/merged:\s*\d/);
+		expect(output).toMatch(/worktrees:\s*\d/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev checkpoint --agent reports no changes machine-readably", async () => {
+	const root = createWorkflowRepo();
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		const result = await runCli(["dev", "checkpoint", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("checkpointed: no");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+devTest("dev cleanup --agent reports preview mode", async () => {
+	const root = createWorkflowRepo();
+	try {
+		runGit(root, ["checkout", "feature/foo"]);
+		const result = await runCli(["dev", "cleanup", "--agent"], { cwd: root });
+		const output = normalizeOutput(result);
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("mode: preview");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
