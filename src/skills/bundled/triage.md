@@ -6,7 +6,11 @@ disable-model-invocation: true
 
 # Triage
 
-Move issues on the project issue tracker through a small state machine of triage roles.
+Move Fizzy cards through a small state machine of triage roles. In a fizzyx project the
+issue tracker is Fizzy: read cards with `fizzyx flow show`/`list`/`search`, transition them
+with `fizzyx flow move`/`block`/`unblock`/`review`/`done`, and discover the board's real
+columns with `fizzyx flow columns` before assuming any state exists. Prefer `--json` and
+follow the returned breadcrumbs.
 
 If this repo treats external pull requests as a request surface (see the issue-tracker config), triage covers them too: **a PR is an issue with attached code** — same roles, same states, same machine, with a few deltas marked "for a PR" below. Resolve a bare `#42` to an issue or PR per the tracker config.
 
@@ -40,7 +44,12 @@ For a PR, the same states read against the attached code: `ready-for-agent` mean
 
 Every triaged issue should carry exactly one category role and one state role. If state roles conflict, flag it and ask the maintainer before doing anything else.
 
-These are canonical role names — the actual label strings used in the issue tracker may differ. The mapping should have been provided to you - run `/setup-matt-pocock-skills` if not.
+These are canonical role names — the actual Fizzy columns and states differ per board. Run
+`fizzyx flow columns` to discover the real ids, then map: `needs-triage` → the board's triage
+column or Fizzy Maybe (`fizzyx flow move <card> triage`), `needs-info` → blocked
+(`fizzyx flow block <card> "<reason>"`), `ready-for-agent`/`ready-for-human` → the ready/todo
+column (`fizzyx flow move`), `wontfix` → `fizzyx flow move <card> not-now` or close via
+`fizzyx flow done` per policy. Never invent labels the board does not have.
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 
@@ -73,7 +82,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 3. **Verify the claim.** Before any grilling, check that the claim holds up. For a bug, reproduce it from the reporter's steps. For a PR, confirm the diff does what it claims — check it out, run the relevant tests or commands. Report what happened: confirmed (with code path), failed, or insufficient detail (a strong `needs-info` signal). A confirmed verification makes a much stronger agent brief.
 
-4. **Grill (if needed).** If the request needs fleshing out, run the `/grilling` and `/domain-modeling` skills together — grill it into shape one question at a time, sharpening domain terms and updating `CONTEXT.md`/ADRs inline as decisions land.
+4. **Grill (if needed).** If the request needs fleshing out, grill it into shape one question at a time, and run the `domain-modeling` skill alongside — sharpening domain terms and updating `CONTEXT.md`/ADRs inline as decisions land.
 
 5. **Apply the outcome:**
    - `ready-for-agent` — post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)).

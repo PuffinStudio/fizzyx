@@ -8,7 +8,10 @@ disable-model-invocation: true
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets).
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-matt-pocock-skills` if not.
+In a fizzyx project the issue tracker is Fizzy: publish each slice as a card with
+`fizzyx flow`. Follow the `dev-workflow` card contract (draft with `## Goal`,
+`## Acceptance Criteria`, `## Suggested Skills`, `## Plan`, `## Steps`). Use
+`fizzyx flow columns` to discover the board's real states before assuming a column name.
 
 ## Process
 
@@ -50,11 +53,17 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5. Publish the issues to the issue tracker
+### 5. Publish the issues as Fizzy cards
 
-For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. These issues are considered ready for AFK agents, so publish them with the correct triage label unless instructed otherwise.
+For each approved slice, create a card with `fizzyx flow`. Generate the draft with
+`fizzyx flow create --draft`, fill the sections (mapping the template below onto
+`## Goal` / `## Acceptance Criteria` / `## Steps`), then create it with
+`fizzyx flow create "<title>" --desc <draft-path>`. Prefer `--json` and follow the
+returned breadcrumbs. Do not `--assign` unless ownership is explicit.
 
-Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the "Blocked by" field.
+Create cards in dependency order (blockers first) so you can reference real card numbers in
+the "Blocked by" field. Record blockers in the card body/steps, not by inventing tracker
+labels the board may not have.
 
 <issue-template>
 ## Parent
