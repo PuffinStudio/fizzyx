@@ -1025,3 +1025,25 @@ devTest("dev doctor lists linked worktrees and flags merged ones", async () => {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+devTest("dev start --agent emits machine-readable worktree path and next_action", async () => {
+	const root = createWorkflowRepo();
+
+	try {
+		runGit(root, ["checkout", "main"]);
+		const result = await runCli(
+			["dev", "start", "agent-wt", "--kind", "feature", "--worktree", "--agent"],
+			{ cwd: root },
+		);
+		const output = normalizeOutput(result);
+
+		expect(result.exitCode).toBe(0);
+		expect(output).toContain("branch: feature/agent-wt");
+		expect(output).toContain("worktree: yes");
+		expect(output).toContain("worktree_path:");
+		expect(output).toContain("next_action:");
+		expect(output).toMatch(/next_action:.*cd /);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

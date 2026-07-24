@@ -16,6 +16,7 @@ const handle = (config: {
 	allowDirty: boolean;
 	fromCurrent: boolean;
 	worktree: boolean;
+	agent: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const kind = Option.getOrElse(config.kind, () => "feature");
@@ -44,6 +45,25 @@ const handle = (config: {
 			fromCurrent: config.fromCurrent,
 			worktree: config.worktree,
 		});
+
+		if (config.agent) {
+			const lines = [
+				`branch: ${result.branchName}`,
+				`created: ${result.created ? "yes" : "no"}`,
+				`worktree: ${result.worktreePath ? "yes" : "no"}`,
+			];
+			if (result.worktreePath) lines.push(`worktree_path: ${result.worktreePath}`);
+			lines.push(`card_recorded: ${result.metadataRecorded ? "yes" : "no"}`);
+			lines.push(
+				`next_action: ${
+					result.worktreePath
+						? `cd ${result.worktreePath} before any further 'fizzyx dev' command`
+						: "Run 'fizzyx dev status --agent' before editing."
+				}`,
+			);
+			yield* Console.log(lines.join("\n"));
+			return;
+		}
 
 		if (result.worktreePath) {
 			yield* logSuccess(
@@ -88,6 +108,9 @@ export const devStartCmd = Command.make(
 			Flag.withDescription(
 				"Create the branch in an isolated git worktree instead of switching in place",
 			),
+		),
+		agent: Flag.boolean("agent").pipe(
+			Flag.withDescription("Machine-readable output for AI agents"),
 		),
 	},
 	handle,

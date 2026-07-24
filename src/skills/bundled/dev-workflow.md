@@ -59,7 +59,11 @@ generic move to bypass the guarded `flow done` completion checks.
    `fizzyx dev baseline accept` before task edits.
 3. Classify work type: feature, fix, hotfix, ops, chore, docs, or tiny follow-up.
 4. Use a new branch only when the current branch is unsuitable for the classification.
-5. Start branch work with `fizzyx dev start <slug> --kind <kind> [--card <id>]`.
+5. Start branch work with `fizzyx dev start <slug> --kind <kind> [--card <id>] [--worktree]`.
+   Add `--worktree` for parallel or long-running work (see Worktrees below); then `cd` into
+   the reported path before any further `fizzyx dev` command. Prefer `--agent` on
+   `fizzyx dev start` when scripting: it prints `worktree_path` and `next_action` as
+   machine-readable fields.
 6. Commit or checkpoint only changes made during the current task. Do not include files that
    were already dirty before you started unless the user explicitly asks.
 7. Keep long-running work safe with `fizzyx dev checkpoint`.
@@ -94,6 +98,18 @@ work is **parallel or long-running**:
 them from. Do not mix worktree and in-place work on the same branch. Worktrees are cleaned up
 only by `fizzyx dev cleanup --confirm-delete` (which removes a merged branch's worktree before
 deleting the branch), and only when the user explicitly requests deletion.
+
+`fizzyx dev doctor` lists all linked worktrees and flags the ones whose branch is already
+merged, so you can see leftover worktrees without shelling out to raw `git worktree list`.
+
+## Multi-project workspaces
+
+Some repositories are opened at a parent folder that groups several projects (for example
+`api`, `web`, `app`). If the root `AGENTS.md` contains a `fizzyx:workspace` section, treat it
+as an index: before editing any member folder, read that member's own `AGENTS.md`, then run
+that member's `fizzyx dev` flow from inside the member directory. Apply a cross-cutting change
+in each affected member separately — do not assume one project's branch or checks cover another.
+Regenerate the index with `fizzyx init --workspace`.
 
 ## Must not do
 
