@@ -118,25 +118,6 @@ const seedFile = (path: string, template: string): GeneratedFile => ({
 	ownership: "seed-once",
 });
 
-const navigationAwareShellTemplate = (template: string): string => {
-	if (template.includes("adminPlan.navigation.groups")) return template;
-	const sidebarContent = /        <SidebarContent>[\s\S]*?        <\/SidebarContent>/;
-	if (!sidebarContent.test(template)) {
-		throw new Error("admin shell template is missing its navigation content boundary");
-	}
-	return template
-		.replace("Boxes, Database,", "Boxes,")
-		.replace("  SidebarGroup,\n  SidebarGroupContent,\n  SidebarGroupLabel,\n", "")
-		.replace(
-			'import { ThemeToggle } from "@/components/admin/theme-toggle"',
-			'import { ThemeToggle } from "@/components/admin/theme-toggle"\nimport { AdminNavigation } from "@/components/admin/admin-navigation"',
-		)
-		.replace(
-			sidebarContent,
-			'        <SidebarContent className="p-2"><AdminNavigation groups={adminPlan.navigation.groups.map((group) => ({ ...group, items: group.items.map((item) => ({ key: item.resourceKey, label: item.label, href: item.path, icon: ("icon" in item ? item.icon : undefined) as never })) }))} /></SidebarContent>',
-		);
-};
-
 const authTemplateValues = (plan: AdminAppPlan) => {
 	const config = plan.auth.status === "configured" ? plan.auth.config : undefined;
 	if (!config || !config.usernameField || !config.passwordField || !config.accessTokenPath) {
@@ -806,15 +787,9 @@ export const renderAdminApp = (
 		authEnabled
 			? {
 					path: "src/components/admin/admin-shell.tsx",
-					content: renderAuthTemplate(
-						navigationAwareShellTemplate(authAdminShellTemplate),
-						authTemplateValues(plan)!,
-					),
+					content: renderAuthTemplate(authAdminShellTemplate, authTemplateValues(plan)!),
 				}
-			: staticFile(
-					"src/components/admin/admin-shell.tsx",
-					navigationAwareShellTemplate(adminShellTemplate),
-				),
+			: staticFile("src/components/admin/admin-shell.tsx", adminShellTemplate),
 		staticFile("src/components/admin/data-table.tsx", dataTableTemplate),
 		staticFile("src/components/admin/dynamic-form.tsx", dynamicFormTemplate),
 		staticFile("src/components/admin/dashboard.tsx", dashboardTemplate),

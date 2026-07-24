@@ -3,18 +3,16 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Boxes, Database, LogOut, ShieldCheck } from "lucide-react"
+import { Boxes, LogOut, ShieldCheck } from "lucide-react"
 import { adminPlan } from "@/generated/admin-plan"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/admin/theme-toggle"
+import { AdminNavigation } from "@/components/admin/admin-navigation"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -44,23 +42,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Resources</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminPlan.resources.map((resource) => (
-                  <SidebarMenuItem key={resource.id}>
-                    <SidebarMenuButton tooltip={resource.label} render={<a aria-label={`Open ${resource.label}`} href={resource.path} />}>
-                      <Database aria-hidden="true" />
-                      <span>{resource.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
+        <SidebarContent className="p-2"><AdminNavigation groups={adminPlan.navigation.groups.map((group) => ({ ...group, items: group.items.map((item) => ({ key: item.resourceKey, label: item.label, href: item.path, icon: ("icon" in item ? item.icon : undefined) as never })) }))} /></SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border/70 p-3">
           <div className="mb-2 flex items-center gap-2 px-2 text-xs text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden"><ShieldCheck aria-hidden="true" className="size-3.5" />Secure server session</div>
           <Button className="w-full justify-start group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0" variant="ghost" onClick={() => void logout()}><LogOut aria-hidden="true" /><span className="group-data-[collapsible=icon]:hidden">Sign Out</span></Button>
