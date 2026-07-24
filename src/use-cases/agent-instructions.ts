@@ -15,6 +15,7 @@ export const AGENT_INSTRUCTIONS_SECTION = [
 	"- If `.agents/skills/coding-standards/SKILL.md` exists, apply it while implementing or reviewing code.",
 	"- Use `fizzyx flow` for remote Fizzy card and board state. Use `fizzyx dev` for local Git branches, checks, promotion, and cleanup.",
 	"- Start by running `fizzyx flow work` (or `fizzyx flow show <card>`) and `fizzyx dev status --agent`.",
+	"- Every `fizzyx flow` command accepts `--json` and every `fizzyx dev` command accepts `--agent`. Always use the machine-readable flag, parse the result, and follow the returned `next_action`/`breadcrumbs` instead of scraping human text.",
 	"- Treat the initial dirty files as user-owned. Run `fizzyx dev baseline accept` only after inspecting them.",
 	"- Start local work with `fizzyx dev start <slug> --kind <kind> --card <number>`, then move the remote card with `fizzyx flow start <number>`.",
 	"- Default to branching in place. Add `--worktree` to `fizzyx dev start` only for parallel or long-running work (concurrent cards/agents, keeping another branch checked out). Use `fizzyx dev start ... --worktree --agent` and read `worktree_path`/`next_action`, then `cd` into that path before any further `fizzyx dev` command.",

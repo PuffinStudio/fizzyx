@@ -36,8 +36,15 @@ When editing an existing card, keep the same contract:
 
 Use `fizzyx flow list` for structured filters on the project board and `fizzyx flow search` for
 full-text search. Add single-line notes with `fizzyx flow comment <card> <body>`. Send multiline
-Markdown with `fizzyx flow comment <card> --body-file -` and a quoted heredoc. For agent parsing,
-prefer `--json` where offered and follow the returned breadcrumbs instead of guessing command names.
+Markdown with `fizzyx flow comment <card> --body-file -` and a quoted heredoc.
+
+## Structured output (always use it as an agent)
+
+Every `fizzyx flow` command accepts `--json` and every `fizzyx dev` command accepts `--agent`.
+Always pass the machine-readable flag: parse the result instead of scraping human text, and
+follow the returned `next_action`/`breadcrumbs` rather than guessing the next command. `--json`
+emits a stable `{ ok, data, summary, breadcrumbs }` envelope on stdout; spinner/progress text
+goes to stderr, so stdout stays pure. `--agent` output is `key: value` lines.
 
 ## Custom Fizzy columns
 
