@@ -17,7 +17,7 @@ In a fizzyx project the issue tracker is Fizzy: publish each slice as a card wit
 
 ### 1. Gather context
 
-Work from whatever is already in the conversation context. If the user passes an issue reference (issue number, URL, or path) as an argument, fetch it from the issue tracker and read its full body and comments.
+Work from whatever is already in the conversation context. If the user passes a card reference (card number or path) as an argument, fetch it with `fizzyx flow show <card> --json` and read its full body and comments.
 
 ### 2. Explore the codebase (optional)
 
@@ -68,7 +68,7 @@ labels the board may not have.
 <issue-template>
 ## Parent
 
-A reference to the parent issue on the issue tracker (if the source was an existing issue, otherwise omit this section).
+A reference to the parent card (if the source was an existing card, otherwise omit this section).
 
 ## What to build
 
