@@ -1,15 +1,18 @@
+import { resolve } from "node:path";
 import { Effect } from "effect";
 import { ConfigError, FileError, ValidationError } from "../domain/errors";
 import type { DevBranchMetadata, DevConfig, ProjectConfig } from "../domain/models";
 import type { ConfigRepository } from "../ports/config-repository";
 import { ConfigRepo } from "../ports/config-repository";
 import {
+	listWorktrees,
 	partitionWorktree,
 	readBaseline,
 	readBranchMetadata,
 	readReadyReceipt,
 	removeBranchState,
 	removeReadyReceipt,
+	resolveWorktreePath,
 	snapshotWorktree,
 	writeBaseline,
 	writeBranchMetadata,
@@ -377,7 +380,24 @@ export type StartBranchResult = {
 	branchName: string;
 	created: boolean;
 	metadataRecorded: boolean;
+	worktreePath?: string;
 };
+
+const recordBranchMetadata = (
+	branchName: string,
+	options: { kind: string; card?: string; base: string },
+): Effect.Effect<boolean, ValidationError> =>
+	Effect.gen(function* () {
+		if (!options.card) return false;
+		if (yield* readBranchMetadata(branchName)) return false;
+		yield* writeBranchMetadata(branchName, {
+			card: Number(options.card),
+			kind: options.kind,
+			base: options.base,
+			createdAt: new Date().toISOString(),
+		});
+		return true;
+	});
 
 export const startBranch = (
 	slug: string,
@@ -387,6 +407,7 @@ export const startBranch = (
 		base?: string;
 		allowDirty?: boolean;
 		fromCurrent?: boolean;
+		worktree?: boolean;
 	},
 ): DevEffect<StartBranchResult> =>
 	Effect.gen(function* () {
@@ -411,18 +432,24 @@ export const startBranch = (
 		const branchName = `${prefix}/${cardPart}${slug}`;
 		const exists = yield* branchExists(branchName);
 
+		if (options.worktree) {
+			return yield* startWorktree({
+				branchName,
+				base,
+				exists,
+				kind: options.kind,
+				card: options.card,
+				fromCurrent: options.fromCurrent,
+			});
+		}
+
 		if (exists) {
 			if (status.currentBranch !== branchName) yield* runGit(["checkout", branchName]);
-			let metadataRecorded = false;
-			if (options.card && !(yield* readBranchMetadata(branchName))) {
-				yield* writeBranchMetadata(branchName, {
-					card: Number(options.card),
-					kind: options.kind,
-					base,
-					createdAt: new Date().toISOString(),
-				});
-				metadataRecorded = true;
-			}
+			const metadataRecorded = yield* recordBranchMetadata(branchName, {
+				kind: options.kind,
+				card: options.card,
+				base,
+			});
 			if (!status.dirty && !(yield* readBaseline(branchName))) yield* writeBaseline(branchName);
 			return { branchName, created: false, metadataRecorded };
 		}
@@ -447,6 +474,50 @@ export const startBranch = (
 		yield* writeBaseline(branchName);
 
 		return { branchName, created: true, metadataRecorded };
+	});
+
+const startWorktree = (options: {
+	branchName: string;
+	base: string;
+	exists: boolean;
+	kind: string;
+	card?: string;
+	fromCurrent?: boolean;
+}): Effect.Effect<StartBranchResult, ValidationError, ConfigRepository> =>
+	Effect.gen(function* () {
+		const { branchName, base, exists } = options;
+		const worktreePath = yield* resolveWorktreePath(branchName);
+
+		const worktrees = yield* listWorktrees();
+		const existingForBranch = worktrees.find((w) => w.branch === branchName);
+		if (existingForBranch) {
+			return yield* new ValidationError({
+				message: `Branch '${branchName}' is already checked out in a worktree at ${existingForBranch.path}. Work there, or remove it first.`,
+			});
+		}
+		if (worktrees.some((w) => resolve(w.path) === resolve(worktreePath))) {
+			return yield* new ValidationError({
+				message: `A worktree already exists at ${worktreePath}. Remove it before starting again.`,
+			});
+		}
+
+		if (exists) {
+			yield* runGit(["worktree", "add", worktreePath, branchName]);
+		} else {
+			const from = options.fromCurrent ? "HEAD" : base;
+			yield* runGit(["worktree", "add", "-b", branchName, worktreePath, from]);
+		}
+
+		const metadataRecorded = yield* recordBranchMetadata(branchName, {
+			kind: options.kind,
+			card: options.card,
+			base,
+		});
+		// Baseline lives in the worktree's own git dir (git resolves fizzyx/* per-worktree),
+		// so a later `fizzyx dev status` run from inside the worktree finds it.
+		yield* writeBaseline(branchName, { cwd: worktreePath });
+
+		return { branchName, created: !exists, metadataRecorded, worktreePath };
 	});
 
 export const isOnCompatibleBranch = (
@@ -1068,21 +1139,46 @@ export const cleanup = (options?: {
 			.loadProjectConfig()
 			.pipe(Effect.catch(() => Effect.succeed(undefined as ProjectConfig | undefined)));
 		const productionBranch = getProductionBranch(projectConfig ?? undefined);
-
-		if (status.role === "protected") {
-			return `On protected branch '${status.currentBranch}'. No cleanup needed.`;
-		}
+		const onProtected = status.role === "protected";
 
 		const currentBranch = status.currentBranch;
 		const mergedBranches = yield* getMergedBranches(productionBranch, projectConfig ?? undefined);
+		const worktrees = yield* listWorktrees().pipe(Effect.catch(() => Effect.succeed([])));
+		// The first entry is the main working tree; only linked worktrees block `git branch -d`.
+		const linkedWorktrees = worktrees.slice(1);
+		const worktreeByBranch = new Map(
+			linkedWorktrees.filter((w) => w.branch).map((w) => [w.branch as string, w.path] as const),
+		);
+		const currentWorktreePath = resolve(process.cwd());
+
 		if (!options?.confirmDelete) {
-			const pending = mergedBranches.length > 0 ? ` ${mergedBranches.join(", ")}` : " none";
+			const pending =
+				mergedBranches.length > 0
+					? ` ${mergedBranches
+							.map((b) => (worktreeByBranch.has(b) ? `${b} (worktree: ${worktreeByBranch.get(b)})` : b))
+							.join(", ")}`
+					: " none";
 			return `Cleanup preview: ${mergedBranches.length} merged branch(es) pending deletion:${pending}. No branches deleted. Add --confirm-delete to delete local branches.`;
 		}
 
-		yield* runGit(["checkout", productionBranch]);
+		if (!onProtected) {
+			yield* runGit(["checkout", productionBranch]);
+		}
 		let deleted = 0;
+		const skipped: string[] = [];
 		for (const branch of mergedBranches) {
+			const worktreePath = worktreeByBranch.get(branch);
+			if (worktreePath) {
+				if (resolve(worktreePath) === currentWorktreePath) {
+					skipped.push(`${branch} (current worktree)`);
+					continue;
+				}
+				const removed = yield* runGitNoThrow(["worktree", "remove", worktreePath]);
+				if (removed.exitCode !== 0) {
+					skipped.push(`${branch} (worktree not removable: ${worktreePath})`);
+					continue;
+				}
+			}
 			const result = yield* runGit(["branch", "-d", branch]).pipe(
 				Effect.catch(() => Effect.succeed("")),
 			);
@@ -1091,9 +1187,13 @@ export const cleanup = (options?: {
 				yield* removeBranchState(branch).pipe(Effect.catch(() => Effect.succeed(undefined)));
 			}
 		}
+		if (worktrees.length > 0) {
+			yield* runGit(["worktree", "prune"]).pipe(Effect.catch(() => Effect.succeed("")));
+		}
 
 		if (
 			options?.abandon &&
+			!onProtected &&
 			currentBranch !== productionBranch &&
 			!mergedBranches.includes(currentBranch)
 		) {
@@ -1108,7 +1208,9 @@ export const cleanup = (options?: {
 
 		yield* runGit(["remote", "prune", "origin"]).pipe(Effect.catch(() => Effect.succeed("")));
 
-		return `Deleted ${deleted} local branch(es). Now on '${productionBranch}'.`;
+		const skippedNote = skipped.length > 0 ? ` Skipped: ${skipped.join(", ")}.` : "";
+		const nowOn = onProtected ? currentBranch : productionBranch;
+		return `Deleted ${deleted} local branch(es). Now on '${nowOn}'.${skippedNote}`;
 	});
 
 export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, ValidationError> =>

@@ -15,6 +15,7 @@ const handle = (config: {
 	base: Option.Option<string>;
 	allowDirty: boolean;
 	fromCurrent: boolean;
+	worktree: boolean;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const kind = Option.getOrElse(config.kind, () => "feature");
@@ -41,13 +42,23 @@ const handle = (config: {
 			base: Option.getOrElse(config.base, () => undefined),
 			allowDirty: config.allowDirty,
 			fromCurrent: config.fromCurrent,
+			worktree: config.worktree,
 		});
 
-		yield* logSuccess(
-			result.created
-				? `Created and switched to branch '${result.branchName}'`
-				: `Switched to existing branch '${result.branchName}'`,
-		);
+		if (result.worktreePath) {
+			yield* logSuccess(
+				result.created
+					? `Created worktree for '${result.branchName}' at ${result.worktreePath}`
+					: `Attached worktree for '${result.branchName}' at ${result.worktreePath}`,
+			);
+			yield* logInfo(`Next: cd ${result.worktreePath}`);
+		} else {
+			yield* logSuccess(
+				result.created
+					? `Created and switched to branch '${result.branchName}'`
+					: `Switched to existing branch '${result.branchName}'`,
+			);
+		}
 		if (result.metadataRecorded) {
 			yield* logInfo("Recorded card association in local Git config");
 		}
@@ -72,6 +83,11 @@ export const devStartCmd = Command.make(
 		),
 		fromCurrent: Flag.boolean("from-current").pipe(
 			Flag.withDescription("Branch from current HEAD instead of base branch"),
+		),
+		worktree: Flag.boolean("worktree").pipe(
+			Flag.withDescription(
+				"Create the branch in an isolated git worktree instead of switching in place",
+			),
 		),
 	},
 	handle,

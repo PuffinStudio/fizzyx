@@ -75,6 +75,26 @@ generic move to bypass the guarded `flow done` completion checks.
 16. Use `flow unblock` to return a blocked card to the configured default column, `flow reopen` for
     a closed card, and `flow untriage` only when intentionally returning a card to Fizzy Maybe.
 
+## Worktrees
+
+By default, `fizzyx dev start` switches branches in place. This is the right choice for
+normal single-threaded work: one task at a time, owning the working tree start to finish.
+
+Prefer an isolated worktree — `fizzyx dev start <slug> --kind <kind> --worktree` — when the
+work is **parallel or long-running**:
+
+- Multiple cards or agents are in flight at once and must not disturb each other's tree.
+- You need another branch to stay checked out (e.g. keep a review or a running dev server
+  on the current branch) while you work.
+- The work spans multiple sessions and switching branches would repeatedly churn the tree.
+
+`--worktree` creates the branch in a linked git worktree under
+`.git/fizzyx/worktrees/<branch>` and reports its path. `cd` into that path to work there;
+`fizzyx dev status`, `checkpoint`, `sync`, and `ready` all operate on the worktree you run
+them from. Do not mix worktree and in-place work on the same branch. Worktrees are cleaned up
+only by `fizzyx dev cleanup --confirm-delete` (which removes a merged branch's worktree before
+deleting the branch), and only when the user explicitly requests deletion.
+
 ## Must not do
 
 - Edit protected branches directly.
