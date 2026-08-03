@@ -6,6 +6,8 @@ Make a generated Next.js or TanStack Start admin start from the current official
 then compile OpenAPI into deterministic physical files that an AI coding agent can safely enrich
 through a validated, reviewable UI configuration.
 
+Reference: [official shadcn installation documentation](https://ui.shadcn.com/docs/installation).
+
 ## Decisions
 
 ### shadcn owns application initialization

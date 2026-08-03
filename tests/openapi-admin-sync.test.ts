@@ -474,7 +474,7 @@ test("concrete plan preserves coordinator status when file conflicts are present
 				Effect.provide(GeneratorRegistryLive),
 			),
 		);
-		const conflictPath = join(output, "src/app/(admin)/page.tsx");
+		const conflictPath = join(output, "app/(admin)/page.tsx");
 		writeFileSync(conflictPath, `${readFileSync(conflictPath, "utf8")}\n// local change\n`);
 
 		const result = await Effect.runPromise(
@@ -487,7 +487,7 @@ test("concrete plan preserves coordinator status when file conflicts are present
 		expect(result).toMatchObject({
 			status: "drift",
 			changed: true,
-			conflicts: ["src/app/(admin)/page.tsx"],
+			conflicts: ["app/(admin)/page.tsx"],
 			qualityIssues: [],
 		});
 	} finally {

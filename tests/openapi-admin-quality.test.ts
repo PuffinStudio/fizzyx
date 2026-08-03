@@ -14,6 +14,15 @@ test("excludes the machine-owned manifest from source formatting", () => {
 	expect(JSON.parse(config?.content ?? "{}").ignorePatterns).toContain(".fizzyx/**");
 });
 
+test("excludes shadcn-owned UI components in each official template layout", () => {
+	const next = adminQualityBootstrapFiles("nextjs").find((file) => file.path === ".oxlintrc.json");
+	const start = adminQualityBootstrapFiles("tanstack-start").find(
+		(file) => file.path === ".oxlintrc.json",
+	);
+	expect(JSON.parse(next?.content ?? "{}").ignorePatterns).toContain("components/ui/**");
+	expect(JSON.parse(start?.content ?? "{}").ignorePatterns).toContain("src/components/ui/**");
+});
+
 test("adds OXC quality scripts without removing official scaffold scripts", () => {
 	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-quality-"));
 	try {

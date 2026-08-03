@@ -22,6 +22,7 @@ import {
 	planAdminScaffoldBootstrap,
 	planAdminScaffoldFinalize,
 	FIZZYX_ADMIN_PRESET,
+	adminSourcePath,
 	resolveAdminPreset,
 	type AdminScaffoldBootstrapFile,
 	type AdminScaffoldCommand,
@@ -73,6 +74,14 @@ export interface AdminSyncCandidate {
 const prefixed = (prefix: string, files: GeneratedFile[]): GeneratedFile[] =>
 	files.map((file) => ({ ...file, path: `${prefix}/${file.path}` }));
 
+const matchScaffoldLayout = (framework: AdminFramework, files: GeneratedFile[]): GeneratedFile[] =>
+	framework === "nextjs"
+		? files.map((file) => ({
+				...file,
+				path: file.path.startsWith("src/") ? file.path.slice(4) : file.path,
+			}))
+		: files;
+
 /** Builds the complete generated state without touching the target project. */
 export const prepareAdminSyncCandidate = (
 	input: Pick<
@@ -83,7 +92,7 @@ export const prepareAdminSyncCandidate = (
 	Effect.gen(function* () {
 		const client = yield* generate({
 			input: input.input,
-			output: "src/lib/api/generated",
+			output: adminSourcePath(input.framework, "lib/api/generated"),
 			client: "fetch",
 			stateManagement: "tanstack-query",
 		});
@@ -106,10 +115,10 @@ export const prepareAdminSyncCandidate = (
 			specFingerprint: new Bun.CryptoHasher("sha256").update(JSON.stringify(spec)).digest("hex"),
 			overlayFingerprint: overlay.fingerprint ?? DEFAULT_ADMIN_UI_OVERLAY_FINGERPRINT,
 			plan,
-			files: [
-				...prefixed("src/lib/api/generated", client.files),
+			files: matchScaffoldLayout(input.framework, [
+				...prefixed(adminSourcePath(input.framework, "lib/api/generated"), client.files),
 				...renderAdminApp(plan, input.framework, { createMode: input.createMode }),
-			],
+			]),
 		};
 	});
 
@@ -189,10 +198,13 @@ const prepareDashboardRoute = (
 	freshScaffold: boolean,
 ): void => {
 	if (framework === "nextjs" && freshScaffold) {
-		const rootLayout = join(outputDir, "src/app/layout.tsx");
+		const rootLayout = join(outputDir, adminSourcePath(framework, "app/layout.tsx"));
 		if (existsSync(rootLayout)) unlinkSync(rootLayout);
 	}
-	const relative = framework === "nextjs" ? "src/app/page.tsx" : "src/routes/index.tsx";
+	const relative = adminSourcePath(
+		framework,
+		framework === "nextjs" ? "app/page.tsx" : "routes/index.tsx",
+	);
 	const path = join(outputDir, relative);
 	if (!existsSync(path)) return;
 	const content = readFileSync(path, "utf8");
@@ -217,7 +229,10 @@ const scopeTailwindSources = (
 	freshScaffold: boolean,
 ): void => {
 	if (!freshScaffold) return;
-	const relative = framework === "nextjs" ? "src/app/globals.css" : "src/styles.css";
+	const relative = adminSourcePath(
+		framework,
+		framework === "nextjs" ? "app/globals.css" : "styles.css",
+	);
 	const path = join(outputDir, relative);
 	if (!existsSync(path)) return;
 	const content = readFileSync(path, "utf8");
@@ -244,7 +259,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 
 		const client = yield* generate({
 			input: input.input,
-			output: `${outputDir}/src/lib/api/generated`,
+			output: `${outputDir}/${adminSourcePath(input.framework, "lib/api/generated")}`,
 			client: "fetch",
 			stateManagement: "tanstack-query",
 		});
@@ -374,10 +389,10 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 						}),
 		});
 
-		const files = [
-			...prefixed("src/lib/api/generated", client.files),
+		const files = matchScaffoldLayout(input.framework, [
+			...prefixed(adminSourcePath(input.framework, "lib/api/generated"), client.files),
 			...renderAdminApp(plan, input.framework, { createMode }),
-		];
+		]);
 		const specFingerprint = new Bun.CryptoHasher("sha256")
 			.update(JSON.stringify(spec))
 			.digest("hex");

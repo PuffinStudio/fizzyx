@@ -5,6 +5,9 @@ import { dirname } from "node:path";
 export type AdminFramework = "nextjs" | "tanstack-start";
 export type AdminPackageManager = "bun" | "pnpm";
 
+export const adminSourcePath = (framework: AdminFramework, relative: string): string =>
+	framework === "nextjs" ? relative : `src/${relative}`;
+
 export interface AdminScaffoldInput {
 	framework: AdminFramework;
 	projectName: string;
@@ -202,10 +205,13 @@ export const planAdminScaffoldBootstrap = (
 ): AdminScaffoldBootstrapFile[] => adminQualityBootstrapFiles(input.framework);
 
 export const planAdminScaffoldFinalize = (
-	_input: AdminScaffoldInput,
+	input: AdminScaffoldInput,
 ): AdminScaffoldBootstrapFile[] => [
 	{
-		path: "src/components/ui/autoform/components/tanstack/SelectField.tsx",
+		path: adminSourcePath(
+			input.framework,
+			"components/ui/autoform/components/tanstack/SelectField.tsx",
+		),
 		content: autoformSelectFieldTemplate,
 	},
 ];

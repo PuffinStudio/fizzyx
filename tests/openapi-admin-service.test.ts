@@ -104,17 +104,14 @@ test("replaces and owns the official scaffold welcome route on first generation"
 	const runner = {
 		run: (argv: string[]) => {
 			if (argv[0] === "bunx" && argv.includes("shadcn@latest") && argv.includes("init")) {
-				mkdirSync(join(output, "src/app"), { recursive: true });
+				mkdirSync(join(output, "app"), { recursive: true });
 				writeFileSync(
 					join(output, "package.json"),
 					JSON.stringify({ scripts: { build: "next build" } }),
 				);
-				writeFileSync(join(output, "src/app/page.tsx"), "export default function Welcome() {}\n");
-				writeFileSync(
-					join(output, "src/app/layout.tsx"),
-					'import { Geist } from "next/font/google"\n',
-				);
-				writeFileSync(join(output, "src/app/globals.css"), '@import "tailwindcss";\n');
+				writeFileSync(join(output, "app/page.tsx"), "export default function Welcome() {}\n");
+				writeFileSync(join(output, "app/layout.tsx"), 'import { Geist } from "next/font/google"\n');
+				writeFileSync(join(output, "app/globals.css"), '@import "tailwindcss";\n');
 			}
 			return Effect.succeed({ stdout: "", stderr: "" });
 		},
@@ -133,17 +130,15 @@ test("replaces and owns the official scaffold welcome route on first generation"
 			),
 		);
 
-		expect(result.conflicts).not.toContain("src/app/(admin)/page.tsx");
-		expect(existsSync(join(output, "src/app/page.tsx"))).toBe(false);
-		expect(readFileSync(join(output, "src/app/(admin)/page.tsx"), "utf8")).toContain(
-			"AdminDashboard",
-		);
-		expect(readFileSync(join(output, "src/app/layout.tsx"), "utf8")).not.toContain("next/font");
-		expect(readFileSync(join(output, "src/app/globals.css"), "utf8")).toContain(
+		expect(result.conflicts).not.toContain("app/(admin)/page.tsx");
+		expect(existsSync(join(output, "app/page.tsx"))).toBe(false);
+		expect(readFileSync(join(output, "app/(admin)/page.tsx"), "utf8")).toContain("AdminDashboard");
+		expect(readFileSync(join(output, "app/layout.tsx"), "utf8")).not.toContain("next/font");
+		expect(readFileSync(join(output, "app/globals.css"), "utf8")).toContain(
 			'@import "tailwindcss" source("..");',
 		);
 		const manifest = readFileSync(join(output, ".fizzyx/admin-manifest.json"), "utf8");
-		expect(manifest).toContain('"src/app/(admin)/page.tsx"');
+		expect(manifest).toContain('"app/(admin)/page.tsx"');
 		expect(manifest).toContain('"preset": "forwardedPreset"');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -188,7 +183,7 @@ test("refreshes generated hashes after a quality failure so regeneration does no
 	const runner = {
 		run: (argv: string[]) => {
 			if (argv[0] === "bunx" && argv.includes("shadcn@latest") && argv.includes("init")) {
-				mkdirSync(join(output, "src/app"), { recursive: true });
+				mkdirSync(join(output, "app"), { recursive: true });
 				writeFileSync(
 					join(output, "package.json"),
 					JSON.stringify({ scripts: { build: "next build" } }),

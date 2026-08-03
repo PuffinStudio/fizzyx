@@ -7,35 +7,38 @@ export interface AdminQualityFile {
 	content: string;
 }
 
-export const adminQualityBootstrapFiles = (framework: AdminFramework): AdminQualityFile[] => [
-	{
-		path: ".oxlintrc.json",
-		content: `${JSON.stringify(
-			{
-				$schema: "./node_modules/oxlint/configuration_schema.json",
-				plugins: ["typescript", "unicorn", "oxc", "react", "jsx-a11y"],
-				categories: { correctness: "error" },
-				rules: {},
-				env: { builtin: true },
-				ignorePatterns: [
-					"src/routeTree.gen.ts",
-					"src/components/ui/**",
-					...(framework === "tanstack-start" ? ["src/router.tsx"] : []),
-				],
-			},
-			null,
-			2,
-		)}\n`,
-	},
-	{
-		path: ".oxfmtrc.json",
-		content: `${JSON.stringify(
-			{ ignorePatterns: ["src/routeTree.gen.ts", ".fizzyx/**"] },
-			null,
-			2,
-		)}\n`,
-	},
-];
+export const adminQualityBootstrapFiles = (framework: AdminFramework): AdminQualityFile[] => {
+	const sourcePrefix = framework === "nextjs" ? "" : "src/";
+	return [
+		{
+			path: ".oxlintrc.json",
+			content: `${JSON.stringify(
+				{
+					$schema: "./node_modules/oxlint/configuration_schema.json",
+					plugins: ["typescript", "unicorn", "oxc", "react", "jsx-a11y"],
+					categories: { correctness: "error" },
+					rules: {},
+					env: { builtin: true },
+					ignorePatterns: [
+						"src/routeTree.gen.ts",
+						`${sourcePrefix}components/ui/**`,
+						...(framework === "tanstack-start" ? ["src/router.tsx"] : []),
+					],
+				},
+				null,
+				2,
+			)}\n`,
+		},
+		{
+			path: ".oxfmtrc.json",
+			content: `${JSON.stringify(
+				{ ignorePatterns: ["src/routeTree.gen.ts", ".fizzyx/**"] },
+				null,
+				2,
+			)}\n`,
+		},
+	];
+};
 
 export const configureAdminQualityScripts = (root: string): void => {
 	const path = join(root, "package.json");

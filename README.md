@@ -279,6 +279,8 @@ src/api/
 
 Generate a standalone shadcn admin project with a typed fetch client and TanStack Query hooks:
 
+FizzyX follows the current official [shadcn installation and framework templates](https://ui.shadcn.com/docs/installation).
+
 Prerequisites are Bun, Git, and network access to the framework and shadcn registries. pnpm is
 only needed for the guarded compatibility fallback.
 
@@ -381,15 +383,16 @@ under `openapi.admin.auth` (`login_operation_id`, `access_token_path`, and so on
 go through `/api/admin`. If auth is not configured, the existing public
 `NEXT_PUBLIC_API_BASE_URL`/`VITE_API_BASE_URL` hook remains available.
 
-The main generated structure is:
+The project-specific generated structure is below. Current shadcn Next.js templates place these
+directories at the project root; TanStack Start places them under `src/`:
 
 ```text
-src/
+[src/]
   components/admin/       # shell, DataTable, DynamicForm, query provider
   lib/api/generated/      # fetch runtime, types, endpoints, query hooks
   lib/api/admin-api.ts    # environment and runtime API configuration
-  app/(admin)/            # Next.js routes (Next.js target)
-  routes/_admin/          # file routes (TanStack Start target)
+  app/(admin)/            # Next.js root routes (Next.js target; no src/ prefix)
+  routes/_admin/          # src/ file routes (TanStack Start target)
 .fizzyx/admin-manifest.json
 .fizzyx/admin-ui.yaml         # user/agent-owned presentation overlay
 .agents/skills/             # generated-project development and auth discovery guidance

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	FIZZYX_ADMIN_PRESET,
+	adminSourcePath,
 	planAdminScaffold,
 	planAdminScaffoldBootstrap,
 	resolveAdminPreset,
@@ -75,6 +76,11 @@ test("plans a Bun-only official Next.js and shadcn scaffold", () => {
 	expect(
 		commands.some((command) => command.argv.join(" ").includes("add --dev oxlint oxfmt")),
 	).toBe(true);
+});
+
+test("matches the source layouts owned by current shadcn templates", () => {
+	expect(adminSourcePath("nextjs", "app/page.tsx")).toBe("app/page.tsx");
+	expect(adminSourcePath("tanstack-start", "routes/index.tsx")).toBe("src/routes/index.tsx");
 });
 
 test("plans a Bun-only official TanStack Start and shadcn scaffold", () => {
