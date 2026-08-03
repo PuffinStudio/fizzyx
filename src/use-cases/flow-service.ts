@@ -225,7 +225,10 @@ export const show = (env: Env, number: number) =>
 		const comments = yield* env.api
 			.listComments(number)
 			.pipe(Effect.catch(() => Effect.succeed([])));
-		return { card, comments: comments.slice(-3) };
+		// Return every comment. Truncating here also truncated --json, so a
+		// programmatic reader could not distinguish a short history from a clipped
+		// one. The human-readable renderer applies its own display limit.
+		return { card, comments };
 	});
 
 export const move = (env: Env, number: number, columnRef: string) =>

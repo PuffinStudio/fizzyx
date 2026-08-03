@@ -449,9 +449,18 @@ export const makeFetchFizzyApi = (
 				Effect.flatMap(decodeCard),
 			),
 		listComments: (number) =>
-			runGenerated(FizzyEffect.listComments({ ...accountParams, cardNumber: number })).pipe(
-				Effect.flatMap(decodeComments),
-			),
+			// The generated client takes no options, so it cannot ask execute() to
+			// follow the Link: rel="next" header — only page one was ever fetched,
+			// and a card whose comment history outgrew one page returned a snapshot
+			// frozen at that page forever. Call execute() directly with
+			// paginate: true, the same way listCards does above.
+			runGenerated(
+				execute<unknown>(
+					"GET",
+					`/${config.account}/cards/${number}/comments.json`,
+					{ paginate: true },
+				),
+			).pipe(Effect.flatMap(decodeComments)),
 		createCard: (input) =>
 			runGenerated(
 				FizzyEffect.createCard(accountParams, {

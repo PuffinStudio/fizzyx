@@ -98,8 +98,18 @@ const handleShow = (config: {
 				);
 			}
 		}
-		yield* Console.log(printCardDetail(result.card, result.comments));
+		// Display limit for the human-readable path only. --json above returns every
+		// comment, so a programmatic reader is never silently clipped.
+		const shown = result.comments.slice(-textCommentLimit);
+		if (shown.length < result.comments.length) {
+			yield* Console.log(
+				`(showing the ${shown.length} most recent of ${result.comments.length} comments; use --json for all)`,
+			);
+		}
+		yield* Console.log(printCardDetail(result.card, shown));
 	});
+
+const textCommentLimit = 20;
 
 export const flowShowCmd = Command.make(
 	"show",
