@@ -84,7 +84,7 @@ export function convertPathToTemplate(
 	let result = path;
 	for (const name of paramNames) {
 		const access = useParamsPrefix ? renderPropertyAccess("params", name) : name;
-		result = result.replace(`{${name}}`, `\${${access}}`);
+		result = result.replace(`{${name}}`, `\${encodeURIComponent(String(${access}))}`);
 	}
 	return result;
 }

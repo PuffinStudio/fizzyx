@@ -263,6 +263,9 @@ Options:
 
 If `--input`/`--output`/`--client` are omitted, values from `.fizzyx.yaml` `openapi[0]` are used.
 
+Pass raw values to generated path-parameter arguments. Generated clients percent-encode each
+dynamic path segment once; query parameters continue to use the target runtime's query serializer.
+
 Output is 3 files — runtime, types, and tree-shakeable endpoint functions:
 
 ```

@@ -343,11 +343,49 @@ test("openapi generate produces correct files from spec file", async () => {
 		expect(api).toContain("  petId: number");
 		expect(api).toContain("export interface DeletePetPathParams extends BaseParams {");
 		expect(api).toContain("  petId: string");
+		expect(api).toContain("`/pets/${encodeURIComponent(String(params.petId))}`");
 		expect(api).toContain("export interface BaseParams {");
 
 		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
 		expect(idx).toContain('export * from "./api"');
 		expect(idx).toContain('export * from "./types"');
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("generated fetch client keeps reserved path parameter characters inside one segment", async () => {
+	const root = makeTempDir();
+	try {
+		const specPath = join(root, "spec.json");
+		const outputDir = join(root, "api");
+		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+
+		const { exitCode } = await runCli([
+			"openapi",
+			"generate",
+			"-i",
+			specPath,
+			"-o",
+			outputDir,
+			"-c",
+			"fetch",
+		]);
+		expect(exitCode).toBe(0);
+
+		const client = await import(join(outputDir, "api.ts"));
+		let requestedUrl = "";
+		client.configure({
+			baseUrl: "https://api.example.com",
+			fetch: (async (input: RequestInfo | URL) => {
+				requestedUrl = String(input);
+				return new Response(null, { status: 204 });
+			}) as typeof fetch,
+		});
+
+		await client.deletePet({ petId: "50% /猫?#" });
+
+		expect(requestedUrl).toBe("https://api.example.com/pets/50%25%20%2F%E7%8C%AB%3F%23");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -664,6 +702,9 @@ test("openapi generate with effect client emits Effect 4 HttpClient files", asyn
 		expect(client).toContain("Effect.Effect<Pet[], EffectHttpClientError, HttpClient.HttpClient>");
 		expect(client).toContain("export function createPet");
 		expect(client).toContain('execute<Pet[]>("GET", `/pets`, { query })');
+		expect(client).toContain(
+			'execute<Pet>("GET", `/pets/${encodeURIComponent(String(params.petId))}`)',
+		);
 
 		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
 		expect(idx).toContain('export * from "./effect-client"');
