@@ -61,17 +61,37 @@ export interface AdminResourcePlan {
 
 export type { AdminSurface };
 
-export type AdminIconKey =
-	| "database"
-	| "file"
-	| "folder"
-	| "home"
-	| "package"
-	| "settings"
-	| "shield"
-	| "shopping-cart"
-	| "user"
-	| "users";
+export const ADMIN_ICON_KEYS = [
+	"database",
+	"file",
+	"folder",
+	"home",
+	"package",
+	"settings",
+	"shield",
+	"shopping-cart",
+	"user",
+	"users",
+] as const;
+
+export type AdminIconKey = (typeof ADMIN_ICON_KEYS)[number];
+
+export interface AdminUiResourceOverlay {
+	label?: string;
+	group?: string;
+	order?: number;
+	icon?: AdminIconKey;
+	hidden?: boolean;
+	presentation?: Partial<AdminPresentationDefaults>;
+	columns?: string[];
+	fields?: string[];
+}
+
+export interface AdminUiOverlay {
+	version: 1;
+	title?: string;
+	resources: Record<string, AdminUiResourceOverlay>;
+}
 
 export interface AdminListPlan {
 	query?: AdminListQueryMapping;

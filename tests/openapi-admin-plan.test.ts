@@ -477,6 +477,19 @@ test("applies metadata to resources and builds deterministic grouped navigation"
 
 	const plan = planAdminApp(spec, {
 		presentation: { create: "dialog", edit: "dialog", detail: "sheet" },
+		uiOverlay: {
+			version: 1,
+			title: "AI Operations",
+			resources: {
+				"commerce.orders": {
+					label: "AI Orders",
+					group: "AI Group",
+					icon: "file",
+					presentation: { edit: "dialog" },
+				},
+				customers: { label: "Accounts", icon: "user", order: 5 },
+			},
+		},
 	});
 	const orders = plan.resources.find((resource) => resource.id === "orders");
 
@@ -489,9 +502,15 @@ test("applies metadata to resources and builds deterministic grouped navigation"
 		permissions: { list: "orders:read" },
 		actions: [{ key: "export", scope: "bulk" }],
 	});
+	expect(plan.title).toBe("AI Operations");
+	expect(plan.resources.find((resource) => resource.id === "customers")).toMatchObject({
+		label: "Accounts",
+		icon: "users",
+		order: 10,
+	});
 	expect(plan.navigation.groups.map((group) => group.label)).toEqual(["Commerce", "Resources"]);
 	expect(plan.navigation.groups[0]?.items.map((item) => item.label)).toEqual([
-		"Customers",
+		"Accounts",
 		"Purchases",
 	]);
 	expect(
@@ -510,6 +529,28 @@ test("preserves one-argument planning and the createMode compatibility alias", (
 		edit: "dialog",
 		detail: "page",
 	});
+});
+
+test("applies ordered field subsets and rejects unresolved overlay references", () => {
+	const plan = planAdminApp(petStoreSpec, {
+		uiOverlay: {
+			version: 1,
+			resources: { pets: { columns: ["name", "id"], fields: ["name"] } },
+		},
+	});
+	expect(plan.resources[0]?.columns.map((field) => field.name)).toEqual(["name", "id"]);
+	expect(plan.resources[0]?.fields.map((field) => field.name)).toEqual(["name"]);
+
+	expect(() =>
+		planAdminApp(petStoreSpec, {
+			uiOverlay: { version: 1, resources: { owners: { label: "Owners" } } },
+		}),
+	).toThrow(/unknown resource owners/);
+	expect(() =>
+		planAdminApp(petStoreSpec, {
+			uiOverlay: { version: 1, resources: { pets: { columns: ["missing"] } } },
+		}),
+	).toThrow(/unknown columns field missing/);
 });
 
 test("reports duplicate stable resource keys and invalid controlled icon metadata", async () => {

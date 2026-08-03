@@ -22,6 +22,7 @@ import {
 	planAdminScaffoldBootstrap,
 	planAdminScaffoldFinalize,
 	FIZZYX_ADMIN_PRESET,
+	resolveAdminPreset,
 	type AdminScaffoldBootstrapFile,
 	type AdminScaffoldCommand,
 	type AdminFramework,
@@ -37,6 +38,7 @@ import {
 	planAdminQualityCommands,
 	planAdminTargetedQualityCommands,
 } from "./openapi-admin-quality";
+import { DEFAULT_ADMIN_UI_OVERLAY_FINGERPRINT, readAdminUiOverlay } from "./openapi-admin-ui";
 
 export interface GenerateAdminProjectInput {
 	input: string;
@@ -47,6 +49,7 @@ export interface GenerateAdminProjectInput {
 	preset?: string;
 	createMode?: "page" | "dialog";
 	presentation?: Partial<AdminPresentationDefaults>;
+	shadcnArgs?: readonly string[];
 }
 
 export interface GenerateAdminProjectResult {
@@ -62,6 +65,7 @@ export interface GenerateAdminProjectResult {
 
 export interface AdminSyncCandidate {
 	specFingerprint: string;
+	overlayFingerprint?: string;
 	plan: ReturnType<typeof planAdminApp>;
 	files: GeneratedFile[];
 }
@@ -73,7 +77,7 @@ const prefixed = (prefix: string, files: GeneratedFile[]): GeneratedFile[] =>
 export const prepareAdminSyncCandidate = (
 	input: Pick<
 		GenerateAdminProjectInput,
-		"input" | "framework" | "auth" | "createMode" | "presentation"
+		"input" | "output" | "framework" | "auth" | "createMode" | "presentation"
 	>,
 ): Effect.Effect<AdminSyncCandidate, any, any> =>
 	Effect.gen(function* () {
@@ -87,9 +91,20 @@ export const prepareAdminSyncCandidate = (
 			client.spec.admin?.auth || !input.auth
 				? client.spec
 				: { ...client.spec, admin: { ...client.spec.admin, auth: input.auth } };
-		const plan = planAdminApp(spec, { presentation: input.presentation });
+		const overlay = yield* Effect.try({
+			try: () => readAdminUiOverlay(resolve(input.output)),
+			catch: (cause) =>
+				new AdminGenerationError({ message: "failed to validate admin UI overlay", cause }),
+		});
+		const plan = yield* Effect.try({
+			try: () =>
+				planAdminApp(spec, { presentation: input.presentation, uiOverlay: overlay.overlay }),
+			catch: (cause) =>
+				new AdminGenerationError({ message: "failed to apply admin UI overlay", cause }),
+		});
 		return {
 			specFingerprint: new Bun.CryptoHasher("sha256").update(JSON.stringify(spec)).digest("hex"),
+			overlayFingerprint: overlay.fingerprint ?? DEFAULT_ADMIN_UI_OVERLAY_FINGERPRINT,
 			plan,
 			files: [
 				...prefixed("src/lib/api/generated", client.files),
@@ -237,17 +252,37 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			client.spec.admin?.auth || !input.auth
 				? client.spec
 				: { ...client.spec, admin: { ...client.spec.admin, auth: input.auth } };
-		const plan = planAdminApp(spec, { presentation: input.presentation });
+		const overlay = yield* Effect.try({
+			try: () => readAdminUiOverlay(outputDir),
+			catch: (cause) =>
+				new AdminGenerationError({ message: "failed to validate admin UI overlay", cause }),
+		});
+		const plan = yield* Effect.try({
+			try: () =>
+				planAdminApp(spec, { presentation: input.presentation, uiOverlay: overlay.overlay }),
+			catch: (cause) =>
+				new AdminGenerationError({ message: "failed to apply admin UI overlay", cause }),
+		});
 		const manifestMetadata = readAdminManifestMetadata(outputDir);
 		let packageManager: AdminPackageManager = manifestMetadata?.packageManager ?? "bun";
-		const preset = input.preset ?? manifestMetadata?.preset ?? FIZZYX_ADMIN_PRESET;
+		const preset = resolveAdminPreset(
+			input.preset ?? manifestMetadata?.preset ?? FIZZYX_ADMIN_PRESET,
+			input.shadcnArgs,
+		);
 		const createMode = input.createMode ?? manifestMetadata?.createMode;
+		const legacyDiagnostics =
+			manifestMetadata && !manifestMetadata.scaffold
+				? [
+						"Legacy admin scaffold metadata is unavailable; the existing project will not be re-initialized",
+					]
+				: [];
 		let scaffold = planAdminScaffold({
 			framework: input.framework,
 			projectName,
 			targetDir: outputDir,
 			packageManager,
 			preset,
+			shadcnArgs: input.shadcnArgs,
 		});
 		let bootstrap = planAdminScaffoldBootstrap({
 			framework: input.framework,
@@ -271,7 +306,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 				framework: input.framework,
 				packageManager: packageManager as AdminPackageManager,
 				resources: plan.resources.length,
-				diagnostics: plan.diagnostics.map((item) => item.message),
+				diagnostics: [...plan.diagnostics.map((item) => item.message), ...legacyDiagnostics],
 				commands,
 				written: [],
 				conflicts: [],
@@ -279,7 +314,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 		}
 
 		const manifestExists = existsSync(`${outputDir}/.fizzyx/admin-manifest.json`);
-		if (manifestExists && input.preset && input.preset !== manifestMetadata?.preset) {
+		if (manifestExists && preset !== manifestMetadata?.preset) {
 			return yield* Effect.fail(
 				new AdminGenerationError({
 					message:
@@ -305,6 +340,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 						targetDir: outputDir,
 						packageManager,
 						preset,
+						shadcnArgs: input.shadcnArgs,
 					});
 					bootstrap = planAdminScaffoldBootstrap({
 						framework: input.framework,
@@ -355,6 +391,15 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 					preset,
 					createMode,
 					adminPlanSnapshot: plan,
+					overlayFingerprint: overlay.fingerprint ?? DEFAULT_ADMIN_UI_OVERLAY_FINGERPRINT,
+					scaffold: manifestExists
+						? manifestMetadata?.scaffold
+						: {
+								tool: "shadcn",
+								package: "shadcn@latest",
+								template: input.framework === "nextjs" ? "next" : "start",
+								argv: scaffold[0]?.argv ?? [],
+							},
 				}),
 			catch: (cause) =>
 				new AdminGenerationError({ message: "failed to write admin project", cause }),
@@ -384,7 +429,7 @@ export const generateAdminProject = (input: GenerateAdminProjectInput) =>
 			framework: input.framework,
 			packageManager: packageManager as AdminPackageManager,
 			resources: plan.resources.length,
-			diagnostics: plan.diagnostics.map((item) => item.message),
+			diagnostics: [...plan.diagnostics.map((item) => item.message), ...legacyDiagnostics],
 			commands: scaffold.map((command) => command.argv),
 			written: writeResult.written,
 			conflicts: writeResult.conflicts,

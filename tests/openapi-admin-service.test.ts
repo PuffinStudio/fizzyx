@@ -18,7 +18,7 @@ test("falls back from a known Bun compatibility failure to pnpm without selectin
 	const runner = {
 		run: (argv: string[]) => {
 			commands.push(argv);
-			if (!rejectedBun && argv[0] === "bun") {
+			if (!rejectedBun && argv[0] === "bunx" && argv.includes("init")) {
 				rejectedBun = true;
 				return Effect.fail(
 					new AdminGenerationError({
@@ -28,7 +28,7 @@ test("falls back from a known Bun compatibility failure to pnpm without selectin
 					}),
 				);
 			}
-			if (argv[0] === "pnpm" && argv.includes("create")) {
+			if (argv[0] === "pnpm" && argv.includes("init")) {
 				mkdirSync(output, { recursive: true });
 				writeFileSync(
 					join(output, "package.json"),
@@ -103,7 +103,7 @@ test("replaces and owns the official scaffold welcome route on first generation"
 	const output = join(root, "pet-admin");
 	const runner = {
 		run: (argv: string[]) => {
-			if (argv[0] === "bun" && argv.includes("next-app@latest")) {
+			if (argv[0] === "bunx" && argv.includes("shadcn@latest") && argv.includes("init")) {
 				mkdirSync(join(output, "src/app"), { recursive: true });
 				writeFileSync(
 					join(output, "package.json"),
@@ -122,7 +122,12 @@ test("replaces and owns the official scaffold welcome route on first generation"
 
 	try {
 		const result = await Effect.runPromise(
-			generateAdminProject({ input: fixture, output, framework: "nextjs" }).pipe(
+			generateAdminProject({
+				input: fixture,
+				output,
+				framework: "nextjs",
+				shadcnArgs: ["--preset", "forwardedPreset"],
+			}).pipe(
 				Effect.provideService(AdminProcessRunner, runner),
 				Effect.provide(GeneratorRegistryLive),
 			),
@@ -137,9 +142,9 @@ test("replaces and owns the official scaffold welcome route on first generation"
 		expect(readFileSync(join(output, "src/app/globals.css"), "utf8")).toContain(
 			'@import "tailwindcss" source("..");',
 		);
-		expect(readFileSync(join(output, ".fizzyx/admin-manifest.json"), "utf8")).toContain(
-			'"src/app/(admin)/page.tsx"',
-		);
+		const manifest = readFileSync(join(output, ".fizzyx/admin-manifest.json"), "utf8");
+		expect(manifest).toContain('"src/app/(admin)/page.tsx"');
+		expect(manifest).toContain('"preset": "forwardedPreset"');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -182,7 +187,7 @@ test("refreshes generated hashes after a quality failure so regeneration does no
 	let failQuality = true;
 	const runner = {
 		run: (argv: string[]) => {
-			if (argv[0] === "bun" && argv.includes("next-app@latest")) {
+			if (argv[0] === "bunx" && argv.includes("shadcn@latest") && argv.includes("init")) {
 				mkdirSync(join(output, "src/app"), { recursive: true });
 				writeFileSync(
 					join(output, "package.json"),

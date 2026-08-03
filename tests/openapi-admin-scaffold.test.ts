@@ -3,6 +3,7 @@ import {
 	FIZZYX_ADMIN_PRESET,
 	planAdminScaffold,
 	planAdminScaffoldBootstrap,
+	resolveAdminPreset,
 } from "../src/use-cases/openapi-admin-scaffold";
 
 test("plans a Bun-only official Next.js and shadcn scaffold", () => {
@@ -13,44 +14,28 @@ test("plans a Bun-only official Next.js and shadcn scaffold", () => {
 		packageManager: "bun",
 	});
 
-	expect(commands.slice(0, 2)).toEqual([
-		{
-			argv: [
-				"bun",
-				"create",
-				"next-app@latest",
-				"/tmp/pet-admin",
-				"--ts",
-				"--tailwind",
-				"--eslint",
-				"--app",
-				"--src-dir",
-				"--import-alias",
-				"@/*",
-				"--use-bun",
-				"--yes",
-				"--disable-git",
-			],
-		},
-		{
-			argv: [
-				"bunx",
-				"--bun",
-				"shadcn@latest",
-				"init",
-				"--base",
-				"base",
-				"--preset",
-				FIZZYX_ADMIN_PRESET,
-				"-y",
-				"-c",
-				"/tmp/pet-admin",
-			],
-		},
-	]);
+	expect(commands[0]).toEqual({
+		argv: [
+			"bunx",
+			"--bun",
+			"shadcn@latest",
+			"init",
+			"--template",
+			"next",
+			"--name",
+			"pet-admin",
+			"--base",
+			"base",
+			"--preset",
+			FIZZYX_ADMIN_PRESET,
+			"--yes",
+			"--cwd",
+			"/tmp",
+		],
+	});
 	expect(commands.flatMap((command) => command.argv)).not.toContain("npm");
 	expect(commands.flatMap((command) => command.argv)).not.toContain("npx");
-	expect(commands[2]?.argv).toEqual([
+	expect(commands[1]?.argv).toEqual([
 		"bun",
 		"add",
 		"@tanstack/react-query",
@@ -102,22 +87,22 @@ test("plans a Bun-only official TanStack Start and shadcn scaffold", () => {
 
 	expect(commands[0]?.argv).toEqual([
 		"bunx",
-		"@tanstack/cli@latest",
-		"create",
+		"--bun",
+		"shadcn@latest",
+		"init",
+		"--template",
+		"start",
+		"--name",
 		"pet-admin",
-		"--package-manager",
-		"bun",
-		"--framework",
-		"React",
-		"--add-ons",
-		"tanstack-query",
-		"--no-examples",
-		"--no-git",
-		"--target-dir",
-		"/tmp/pet-admin",
-		"-y",
+		"--base",
+		"base",
+		"--preset",
+		FIZZYX_ADMIN_PRESET,
+		"--yes",
+		"--cwd",
+		"/tmp",
 	]);
-	expect(commands.some((command) => command.argv.includes("init"))).toBe(false);
+	expect(commands.some((command) => command.argv.includes("@tanstack/cli@latest"))).toBe(false);
 	expect(commands.at(-1)?.argv).toEqual([
 		"bunx",
 		"--bun",
@@ -138,17 +123,8 @@ test("plans a Bun-only official TanStack Start and shadcn scaffold", () => {
 		targetDir: "/tmp/pet-admin",
 		packageManager: "bun",
 	});
-	expect(bootstrap.map((file) => file.path)).toEqual([
-		"components.json",
-		"src/lib/utils.ts",
-		".oxlintrc.json",
-		".oxfmtrc.json",
-	]);
-	expect(bootstrap[0]?.content).toContain('"css": "src/styles.css"');
-	expect(bootstrap[0]?.content).toContain('"rsc": false');
-	expect(bootstrap[0]?.content).toContain('"style": "base-mira"');
-	expect(bootstrap[0]?.content).toContain('"baseColor": "mist"');
-	expect(commands.some((command) => command.argv.includes("apply"))).toBe(true);
+	expect(bootstrap.map((file) => file.path)).toEqual([".oxlintrc.json", ".oxfmtrc.json"]);
+	expect(commands.some((command) => command.argv.includes("apply"))).toBe(false);
 	expect(commands.flatMap((command) => command.argv)).toContain(FIZZYX_ADMIN_PRESET);
 	expect(commands.flatMap((command) => command.argv).join(" ")).not.toMatch(/\bnpm|\bnpx/);
 });
@@ -163,4 +139,56 @@ test("allows callers to override the default shadcn preset", () => {
 	});
 	expect(commands.flatMap((command) => command.argv)).toContain("customPreset123");
 	expect(commands.flatMap((command) => command.argv)).not.toContain(FIZZYX_ADMIN_PRESET);
+});
+
+test("forwards non-structural shadcn init arguments without changing argv boundaries", () => {
+	const commands = planAdminScaffold({
+		framework: "nextjs",
+		projectName: "pet-admin",
+		targetDir: "/tmp/pet-admin",
+		packageManager: "bun",
+		shadcnArgs: ["--rtl", "--base", "aria", "button", "https://registry.example/item.json"],
+	});
+
+	expect(commands[0]?.argv.slice(-5)).toEqual([
+		"--rtl",
+		"--base",
+		"aria",
+		"button",
+		"https://registry.example/item.json",
+	]);
+});
+
+test("uses a forwarded shadcn preset as the effective recorded preset", () => {
+	expect(resolveAdminPreset("configured", ["--preset", "forwarded"])).toBe("forwarded");
+	expect(resolveAdminPreset(undefined, ["-pattached"])).toBe("attached");
+});
+
+test("rejects shadcn passthrough arguments that conflict with scaffold ownership", () => {
+	for (const args of [
+		["--template", "vite"],
+		["--name=other"],
+		["-c", "/elsewhere"],
+		["--defaults"],
+		["-y"],
+	]) {
+		expect(() =>
+			planAdminScaffold({
+				framework: "nextjs",
+				projectName: "pet-admin",
+				targetDir: "/tmp/pet-admin",
+				packageManager: "bun",
+				shadcnArgs: args,
+			}),
+		).toThrow(/reserved shadcn init argument/);
+	}
+	expect(() =>
+		planAdminScaffold({
+			framework: "nextjs",
+			projectName: "pet-admin",
+			targetDir: "/tmp/pet-admin",
+			packageManager: "bun",
+			shadcnArgs: ["--monorepo"],
+		}),
+	).toThrow(/not supported by the current admin renderer/);
 });

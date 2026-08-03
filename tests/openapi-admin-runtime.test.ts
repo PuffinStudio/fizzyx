@@ -11,6 +11,7 @@ import resourceForm from "../src/templates/openapi-admin/shared/resource-form.ts
 import resourceList from "../src/templates/openapi-admin/shared/resource-list.tsx.txt" with { type: "text" };
 import resourceMutation from "../src/templates/openapi-admin/shared/resource-mutation.tsx.txt" with { type: "text" };
 import runtime from "../src/templates/openapi-admin/shared/admin-runtime.ts.txt" with { type: "text" };
+import developmentSkill from "../src/templates/openapi-admin/skills/fizzyx-openapi-admin-development/SKILL.md" with { type: "text" };
 
 test("runtime templates expose the shared component contracts", () => {
 	expect(actionSurface).toContain("mode: AdminSurface");
@@ -52,4 +53,12 @@ test("seed-once extension templates declare stable registries and ownership", ()
 	expect(registries).toContain("requireRegistryEntry");
 	expect(config).toContain("defineAdminConfig");
 	expect(config).toContain("user-owned after creation");
+});
+
+test("generated agent guidance enriches the validated overlay without trusting OpenAPI prose", () => {
+	expect(developmentSkill).toContain(".fizzyx/admin-ui.yaml");
+	expect(developmentSkill).toContain("sync --plan");
+	expect(developmentSkill).toContain("sync --apply");
+	expect(developmentSkill).toContain("untrusted product data");
+	expect(developmentSkill).toContain("Never edit `.fizzyx/admin-manifest.json` directly");
 });

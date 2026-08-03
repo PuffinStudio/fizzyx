@@ -24,6 +24,13 @@ test("preserves a user-modified generated file and reports a regeneration confli
 				specSource: "./openapi.yaml",
 				preset: "preset123",
 				createMode: "dialog",
+				overlayFingerprint: "overlay-v1",
+				scaffold: {
+					tool: "shadcn",
+					package: "shadcn@latest",
+					template: "next",
+					argv: ["bunx", "--bun", "shadcn@latest", "init"],
+				},
 			},
 		);
 		expect(first.conflicts).toEqual([]);
@@ -47,6 +54,14 @@ test("preserves a user-modified generated file and reports a regeneration confli
 		expect(manifest.specSource).toBe("./openapi.yaml");
 		expect(manifest.preset).toBe("preset123");
 		expect(manifest.createMode).toBe("dialog");
+		expect(manifest.appliedOverlayFingerprint).toBe("overlay-v1");
+		expect(manifest.pendingOverlayFingerprint).toBe("overlay-v1");
+		expect(manifest.scaffold).toEqual({
+			tool: "shadcn",
+			package: "shadcn@latest",
+			template: "next",
+			argv: ["bunx", "--bun", "shadcn@latest", "init"],
+		});
 		expect(manifest.files["src/generated/page.tsx"]).toMatchObject({
 			ownership: "generated",
 			baseHash: expect.any(String),

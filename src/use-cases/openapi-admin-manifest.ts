@@ -33,6 +33,11 @@ interface AdminManifestV2 {
 	appliedSpecFingerprint: string | null;
 	pendingSpecFingerprint: string | null;
 	adminPlanSnapshot: unknown;
+	/** Compatibility alias for early manifest-v2 builds. */
+	overlayFingerprint?: string | null;
+	appliedOverlayFingerprint?: string | null;
+	pendingOverlayFingerprint?: string | null;
+	scaffold?: AdminScaffoldMetadata;
 	specSource?: string;
 	preset?: string;
 	createMode?: "page" | "dialog";
@@ -40,6 +45,13 @@ interface AdminManifestV2 {
 }
 
 type AdminManifest = AdminManifestV1 | AdminManifestV2;
+
+export interface AdminScaffoldMetadata {
+	tool: "shadcn";
+	package: "shadcn@latest";
+	template: "next" | "start";
+	argv: string[];
+}
 
 export interface AdminManifestMetadata {
 	framework: AdminFramework;
@@ -51,6 +63,8 @@ export interface AdminManifestMetadata {
 	generatorVersion?: string;
 	templateVersion?: number;
 	adminPlanSnapshot?: unknown;
+	overlayFingerprint?: string | null;
+	scaffold?: AdminScaffoldMetadata;
 }
 
 export interface AdminWriteResult {
@@ -177,6 +191,9 @@ export const readAdminManifestMetadata = (root: string): AdminManifestMetadata |
 					generatorVersion: manifest.generatorVersion,
 					templateVersion: manifest.templateVersion,
 					adminPlanSnapshot: manifest.adminPlanSnapshot,
+					overlayFingerprint:
+						manifest.appliedOverlayFingerprint ?? manifest.overlayFingerprint ?? null,
+					scaffold: manifest.scaffold,
 				}
 			: {}),
 	};
@@ -195,6 +212,14 @@ export const writeAdminGeneratedFiles = (
 	const normalizedFiles = files.map((file) => ({ ...file, path: safeRelativePath(file.path) }));
 	const incoming = new Set(normalizedFiles.map((file) => file.path));
 	const conflicts = new Set<string>();
+	const previousOverlayFingerprint =
+		previous?.version === 2
+			? (previous.appliedOverlayFingerprint ?? previous.overlayFingerprint ?? null)
+			: null;
+	const desiredOverlayFingerprint =
+		metadata.overlayFingerprint !== undefined
+			? metadata.overlayFingerprint
+			: previousOverlayFingerprint;
 
 	// Preflight the complete change set so a late conflict cannot leave a partially updated tree.
 	for (const [relative, entry] of Object.entries(previousFiles)) {
@@ -233,6 +258,7 @@ export const writeAdminGeneratedFiles = (
 		specSource: metadata.specSource ?? previous?.specSource,
 		preset: metadata.preset ?? previous?.preset,
 		createMode: metadata.createMode ?? previous?.createMode,
+		scaffold: metadata.scaffold ?? (previous?.version === 2 ? previous.scaffold : undefined),
 	};
 
 	if (conflicts.size > 0) {
@@ -241,6 +267,8 @@ export const writeAdminGeneratedFiles = (
 			...commonManifest,
 			appliedSpecFingerprint: appliedFingerprint(previous),
 			pendingSpecFingerprint: metadata.specFingerprint,
+			appliedOverlayFingerprint: previousOverlayFingerprint,
+			pendingOverlayFingerprint: desiredOverlayFingerprint,
 			files: nextFiles,
 		});
 		return result;
@@ -277,6 +305,10 @@ export const writeAdminGeneratedFiles = (
 			? appliedFingerprint(previous)
 			: metadata.specFingerprint,
 		pendingSpecFingerprint: options.deferAppliedFingerprint ? metadata.specFingerprint : null,
+		appliedOverlayFingerprint: options.deferAppliedFingerprint
+			? previousOverlayFingerprint
+			: desiredOverlayFingerprint,
+		pendingOverlayFingerprint: options.deferAppliedFingerprint ? desiredOverlayFingerprint : null,
 		files: nextFiles,
 	});
 	return result;
@@ -297,6 +329,12 @@ export const commitAdminManifestApplied = (
 		...manifest,
 		appliedSpecFingerprint: fingerprint,
 		pendingSpecFingerprint: null,
+		appliedOverlayFingerprint:
+			manifest.pendingOverlayFingerprint ??
+			manifest.appliedOverlayFingerprint ??
+			manifest.overlayFingerprint ??
+			null,
+		pendingOverlayFingerprint: null,
 		adminPlanSnapshot,
 	});
 };

@@ -1,5 +1,6 @@
 import { adminQualityBootstrapFiles } from "./openapi-admin-quality";
 import autoformSelectFieldTemplate from "../templates/openapi-admin/shared/autoform-select-field.tsx.txt" with { type: "text" };
+import { dirname } from "node:path";
 
 export type AdminFramework = "nextjs" | "tanstack-start";
 export type AdminPackageManager = "bun" | "pnpm";
@@ -10,6 +11,7 @@ export interface AdminScaffoldInput {
 	targetDir: string;
 	packageManager: AdminPackageManager;
 	preset?: string;
+	shadcnArgs?: readonly string[];
 }
 
 export interface AdminScaffoldCommand {
@@ -30,90 +32,91 @@ export const AUTOFORM_TANSTACK_REGISTRY =
 const shadcnRunner = (packageManager: AdminPackageManager): string[] =>
 	packageManager === "bun" ? ["bunx", "--bun"] : ["pnpm", "dlx"];
 
-const nextCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
-	argv:
-		input.packageManager === "bun"
-			? [
-					"bun",
-					"create",
-					"next-app@latest",
-					input.targetDir,
-					"--ts",
-					"--tailwind",
-					"--eslint",
-					"--app",
-					"--src-dir",
-					"--import-alias",
-					"@/*",
-					"--use-bun",
-					"--yes",
-					"--disable-git",
-				]
-			: [
-					"pnpm",
-					"create",
-					"next-app@latest",
-					input.targetDir,
-					"--ts",
-					"--tailwind",
-					"--eslint",
-					"--app",
-					"--src-dir",
-					"--import-alias",
-					"@/*",
-					"--use-pnpm",
-					"--yes",
-					"--disable-git",
-				],
-});
+const RESERVED_SHADCN_ARGS = new Set([
+	"--template",
+	"-t",
+	"--name",
+	"-n",
+	"--cwd",
+	"-c",
+	"--yes",
+	"-y",
+	"--defaults",
+	"-d",
+]);
 
-const shadcnCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
-	argv: [
-		...shadcnRunner(input.packageManager),
-		"shadcn@latest",
-		"init",
-		"--base",
-		"base",
-		"--preset",
-		input.preset ?? FIZZYX_ADMIN_PRESET,
-		"-y",
-		"-c",
-		input.targetDir,
-	],
-});
+const INCOMPATIBLE_SHADCN_ARGS = new Set(["--monorepo"]);
 
-const shadcnApplyPresetCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
-	argv: [
-		...shadcnRunner(input.packageManager),
-		"shadcn@latest",
-		"apply",
-		"--preset",
-		input.preset ?? FIZZYX_ADMIN_PRESET,
-		"-y",
-		"-c",
-		input.targetDir,
-	],
-});
+const optionName = (argument: string): string => argument.split("=", 1)[0] ?? argument;
 
-const tanstackStartCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
-	argv: [
-		...(input.packageManager === "bun" ? ["bunx"] : ["pnpm", "dlx"]),
-		"@tanstack/cli@latest",
-		"create",
-		input.projectName,
-		"--package-manager",
-		input.packageManager,
-		"--framework",
-		"React",
-		"--add-ons",
-		"tanstack-query",
-		"--no-examples",
-		"--no-git",
-		"--target-dir",
-		input.targetDir,
-		"-y",
-	],
-});
+const validatesShadcnArgs = (args: readonly string[]): void => {
+	for (const argument of args) {
+		const name = optionName(argument);
+		const attachedShort = /^-([tcnyd])[^-]/.exec(name)?.[1];
+		if (RESERVED_SHADCN_ARGS.has(name) || attachedShort) {
+			throw new Error(`reserved shadcn init argument cannot be forwarded: ${argument}`);
+		}
+		if (INCOMPATIBLE_SHADCN_ARGS.has(name)) {
+			throw new Error(
+				`shadcn init argument is not supported by the current admin renderer: ${argument}`,
+			);
+		}
+	}
+};
+
+const optionValue = (args: readonly string[], names: readonly string[]): string | undefined => {
+	for (let index = 0; index < args.length; index += 1) {
+		const argument = args[index] ?? "";
+		const name = optionName(argument);
+		if (!names.includes(name)) {
+			const short = names.find((candidate) => candidate.length === 2 && name.startsWith(candidate));
+			if (short) return name.slice(short.length);
+			continue;
+		}
+		if (argument.includes("=")) return argument.slice(argument.indexOf("=") + 1);
+		const value = args[index + 1];
+		if (!value || value.startsWith("-")) throw new Error(`${argument} requires a value`);
+		return value;
+	}
+	return undefined;
+};
+
+export const resolveAdminPreset = (
+	requested: string | undefined,
+	shadcnArgs: readonly string[] = [],
+): string => optionValue(shadcnArgs, ["--preset", "-p"]) ?? requested ?? FIZZYX_ADMIN_PRESET;
+
+const hasOption = (args: readonly string[], names: readonly string[]): boolean =>
+	args.some((argument) => {
+		const name = optionName(argument);
+		return (
+			names.includes(name) ||
+			names.some((candidate) => candidate.length === 2 && name.startsWith(candidate))
+		);
+	});
+
+const shadcnInitCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => {
+	const shadcnArgs = input.shadcnArgs ?? [];
+	validatesShadcnArgs(shadcnArgs);
+	const preset = resolveAdminPreset(input.preset, shadcnArgs);
+	return {
+		argv: [
+			...shadcnRunner(input.packageManager),
+			"shadcn@latest",
+			"init",
+			"--template",
+			input.framework === "nextjs" ? "next" : "start",
+			"--name",
+			input.projectName,
+			...(hasOption(shadcnArgs, ["--base", "-b"]) ? [] : ["--base", "base"]),
+			...(hasOption(shadcnArgs, ["--preset", "-p"]) ? [] : ["--preset", preset]),
+			"--yes",
+			"--cwd",
+			dirname(input.targetDir),
+			...shadcnArgs,
+		],
+	};
+};
 
 const queryDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldCommand => ({
 	argv:
@@ -185,72 +188,18 @@ const qualityDependencyCommand = (input: AdminScaffoldInput): AdminScaffoldComma
 });
 
 export const planAdminScaffold = (input: AdminScaffoldInput): AdminScaffoldCommand[] => {
-	const frameworkCommand =
-		input.framework === "nextjs" ? nextCommand(input) : tanstackStartCommand(input);
-	return input.framework === "nextjs"
-		? [
-				frameworkCommand,
-				shadcnCommand(input),
-				queryDependencyCommand(input),
-				qualityDependencyCommand(input),
-				autoformCommand(input),
-				shadcnComponentsCommand(input),
-			]
-		: [
-				frameworkCommand,
-				queryDependencyCommand(input),
-				qualityDependencyCommand(input),
-				shadcnApplyPresetCommand(input),
-				autoformCommand(input),
-				shadcnComponentsCommand(input),
-			];
+	return [
+		shadcnInitCommand(input),
+		queryDependencyCommand(input),
+		qualityDependencyCommand(input),
+		autoformCommand(input),
+		shadcnComponentsCommand(input),
+	];
 };
-
-const tanstackComponentsConfig = `${JSON.stringify(
-	{
-		$schema: "https://ui.shadcn.com/schema.json",
-		style: "base-mira",
-		rsc: false,
-		tsx: true,
-		tailwind: {
-			config: "",
-			css: "src/styles.css",
-			baseColor: "mist",
-			cssVariables: true,
-			prefix: "",
-		},
-		iconLibrary: "lucide",
-		aliases: {
-			components: "@/components",
-			utils: "@/lib/utils",
-			ui: "@/components/ui",
-			lib: "@/lib",
-			hooks: "@/hooks",
-		},
-		registries: {},
-	},
-	null,
-	2,
-)}\n`;
-
-const tanstackUtils = `import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
-`;
 
 export const planAdminScaffoldBootstrap = (
 	input: AdminScaffoldInput,
-): AdminScaffoldBootstrapFile[] =>
-	input.framework === "tanstack-start"
-		? [
-				{ path: "components.json", content: tanstackComponentsConfig },
-				{ path: "src/lib/utils.ts", content: tanstackUtils },
-				...adminQualityBootstrapFiles(input.framework),
-			]
-		: adminQualityBootstrapFiles(input.framework);
+): AdminScaffoldBootstrapFile[] => adminQualityBootstrapFiles(input.framework);
 
 export const planAdminScaffoldFinalize = (
 	_input: AdminScaffoldInput,

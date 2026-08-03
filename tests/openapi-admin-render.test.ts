@@ -147,6 +147,15 @@ const plan: AdminAppPlan = {
 	],
 };
 
+test("renders a seed-once physical admin UI overlay", () => {
+	const overlay = renderAdminApp(plan, "nextjs").find(
+		(file) => file.path === ".fizzyx/admin-ui.yaml",
+	);
+	expect(overlay).toMatchObject({ ownership: "seed-once" });
+	expect(overlay?.content).toContain("version: 1");
+	expect(overlay?.content).toContain("sync --plan");
+});
+
 test("renders native Next.js App Router files backed by generated query hooks", () => {
 	const files = renderAdminApp(plan, "nextjs");
 	const paths = files.map((file) => file.path);

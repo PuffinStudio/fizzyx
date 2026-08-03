@@ -235,6 +235,7 @@ const flattenAdminPlanDiff = (diff: OpenApiAdminPlanDiff): string[] => {
 interface AdminProjectSyncState {
 	plan: AdminAppPlanLike | null;
 	candidate: AdminSyncCandidate | null;
+	overlayFingerprint: string | null;
 }
 
 const qualityIssue = (error: unknown, argv: readonly string[]): string => {
@@ -285,6 +286,7 @@ export const syncAdminProject = (
 							state: {
 								plan: candidate.plan as unknown as AdminAppPlanLike,
 								candidate,
+								overlayFingerprint: candidate.overlayFingerprint ?? null,
 							},
 						};
 					},
@@ -298,6 +300,9 @@ export const syncAdminProject = (
 						if (!candidate) throw new Error("admin sync candidate is unavailable");
 						const result = await getPreflight(candidate);
 						return [
+							...(previous?.overlayFingerprint === desired.overlayFingerprint
+								? []
+								: ["admin UI overlay changed"]),
 							...planDiff,
 							...result.written.map((path) => `file written: ${path}`),
 							...result.deleted.map((path) => `file deleted: ${path}`),
@@ -328,6 +333,7 @@ export const syncAdminProject = (
 								preset: input.preset ?? previousMetadata?.preset,
 								createMode: input.createMode ?? previousMetadata?.createMode,
 								adminPlanSnapshot: candidate.plan,
+								overlayFingerprint: candidate.overlayFingerprint ?? null,
 							},
 							{ deferAppliedFingerprint: true },
 						);
@@ -356,12 +362,14 @@ export const syncAdminProject = (
 				manifest: {
 					loadApplied: async () => {
 						const snapshot = readAdminManifestSnapshot(outputDir);
-						packageManager = readAdminManifestMetadata(outputDir)?.packageManager ?? "bun";
+						const metadata = readAdminManifestMetadata(outputDir);
+						packageManager = metadata?.packageManager ?? "bun";
 						return {
 							fingerprint: snapshot.appliedFingerprint,
 							state: {
 								plan: snapshot.adminPlanSnapshot as AdminAppPlanLike | null,
 								candidate: null,
+								overlayFingerprint: metadata?.overlayFingerprint ?? null,
 							},
 						};
 					},

@@ -65,6 +65,7 @@ import adminAuthSkillTemplate from "../templates/openapi-admin/skills/fizzyx-ope
 import adminAuthSkillMetadataTemplate from "../templates/openapi-admin/skills/fizzyx-openapi-admin-auth/agents/openai.yaml" with { type: "text" };
 import adminDevelopmentSkillTemplate from "../templates/openapi-admin/skills/fizzyx-openapi-admin-development/SKILL.md" with { type: "text" };
 import adminDevelopmentSkillMetadataTemplate from "../templates/openapi-admin/skills/fizzyx-openapi-admin-development/agents/openai.yaml" with { type: "text" };
+import { DEFAULT_ADMIN_UI_OVERLAY } from "./openapi-admin-ui";
 
 const identifier = (value: string): string => {
 	if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value)) {
@@ -797,6 +798,7 @@ export const renderAdminApp = (
 			: 'import.meta.env.VITE_API_BASE_URL ?? ""';
 	const shared = [
 		renderPlan(plan),
+		seedFile(".fizzyx/admin-ui.yaml", DEFAULT_ADMIN_UI_OVERLAY),
 		{
 			path: ".env.example",
 			content: authEnabled

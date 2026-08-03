@@ -1,0 +1,6 @@
+# Seeded by fizzyx. This file is user/agent-owned after creation.
+# Edit presentation only, then run:
+#   fizzyx openapi admin sync --plan
+#   fizzyx openapi admin sync --apply
+version: 1
+resources: {}

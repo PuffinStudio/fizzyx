@@ -290,6 +290,75 @@ test("concrete plan deterministically reports drift without creating the output"
 	}
 });
 
+test("concrete plan validates and diffs the user-owned admin UI overlay", async () => {
+	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-sync-overlay-"));
+	const output = join(root, "pet-admin");
+	const runner = { run: () => Effect.succeed({ stdout: "", stderr: "" }) };
+	try {
+		await Effect.runPromise(
+			syncAdminProject({ input: fixture, output, framework: "nextjs", mode: "apply" }).pipe(
+				Effect.provideService(AdminProcessRunner, runner),
+				Effect.provide(GeneratorRegistryLive),
+			),
+		);
+		const unchanged = await Effect.runPromise(
+			syncAdminProject({ input: fixture, output, framework: "nextjs", mode: "plan" }).pipe(
+				Effect.provideService(AdminProcessRunner, runner),
+				Effect.provide(GeneratorRegistryLive),
+			),
+		);
+		expect(unchanged.status).toBe("clean");
+		expect(unchanged.diff).not.toContain("admin UI overlay changed");
+		const overlayPath = join(output, ".fizzyx/admin-ui.yaml");
+		writeFileSync(
+			overlayPath,
+			Bun.YAML.stringify({
+				version: 1,
+				resources: {
+					pets: { label: "Pet Directory", group: "Catalog", icon: "package" },
+				},
+			}),
+		);
+		const before = readFileSync(overlayPath, "utf8");
+
+		const result = await Effect.runPromise(
+			syncAdminProject({ input: fixture, output, framework: "nextjs", mode: "plan" }).pipe(
+				Effect.provideService(AdminProcessRunner, runner),
+				Effect.provide(GeneratorRegistryLive),
+			),
+		);
+
+		expect(result.status).toBe("drift");
+		expect(result.diff).toContain("admin UI overlay changed");
+		expect(result.diff).toContain("navigation changed");
+		expect(result.diff).toContain("resource pets property changed: label");
+		expect(readFileSync(overlayPath, "utf8")).toBe(before);
+
+		const applied = await Effect.runPromise(
+			syncAdminProject({ input: fixture, output, framework: "nextjs", mode: "apply" }).pipe(
+				Effect.provideService(AdminProcessRunner, runner),
+				Effect.provide(GeneratorRegistryLive),
+			),
+		);
+		const manifest = JSON.parse(
+			readFileSync(join(output, ".fizzyx/admin-manifest.json"), "utf8"),
+		) as {
+			appliedOverlayFingerprint: string | null;
+			pendingOverlayFingerprint: string | null;
+			adminPlanSnapshot: { resources: Array<{ key: string; label: string }> };
+		};
+		expect(applied.status).toBe("applied");
+		expect(manifest.appliedOverlayFingerprint).toMatch(/^[a-f0-9]{64}$/);
+		expect(manifest.pendingOverlayFingerprint).toBeNull();
+		expect(manifest.adminPlanSnapshot.resources.find((item) => item.key === "pets")?.label).toBe(
+			"Pet Directory",
+		);
+		expect(readFileSync(overlayPath, "utf8")).toBe(before);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("concrete apply leaves a pending fingerprint when targeted quality fails", async () => {
 	const root = mkdtempSync(join(tmpdir(), "fizzyx-admin-sync-quality-"));
 	const output = join(root, "pet-admin");

@@ -297,9 +297,24 @@ fizzyx openapi admin -i https://api.example.com/openapi.json -o ./admin --framew
 ```
 
 Use `--framework tanstack-start` for TanStack Start, or add `--dry-run` to inspect the
-scaffold commands without creating files. The generator uses the official framework
-scaffolds, Bun and `bunx` by default, and only falls back to pnpm for a known Bun
-compatibility failure. It never invokes npm or npx.
+scaffold commands without creating files. The current `shadcn@latest init` owns the complete
+Next.js or TanStack Start initialization; FizzyX no longer maintains a parallel framework scaffold
+or `components.json` bootstrap. It uses Bun and `bunx` by default and only falls back to pnpm for a
+known Bun compatibility failure. It never invokes npm or npx.
+
+Forward new non-structural shadcn initializer options without waiting for FizzyX to model them by
+repeating `--shadcn-arg`. Each occurrence is one exact argv value:
+
+```sh
+fizzyx openapi admin \
+  -i ./openapi.json -o ./pet-admin --framework nextjs \
+  --shadcn-arg=--rtl \
+  --shadcn-arg=--base --shadcn-arg=aria
+```
+
+FizzyX owns `--template`, `--name`, `--cwd`, and non-interactive flags, so forwarding them fails
+before creating files. Monorepo layout is rejected for now because generated routes target the
+project root. A forwarded `--preset` is allowed and becomes the preset recorded by the manifest.
 
 Generated admin projects include:
 
@@ -314,6 +329,8 @@ Generated admin projects include:
 - OXC `fmt`, `lint`, `lint:fix`, and `check` scripts, run automatically after first generation
 - optional server-cookie authentication with a login page, server guard, logout, and same-origin BFF
 - `.fizzyx/admin-manifest.json` regeneration safety that preserves user-edited generated files
+- `.fizzyx/admin-ui.yaml`, a validated seed-once UI overlay for labels, sidebar grouping/order,
+  controlled icons, surfaces, and ordered field subsets
 - project-local AI skills for auth discovery and conflict-safe generated-project development
 
 The command works without `.fizzyx.yaml` when all three flags are provided. Teams may keep defaults
@@ -374,6 +391,7 @@ src/
   app/(admin)/            # Next.js routes (Next.js target)
   routes/_admin/          # file routes (TanStack Start target)
 .fizzyx/admin-manifest.json
+.fizzyx/admin-ui.yaml         # user/agent-owned presentation overlay
 .agents/skills/             # generated-project development and auth discovery guidance
 ```
 
@@ -381,6 +399,21 @@ The output directory must be empty on the first run. Re-run the same command to 
 unchanged generated files; local edits are reported and preserved as conflicts. Files listed in the
 manifest are generator-owned. Prefer new wrapper/adapter/route files for durable customization; edit
 the OpenAPI or auth configuration and regenerate for contract changes.
+
+For presentation customization, edit `.fizzyx/admin-ui.yaml` directly or let an AI coding agent do
+so. The overlay accepts only validated presentation fields and controlled icon names; it cannot add
+API operations, imports, packages, URLs, or commands. Explicit `x-fizzyx-admin` metadata takes
+precedence, then the overlay, then inferred defaults. Preview and apply changes with:
+
+```sh
+fizzyx openapi admin sync --plan
+fizzyx openapi admin sync --apply
+```
+
+The plan reports semantic navigation/resource changes. The JSON manifest is machine-owned and must
+not be edited by people or agents; applied OpenAPI and overlay fingerprints advance only after
+conflict and quality checks pass. Existing projects with an older manifest remain syncable and are
+not re-initialized.
 
 Resource inference intentionally targets tagged, conventional collection/member CRUD paths.
 Unmapped operations remain callable through the generated client and are reported as diagnostics.

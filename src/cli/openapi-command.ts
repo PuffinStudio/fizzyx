@@ -241,6 +241,7 @@ const handleAdmin = (config: {
 	preset: Option.Option<string>;
 	createMode: Option.Option<"page" | "dialog">;
 	dryRun: boolean;
+	shadcnArgs: ReadonlyArray<string>;
 }): Effect.Effect<void, any, any> =>
 	Effect.gen(function* () {
 		const repository = yield* ConfigRepo;
@@ -269,6 +270,7 @@ const handleAdmin = (config: {
 				preset,
 				createMode,
 				presentation: defaults?.presentation,
+				shadcnArgs: config.shadcnArgs,
 			}),
 		);
 		if (config.dryRun) {
@@ -315,6 +317,12 @@ const openapiAdminCmd = Command.make(
 		),
 		dryRun: Flag.boolean("dry-run").pipe(
 			Flag.withDescription("Print Bun-first scaffold commands without writing a project"),
+		),
+		shadcnArgs: Flag.string("shadcn-arg").pipe(
+			Flag.atMost(100),
+			Flag.withDescription(
+				"Repeat to forward one argv value to shadcn init (use --shadcn-arg=--flag)",
+			),
 		),
 	},
 	handleAdmin,

@@ -1,11 +1,13 @@
-import type {
-	AdminAppPlan,
-	AdminFilterField,
-	AdminIconKey,
-	AdminListQueryMapping,
-	AdminOperationKind,
-	AdminPlanDiagnostic,
-	AdminResourcePlan,
+import {
+	ADMIN_ICON_KEYS,
+	type AdminAppPlan,
+	type AdminFilterField,
+	type AdminIconKey,
+	type AdminListQueryMapping,
+	type AdminOperationKind,
+	type AdminPlanDiagnostic,
+	type AdminResourcePlan,
+	type AdminUiOverlay,
 } from "../domain/openapi-admin-models";
 import type {
 	AdminPresentationDefaults,
@@ -206,23 +208,13 @@ const BUILTIN_PRESENTATION: AdminPresentationDefaults = {
 	detail: "page",
 };
 
-const ADMIN_ICON_KEYS = new Set<AdminIconKey>([
-	"database",
-	"file",
-	"folder",
-	"home",
-	"package",
-	"settings",
-	"shield",
-	"shopping-cart",
-	"user",
-	"users",
-]);
+const ADMIN_ICON_KEY_SET = new Set<string>(ADMIN_ICON_KEYS);
 
 export interface AdminPlannerOptions {
 	presentation?: Partial<AdminPresentationDefaults>;
 	/** Backward-compatible alias that applies to both create and edit. */
 	createMode?: OpenApiAdminProjectConfig["createMode"];
+	uiOverlay?: AdminUiOverlay;
 }
 
 const projectDefaults = (options: AdminPlannerOptions): AdminPresentationDefaults => ({
@@ -276,6 +268,7 @@ const navigationFor = (resources: AdminResourcePlan[]) => {
 
 export const planAdminApp = (spec: ParsedSpec, options: AdminPlannerOptions = {}): AdminAppPlan => {
 	const resources = new Map<string, AdminResourcePlan>();
+	const usedOverlayKeys = new Set<string>();
 	const authDiscovery = discoverAdminAuth(spec);
 	const diagnostics: AdminPlanDiagnostic[] = [
 		...authDiscovery.diagnostics,
@@ -308,7 +301,6 @@ export const planAdminApp = (spec: ParsedSpec, options: AdminPlannerOptions = {}
 		const resourceId = resourceIdFor(endpoint);
 		const tag = endpoint.tags?.[0];
 		const tagId = tag ? slugify(tag) : undefined;
-		const metadata = tagId === resourceId && tag ? tagMetadata.get(tag) : undefined;
 		const kind = classifyOperation(endpoint);
 		if (!resourceId || !kind) {
 			diagnostics.push({
@@ -318,16 +310,29 @@ export const planAdminApp = (spec: ParsedSpec, options: AdminPlannerOptions = {}
 			});
 			continue;
 		}
+		const metadata = tagId === resourceId && tag ? tagMetadata.get(tag) : undefined;
+		const overlayKey =
+			metadata?.key && options.uiOverlay?.resources[metadata.key]
+				? metadata.key
+				: options.uiOverlay?.resources[resourceId]
+					? resourceId
+					: undefined;
+		const overlay = overlayKey ? options.uiOverlay?.resources[overlayKey] : undefined;
+		if (overlayKey) usedOverlayKeys.add(overlayKey);
 
 		const current = resources.get(resourceId) ?? {
 			key: metadata?.key ?? resourceId,
 			id: resourceId,
-			label: metadata?.label ?? humanize(resourceId),
+			label: metadata?.label ?? overlay?.label ?? humanize(resourceId),
 			path: `/${resourceId}`,
-			group: metadata?.group ?? (tagId !== resourceId && tag ? humanize(tag) : undefined),
-			order: metadata?.order,
-			hidden: metadata?.hidden,
-			presentation: { ...defaults, ...metadata?.presentation },
+			group:
+				metadata?.group ??
+				overlay?.group ??
+				(tagId !== resourceId && tag ? humanize(tag) : undefined),
+			order: metadata?.order ?? overlay?.order,
+			icon: overlay?.icon,
+			hidden: metadata?.hidden ?? overlay?.hidden,
+			presentation: { ...defaults, ...overlay?.presentation, ...metadata?.presentation },
 			permissions: metadata?.permissions,
 			actions: metadata?.actions,
 			idParam: endpoint.pathParams[0]?.name,
@@ -336,8 +341,7 @@ export const planAdminApp = (spec: ParsedSpec, options: AdminPlannerOptions = {}
 			operations: {},
 		};
 		if (metadata?.icon) {
-			if (ADMIN_ICON_KEYS.has(metadata.icon as AdminIconKey))
-				current.icon = metadata.icon as AdminIconKey;
+			if (ADMIN_ICON_KEY_SET.has(metadata.icon)) current.icon = metadata.icon as AdminIconKey;
 			else if (!current.icon) {
 				diagnostics.push({
 					code: "invalid-admin-metadata",
@@ -403,10 +407,51 @@ export const planAdminApp = (spec: ParsedSpec, options: AdminPlannerOptions = {}
 		});
 		resource.key = resource.id;
 	}
+	for (const overlayKey of Object.keys(options.uiOverlay?.resources ?? {})) {
+		if (!usedOverlayKeys.has(overlayKey)) {
+			throw new Error(`invalid admin UI overlay: unknown resource ${overlayKey}`);
+		}
+	}
+	const selectProperties = (
+		resource: AdminResourcePlan,
+		scope: "columns" | "fields",
+		names: string[] | undefined,
+	) => {
+		if (!names) return resource[scope];
+		const available = new Map(resource[scope].map((property) => [property.name, property]));
+		return names.map((name) => {
+			const property = available.get(name);
+			if (!property) {
+				throw new Error(
+					`invalid admin UI overlay: resource ${resource.key} references unknown ${scope} field ${name}`,
+				);
+			}
+			return property;
+		});
+	};
+	for (const resource of plannedResources) {
+		const overlay =
+			options.uiOverlay?.resources[resource.key] ?? options.uiOverlay?.resources[resource.id];
+		if (!overlay) continue;
+		resource.columns = selectProperties(resource, "columns", overlay.columns);
+		const selectedFields = selectProperties(resource, "fields", overlay.fields);
+		resource.fields = selectedFields;
+		if (overlay.fields && resource.forms) {
+			const selectedNames = new Set(overlay.fields);
+			resource.forms = {
+				...(resource.forms.create
+					? { create: resource.forms.create.filter((field) => selectedNames.has(field.name)) }
+					: {}),
+				...(resource.forms.update
+					? { update: resource.forms.update.filter((field) => selectedNames.has(field.name)) }
+					: {}),
+			};
+		}
+	}
 
 	return {
 		version: 2,
-		title: spec.title,
+		title: options.uiOverlay?.title ?? spec.title,
 		resources: plannedResources,
 		navigation: navigationFor(plannedResources),
 		defaults,
