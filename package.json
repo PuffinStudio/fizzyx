@@ -17,6 +17,7 @@
     "dist/main.js",
     "docs/images",
     "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
     "README.md"
   ],
   "type": "module",

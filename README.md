@@ -545,3 +545,13 @@ Credentials are resolved in this priority order:
 3. `.fizzyx.yaml` `access_key_id` / `secret_access_key` fields (legacy, discouraged)
 
 Credentials stored as `default` (without `--env`) are used as a fallback for all environments when no env-specific key is found. This means you only need to run `fizzyx oss setup` once — dev, prod, and any other env will reuse the same keys.
+
+## License
+
+MIT, © 2026 Puffin Studio. See [`LICENSE`](LICENSE).
+
+Some bundled skills are derived from [mattpocock/skills](https://github.com/mattpocock/skills)
+(MIT, © 2026 Matt Pocock), rewritten in this project's voice and re-pointed at
+`fizzyx` commands. They are listed file by file, with the upstream licence text,
+in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) — which also flags three
+skills whose origin is not established.
