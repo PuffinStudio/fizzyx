@@ -85,6 +85,13 @@ export interface DevConfig {
   productionBranch?: string;
   defaultBase?: string;
   syncStrategy?: "rebase" | "merge" | "none";
+  /**
+   * Resolve the base branch through its remote-tracking ref (`origin/<base>`) when one
+   * exists, so `dev sync` advances onto what was just fetched and `behind_base` measures
+   * the same thing. Defaults to true; set false to compare against the local base branch
+   * only, which is the pre-1.4 behaviour.
+   */
+  syncFromRemote?: boolean;
   protectedBranches?: ReadonlyArray<string>;
   environmentBranches?: Record<string, DevEnvironmentBranchConfig>;
   branchPrefixes?: Partial<DevBranchPrefixConfig>;

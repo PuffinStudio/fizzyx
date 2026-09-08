@@ -6,12 +6,14 @@ import { logSuccess } from "../ui";
 const handle = (config: {
   message: Option.Option<string>;
   all: boolean;
+  allowProtected: boolean;
   agent: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
     const msg = yield* checkpoint(
       Option.getOrElse(config.message, () => undefined),
       config.all,
+      config.allowProtected,
     );
     if (config.agent) {
       const checkpointed = !msg.startsWith("No changes");
@@ -32,7 +34,12 @@ export const devCheckpointCmd = Command.make(
       ),
     ),
     all: Flag.boolean("all").pipe(
-      Flag.withDescription("Stage all tracked changes before committing"),
+      Flag.withDescription(
+        "Stage everything before committing, including pre-existing changes you did not make and untracked files (default: only files this task touched)",
+      ),
+    ),
+    allowProtected: Flag.boolean("allow-protected").pipe(
+      Flag.withDescription("Commit even on a protected branch or a detached HEAD"),
     ),
     agent: Flag.boolean("agent").pipe(
       Flag.withDescription("Machine-readable output for AI agents"),

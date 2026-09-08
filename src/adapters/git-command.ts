@@ -51,7 +51,10 @@ export const requireGitCommand = (
   Effect.gen(function* () {
     const result = yield* gitCommand.run(args, options);
     if (result.exitCode !== 0) {
-      const detail = result.stderr.trim() || `git ${args.join(" ")} failed`;
+      // Some git failures explain themselves on stdout, not stderr — `git commit` with
+      // nothing staged writes "no changes added to commit" there. Reading stderr alone
+      // produced a tautological "git <cmd> failed: git <cmd> failed".
+      const detail = result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`;
       return yield* new ValidationError({
         message: options.errorPrefix ? `${options.errorPrefix}: ${detail}` : detail,
       });

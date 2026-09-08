@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Effect } from "effect";
 import { ConfigError, FileError, ValidationError } from "../domain/errors";
@@ -32,7 +33,12 @@ export interface DevStatus {
   baselineFiles: ReadonlyArray<string>;
   baselineAvailable: boolean;
   ahead: number;
+  /** Deprecated alias of {@link DevStatus.behindBase}; kept for one release. */
   behind: number;
+  /** Commits on the base ref that HEAD does not have. */
+  behindBase: number;
+  /** Commits on the branch's own upstream that HEAD does not have; 0 without an upstream. */
+  behindUpstream: number;
   hasUpstream: boolean;
   card?: number;
   nextAction?: string;
@@ -110,9 +116,10 @@ export const resolveDevShellCommand = (
     ? [process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", command]
     : ["bash", "-c", command];
 
+/** Compilers and test runners write their failures to stderr, so it has to be captured. */
 const runShell = (
   command: string,
-): Effect.Effect<{ stdout: string; exitCode: number }, ValidationError> =>
+): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, ValidationError> =>
   Effect.tryPromise({
     try: async () => {
       const proc = Bun.spawn({
@@ -120,16 +127,23 @@ const runShell = (
         stdout: "pipe",
         stderr: "pipe",
       });
-      const [stdout, , exitCode] = await Promise.all([
+      const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
         proc.exited,
       ]);
-      return { stdout: stdout.trim(), exitCode };
+      return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
     },
     catch: (cause) =>
       new ValidationError({ message: `Shell command failed: ${command} — ${String(cause)}` }),
   });
+
+const CHECK_OUTPUT_LIMIT = 2000;
+
+const truncateCheckOutput = (value: string): string =>
+  value.length <= CHECK_OUTPUT_LIMIT
+    ? value
+    : `${value.slice(0, CHECK_OUTPUT_LIMIT)}\n… (output truncated)`;
 
 const classifyBranch = (branch: string, config: DevConfig | undefined): BranchRole => {
   const protectedBranches = config?.protectedBranches ?? ["main", "master", "production", "stable"];
@@ -216,6 +230,45 @@ export const loadConfigOptional = (): Effect.Effect<
   ConfigRepository
 > => loadConfig().pipe(Effect.catch(() => Effect.succeed(undefined as ProjectConfig | undefined)));
 
+interface ResolvedBase {
+  /** Configured base branch name, e.g. "main". This is what status reports as `base`. */
+  name: string;
+  /**
+   * The ref actually compared and rebased against. `git fetch` advances `origin/<base>`
+   * and never the local `<base>`, so measuring or rebasing against the local branch made
+   * `sync` a no-op and let `ready` certify a branch that was days behind the remote.
+   */
+  ref: string;
+}
+
+const baseBranchName = (config: ProjectConfig | undefined): string =>
+  config?.dev?.defaultBase ?? config?.dev?.productionBranch ?? "main";
+
+const resolveBaseRef = (
+  config: ProjectConfig | undefined,
+): Effect.Effect<ResolvedBase, ValidationError> =>
+  Effect.gen(function* () {
+    const name = baseBranchName(config);
+    // Opt-out for repositories that deliberately track a local base branch.
+    if (config?.dev?.syncFromRemote === false) return { name, ref: name };
+    const remoteRef = `origin/${name}`;
+    const found = yield* runGitNoThrow([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/remotes/${remoteRef}`,
+    ]);
+    // A purely local repository has no remote-tracking ref; fall back to the local branch.
+    return { name, ref: found.exitCode === 0 ? remoteRef : name };
+  });
+
+/**
+ * True when HEAD points straight at a commit instead of a branch. Commits created in that
+ * state are reachable from no ref, so mutating commands have to refuse or say so.
+ */
+const isDetachedHead = (): Effect.Effect<boolean, ValidationError> =>
+  runGitNoThrow(["symbolic-ref", "--quiet", "HEAD"]).pipe(Effect.map((r) => r.exitCode !== 0));
+
 export const getCurrentBranch = (): Effect.Effect<string, ValidationError> =>
   Effect.gen(function* () {
     const branch = yield* runGit(["branch", "--show-current"]);
@@ -250,23 +303,14 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
         { discard: true },
       );
     }
-    const baseBranch = devConfig?.defaultBase ?? devConfig?.productionBranch ?? "main";
+    const resolvedBase = yield* resolveBaseRef(config);
+    const baseBranch = resolvedBase.name;
 
-    const aheadStr = yield* runGit(["rev-list", "--count", "@{u}..HEAD"]).pipe(
-      Effect.catch(() => Effect.succeed("0")),
-    );
-    const ahead = Number(aheadStr) || 0;
-
-    const behindStr = yield* runGit(["rev-list", "--count", "HEAD..@{u}"]).pipe(
-      Effect.catch(() => Effect.succeed("")),
-    );
-    const behind = behindStr
-      ? Number(behindStr) || 0
-      : Number(
-          yield* runGit(["rev-list", "--count", `HEAD..${baseBranch}`]).pipe(
-            Effect.catch(() => Effect.succeed("0")),
-          ),
-        ) || 0;
+    const countRevs = (range: string): Effect.Effect<number, never> =>
+      runGit(["rev-list", "--count", range]).pipe(
+        Effect.catch(() => Effect.succeed("0")),
+        Effect.map((value) => Number(value) || 0),
+      );
 
     const hasUpstream = yield* runGit([
       "rev-parse",
@@ -278,11 +322,33 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
       Effect.map((v) => v.length > 0),
     );
 
+    // Without an upstream, `@{u}..HEAD` fails and used to be hard-coded to 0 — which is the
+    // state of every branch `dev start` has just created, so unpushed work always read as
+    // "ahead: 0". Fall back to the base ref instead.
+    const ahead = hasUpstream
+      ? yield* countRevs("@{u}..HEAD")
+      : yield* countRevs(`${resolvedBase.ref}..HEAD`);
+    const behindBase = yield* countRevs(`HEAD..${resolvedBase.ref}`);
+    const behindUpstream = hasUpstream ? yield* countRevs("HEAD..@{u}") : 0;
+    // `behind` used to mean the upstream distance when an upstream existed and the base
+    // distance otherwise, while always being labelled "base". It is kept as an alias of
+    // behind_base so existing agent parsers keep working for one release.
+    const behind = behindBase;
+
+    const detached = yield* isDetachedHead();
     const role = classifyBranch(currentBranch, devConfig);
     const meta =
       (yield* readBranchMetadata(currentBranch)) ?? getBranchMetadata(currentBranch, devConfig);
 
-    const nextAction = computeNextAction(role, dirty, ahead, behind, currentBranch, baseBranch);
+    const nextAction = computeNextAction(
+      role,
+      dirty,
+      ahead,
+      behind,
+      currentBranch,
+      baseBranch,
+      detached,
+    );
     const promotionReady = role !== "protected" && role !== "unknown" && !dirty && behind === 0;
 
     return {
@@ -295,6 +361,8 @@ export const getStatus = (config?: ProjectConfig): Effect.Effect<DevStatus, Vali
       baselineAvailable: baseline !== undefined,
       ahead,
       behind,
+      behindBase,
+      behindUpstream,
       hasUpstream,
       card: meta?.card,
       nextAction,
@@ -309,7 +377,11 @@ const computeNextAction = (
   behind: number,
   _branch: string,
   _base: string,
+  detached = false,
 ): string => {
+  if (detached) {
+    return "HEAD is detached, so commits made here are reachable from no branch. Run 'git switch <branch>' (or 'git switch -c <new-branch>') before checkpointing.";
+  }
   if (role === "protected") {
     return dirty
       ? "Working tree is dirty on a protected branch. Preserve pre-existing changes, or move your own edits to a proper work branch before committing."
@@ -336,6 +408,8 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
       `dirty: ${status.dirty ? "yes" : "no"}`,
       `ahead: ${status.ahead}`,
       `behind: ${status.behind}`,
+      `behind_base: ${status.behindBase}`,
+      `behind_upstream: ${status.behindUpstream}`,
       `has_upstream: ${status.hasUpstream ? "yes" : "no"}`,
       `dirty_policy: ${AGENT_DIRTY_POLICY}`,
       `baseline: ${status.baselineAvailable ? "available" : "missing"}`,
@@ -365,7 +439,8 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
   if (status.card) lines.push(`card    ${status.card}`);
   lines.push(`dirty   ${status.dirty ? `yes (${status.dirtyFiles.length} files)` : "no"}`);
   lines.push(`ahead   ${status.ahead}`);
-  lines.push(`behind  ${status.behind}`);
+  lines.push(`behind  ${status.behind} (base)`);
+  lines.push(`behind  ${status.behindUpstream} (upstream)`);
   lines.push(`upstream ${status.hasUpstream ? "configured" : "none"}`);
   if (status.nextAction) lines.push(`next    ${status.nextAction}`);
   if (status.promotionReady !== undefined) {
@@ -543,17 +618,63 @@ export const isOnCompatibleBranch = (
   return `Already on compatible branch '${currentBranch}'. No new branch needed.`;
 };
 
+/**
+ * True while a rebase or merge is actually stopped part-way. `sync` used to print a
+ * conflict-recovery script for every non-zero exit, so a plain refusal such as
+ * "cannot rebase: You have unstaged changes" was answered with four steps that all fail —
+ * there was no rebase to continue or abort.
+ */
+const isOperationInProgress = (
+  operation: "rebase" | "merge",
+): Effect.Effect<boolean, ValidationError> =>
+  Effect.gen(function* () {
+    const paths = operation === "rebase" ? ["rebase-merge", "rebase-apply"] : ["MERGE_HEAD"];
+    for (const path of paths) {
+      const resolved = yield* runGitNoThrow(["rev-parse", "--git-path", path]);
+      if (resolved.exitCode === 0 && resolved.stdout && existsSync(resolved.stdout)) return true;
+    }
+    return false;
+  });
+
+const describeSyncFailure = (options: {
+  operation: "rebase" | "merge";
+  branch: string;
+  result: { stdout: string; stderr: string };
+  stashHint: string;
+  steps: ReadonlyArray<string>;
+  stashed: boolean;
+}): Effect.Effect<string, ValidationError> =>
+  Effect.gen(function* () {
+    const { operation, branch, result } = options;
+    const detail = result.stderr || result.stdout || `git ${operation} failed`;
+    if (!(yield* isOperationInProgress(operation))) {
+      const stashNote = options.stashed
+        ? "\nYour changes were stashed as 'fizzyx-auto-stash'; run 'git stash pop' to restore them."
+        : "\nIf the tree has uncommitted changes, run 'fizzyx dev sync --stash'.";
+      return `${operation === "rebase" ? "Rebase" : "Merge"} failed on '${branch}' and no ${operation} is in progress:\n${detail}${stashNote}`;
+    }
+    const numbered = ["Resolve conflicts manually.", "git add <resolved-files>", ...options.steps]
+      .map((step, index) => `  ${index + 1}. ${step}`)
+      .join("\n");
+    return `${operation === "rebase" ? "Rebase" : "Merge"} conflict on '${branch}':\n${detail}\nRecovery:\n${numbered}${options.stashHint}`;
+  });
+
 export const syncBranch = (
   stash?: boolean,
 ): Effect.Effect<string, ValidationError | ConfigError | FileError, ConfigRepository> =>
   Effect.gen(function* () {
     const status = yield* getStatus();
 
-    const didStash = status.dirty && stash;
-    if (status.dirty) {
+    // Baseline-accepted files are excluded from `dirty`, but git still refuses to rebase
+    // over them, so a baseline-accepted tree could never be synced through the CLI at all.
+    // They are stashable like anything else; only the refusal stays keyed on `dirty`, so
+    // trees that used to sync without --stash still do.
+    const hasUncommitted = status.dirty || status.baselineFiles.length > 0;
+    const didStash = hasUncommitted && stash === true;
+    if (hasUncommitted) {
       if (stash) {
         yield* runGit(["stash", "push", "-m", "fizzyx-auto-stash"]);
-      } else {
+      } else if (status.dirty) {
         return yield* new ValidationError({
           message: "Working tree is dirty. Use --stash to auto-stash changes.",
         });
@@ -567,7 +688,9 @@ export const syncBranch = (
       .loadProjectConfig()
       .pipe(Effect.catch(() => Effect.succeed(undefined as ProjectConfig | undefined)));
     const syncStrategy = projectConfig?.dev?.syncStrategy ?? "rebase";
-    const base = projectConfig?.dev?.defaultBase ?? projectConfig?.dev?.productionBranch ?? "main";
+    // `git fetch` above advances origin/<base>, never the local <base>. Rebasing onto the
+    // local branch is what made `sync` a silent no-op against a stale base.
+    const base = (yield* resolveBaseRef(projectConfig ?? undefined)).ref;
 
     const stashHint = didStash
       ? "\n  5. Run 'git stash pop' after resolving to restore your working changes."
@@ -576,22 +699,30 @@ export const syncBranch = (
     if (syncStrategy === "rebase") {
       const result = yield* runGitNoThrow(["rebase", base]);
       if (result.exitCode !== 0) {
-        const recovery = `Rebase conflict on '${status.currentBranch}'. Recovery:
-  1. Resolve conflicts manually.
-  2. git add <resolved-files>
-  3. git rebase --continue
-  4. Or abort: git rebase --abort${stashHint}`;
-        return yield* new ValidationError({ message: recovery });
+        return yield* new ValidationError({
+          message: yield* describeSyncFailure({
+            operation: "rebase",
+            branch: status.currentBranch,
+            result,
+            stashHint,
+            steps: ["git rebase --continue", "Or abort: git rebase --abort"],
+            stashed: didStash,
+          }),
+        });
       }
     } else if (syncStrategy === "merge") {
       const result = yield* runGitNoThrow(["merge", base]);
       if (result.exitCode !== 0) {
-        const recovery = `Merge conflict on '${status.currentBranch}'. Recovery:
-  1. Resolve conflicts manually.
-  2. git add <resolved-files>
-  3. git commit (merge will complete)
-  4. Or abort: git merge --abort${stashHint}`;
-        return yield* new ValidationError({ message: recovery });
+        return yield* new ValidationError({
+          message: yield* describeSyncFailure({
+            operation: "merge",
+            branch: status.currentBranch,
+            result,
+            stashHint,
+            steps: ["git commit (merge will complete)", "Or abort: git merge --abort"],
+            stashed: didStash,
+          }),
+        });
       }
     }
 
@@ -608,15 +739,42 @@ export const syncBranch = (
 export const checkpoint = (
   message?: string,
   all?: boolean,
-): Effect.Effect<string, ValidationError> =>
+  allowProtected?: boolean,
+): Effect.Effect<string, ValidationError, ConfigRepository> =>
   Effect.gen(function* () {
-    const status = yield* getStatus();
+    const projectConfig = yield* loadConfigOptional();
+    const status = yield* getStatus(projectConfig);
     if (!status.dirty) {
       return "No changes to checkpoint.";
     }
 
+    if (!allowProtected) {
+      if (yield* isDetachedHead()) {
+        return yield* new ValidationError({
+          message:
+            "HEAD is detached, so a checkpoint commit here would be reachable from no branch. Switch to a branch first, or pass --allow-protected to commit anyway.",
+        });
+      }
+      if (status.role === "protected") {
+        return yield* new ValidationError({
+          message: `Refusing to checkpoint on protected branch '${status.currentBranch}'. Run 'fizzyx dev start <slug>' to move the work to its own branch, or pass --allow-protected to commit anyway.`,
+        });
+      }
+    }
+
     if (all) {
-      yield* runGit(["add", "--update"]);
+      // The explicit "everything" escape: pre-existing user changes and untracked files
+      // included. `--update` used to be the implementation, which silently dropped
+      // untracked files while still reporting a successful checkpoint.
+      yield* runGit(["add", "--all"]);
+    } else {
+      // Default: stage only what this task touched. `partitionWorktree` already separates
+      // task-owned entries from the recorded baseline, and a pathspec add covers untracked
+      // files too, so a checkpoint can never sweep up the user's pre-existing changes.
+      const entries = yield* snapshotWorktree();
+      const baseline = yield* readBaseline(status.currentBranch);
+      const taskPaths = partitionWorktree(entries, baseline).blocking.map((entry) => entry.path);
+      yield* runGit(["add", "--", ...taskPaths]);
     }
 
     const card = status.card;
@@ -645,29 +803,121 @@ const findWipCommits = (): Effect.Effect<ReadonlyArray<string>, ValidationError>
       : [];
   });
 
-const squashWipCommits = (base: string): Effect.Effect<string, ValidationError> =>
+/**
+ * How a squash ended. The outcome is carried explicitly rather than sniffed back out of the
+ * message: reading `message.startsWith("No")` reported a green `squash-wip` check for every
+ * failure whose wording happened not to start with those two letters.
+ */
+type SquashOutcome =
+  /** History was rewritten into a single commit. */
+  | "squashed"
+  /** There was nothing to do. Not a failure. */
+  | "nothing-to-squash"
+  /** Squashing was possible but would have destroyed something. Blocks readiness. */
+  | "refused"
+  /** The squash could not be carried out. Blocks readiness. */
+  | "failed";
+
+interface SquashResult {
+  message: string;
+  outcome: SquashOutcome;
+}
+
+/**
+ * Commits between `mergeBase` and HEAD that are already reachable from a remote. Squashing
+ * collapses everything in that range, so any published commit in it would need a force push
+ * to recover — which the workflow forbids.
+ */
+const findPublishedCommits = (
+  mergeBase: string,
+): Effect.Effect<ReadonlyArray<string>, ValidationError> =>
+  Effect.gen(function* () {
+    const toLines = (value: string): ReadonlyArray<string> =>
+      value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const collapsed = toLines(yield* runGit(["rev-list", `${mergeBase}..HEAD`]));
+    const unpublished = new Set(
+      toLines(yield* runGit(["rev-list", `${mergeBase}..HEAD`, "--not", "--remotes"])),
+    );
+    return collapsed.filter((sha) => !unpublished.has(sha));
+  });
+
+const squashWipCommits = (base: string): Effect.Effect<SquashResult, ValidationError> =>
   Effect.gen(function* () {
     const wipCommits = yield* findWipCommits();
     if (wipCommits.length === 0) {
-      return "No WIP commits to squash.";
+      return { message: "No WIP commits to squash.", outcome: "nothing-to-squash" };
     }
 
     const mergeBase = yield* runGit(["merge-base", "HEAD", base]).pipe(
       Effect.catch(() => Effect.succeed("")),
     );
-    if (!mergeBase) return "Cannot determine merge base for squash.";
+    if (!mergeBase) {
+      return {
+        message: `Cannot determine the merge base between HEAD and '${base}', so there is no commit to squash back to. The branch may not share history with the base, or '${base}' may not exist here.`,
+        outcome: "failed",
+      };
+    }
+
+    const published = yield* findPublishedCommits(mergeBase);
+    if (published.length > 0) {
+      const subject = yield* runGit(["log", "-1", "--format=%s", published[0] as string]).pipe(
+        Effect.catch(() => Effect.succeed("")),
+      );
+      return {
+        message: `Refusing to squash: commit ${published[0]}${
+          subject ? ` (${subject})` : ""
+        } is already published to a remote, and squashing back to ${mergeBase.slice(
+          0,
+          12,
+        )} would rewrite it. Recovering from that needs a force push, which this workflow forbids. Squash only unpublished commits, or land the published ones as they are.`,
+        outcome: "refused",
+      };
+    }
+
+    // `reset --soft` followed by `commit` destroys the branch's commits before recreating
+    // them. If the range has no net diff against the merge base, the commit half fails with
+    // nothing to commit and the branch is simply left at the merge base — every commit gone,
+    // while `ready` reported success. Check for that before touching anything.
+    const netDiff = yield* runGitNoThrow(["diff", "--quiet", mergeBase, "HEAD"]);
+    if (netDiff.exitCode === 0) {
+      return {
+        message: `Refusing to squash: the ${wipCommits.length} WIP commit(s) leave no net change against ${mergeBase.slice(
+          0,
+          12,
+        )}, so squashing them would collapse the branch to the merge base and commit nothing. Drop the branch, or commit the work you meant to keep.`,
+        outcome: "refused",
+      };
+    }
 
     const branchName = yield* getCurrentBranch();
     const kind = branchName.startsWith("fix/") ? "fix" : "feat";
     const scope = branchName.includes("card-") ? (branchName.match(/card-\d+/)?.[0] ?? "") : "";
 
+    const originalHead = yield* runGit(["rev-parse", "HEAD"]);
     yield* runGit(["reset", "--soft", mergeBase]);
     const message = scope
       ? `${kind}(${scope}): squash checkpoint commits`
       : `${kind}: squash checkpoint commits`;
-    yield* runGit(["commit", "-m", message]);
+    // The reset already happened. If the commit fails for any reason, put HEAD back rather
+    // than leaving the branch sitting at the merge base with its commits detached.
+    const committed = yield* runGitNoThrow(["commit", "-m", message]);
+    if (committed.exitCode !== 0) {
+      yield* runGitNoThrow(["reset", "--soft", originalHead]);
+      return {
+        message: `Squash failed and the branch was restored to ${originalHead.slice(0, 12)}: ${
+          committed.stderr || committed.stdout || "git commit exited non-zero"
+        }`,
+        outcome: "failed",
+      };
+    }
 
-    return `Squashed ${wipCommits.length} WIP commit(s) into one: ${message}`;
+    return {
+      message: `Squashed ${wipCommits.length} WIP commit(s) into one: ${message}`,
+      outcome: "squashed",
+    };
   });
 
 export const ready = (full?: boolean, squash?: boolean): DevEffect<DevReadyResult> =>
@@ -676,9 +926,36 @@ export const ready = (full?: boolean, squash?: boolean): DevEffect<DevReadyResul
     const projectConfig = yield* configRepo
       .loadProjectConfig()
       .pipe(Effect.catch(() => Effect.succeed(undefined as ProjectConfig | undefined)));
-    const status = yield* getStatus(projectConfig ?? undefined);
     const blockedReasons: string[] = [];
     const checksRun: CheckResult[] = [];
+
+    // Squash before reading status: it rewrites history, and every status-derived decision
+    // below (and the readiness receipt) has to describe the branch as it ends up, not as it
+    // was when the command started.
+    if (squash) {
+      const base =
+        projectConfig?.dev?.defaultBase ?? projectConfig?.dev?.productionBranch ?? "main";
+      const squashResult: SquashResult = yield* squashWipCommits(base).pipe(
+        Effect.catch((cause) =>
+          Effect.succeed({
+            message: `Squash failed: ${cause.message}`,
+            outcome: "failed" as const,
+          }),
+        ),
+      );
+      checksRun.push({
+        name: "squash-wip",
+        passed: squashResult.outcome === "squashed" || squashResult.outcome === "nothing-to-squash",
+        output: squashResult.message,
+      });
+      // A refusal and a failure both mean the branch is not in the state `--squash` promised,
+      // so neither may pass silently through to a readiness verdict.
+      if (squashResult.outcome === "refused" || squashResult.outcome === "failed") {
+        blockedReasons.push(squashResult.message);
+      }
+    }
+
+    const status = yield* getStatus(projectConfig ?? undefined);
 
     if (status.role === "protected") {
       blockedReasons.push("Current branch is protected");
@@ -692,19 +969,6 @@ export const ready = (full?: boolean, squash?: boolean): DevEffect<DevReadyResul
       blockedReasons.push(
         `Branch is behind base by ${status.behind} commit(s). Run 'fizzyx dev sync'.`,
       );
-    }
-
-    if (squash) {
-      const base =
-        projectConfig?.dev?.defaultBase ?? projectConfig?.dev?.productionBranch ?? "main";
-      const squashMsg = yield* squashWipCommits(base).pipe(
-        Effect.catch(() => Effect.succeed("Squash skipped.")),
-      );
-      checksRun.push({
-        name: "squash-wip",
-        passed: !squashMsg.startsWith("No"),
-        output: squashMsg,
-      });
     }
 
     const wipCommits = yield* findWipCommits().pipe(Effect.catch(() => Effect.succeed([])));
@@ -724,7 +988,10 @@ export const ready = (full?: boolean, squash?: boolean): DevEffect<DevReadyResul
       checksRun.push({
         name: cmd,
         passed: result.exitCode === 0,
-        output: result.stdout,
+        output:
+          result.exitCode === 0
+            ? result.stdout
+            : truncateCheckOutput([result.stdout, result.stderr].filter(Boolean).join("\n")),
       });
       if (result.exitCode !== 0) {
         blockedReasons.push(`Check failed: ${cmd}`);
@@ -778,6 +1045,10 @@ export const formatReady = (result: DevReadyResult, agent: boolean): string => {
     }
     for (const check of result.checksRun) {
       lines.push(`check: ${check.name} ${check.passed ? "passed" : "failed"}`);
+      if (!check.passed && check.output) {
+        lines.push("check_output:");
+        for (const line of check.output.split("\n")) lines.push(`  ${line}`);
+      }
     }
     if (result.suggestedPromotion) {
       lines.push(`suggested_promotion: ${result.suggestedPromotion}`);
@@ -921,28 +1192,22 @@ export const checkPromotion = (
       });
     }
 
+    // Only `ops` branches have a file-scope rule; for every other kind nothing was ever
+    // evaluated, so report no verdict rather than a green check nobody computed.
     const sourceKind = getBranchNameKind(sourceBranch, devConfig);
-    const changedFiles = yield* getChangedFileList(sourceBranch, targetBranch).pipe(
-      Effect.catch(() => Effect.succeed([])),
-    );
-    const unrelated = sourceKind ? changedFiles.filter((f) => isUnrelatedFile(f, sourceKind)) : [];
-    checks.push({
-      passed: unrelated.length === 0,
-      reason:
-        unrelated.length === 0
-          ? "All changed files appear related to branch purpose"
-          : `${unrelated.length} unrelated file(s) changed on this branch: ${unrelated.slice(0, 5).join(", ")}`,
-    });
-
-    const targetFresh = yield* isTargetFresh(targetBranch).pipe(
-      Effect.catch(() => Effect.succeed(true)),
-    );
-    checks.push({
-      passed: targetFresh,
-      reason: targetFresh
-        ? "Target branch has been fetched recently"
-        : "Target branch may be stale. Run 'git fetch' first.",
-    });
+    if (sourceKind && hasFileScopeRule(sourceKind)) {
+      const changedFiles = yield* getChangedFileList(sourceBranch, targetBranch).pipe(
+        Effect.catch(() => Effect.succeed([])),
+      );
+      const unrelated = changedFiles.filter((f) => isUnrelatedFile(f, sourceKind));
+      checks.push({
+        passed: unrelated.length === 0,
+        reason:
+          unrelated.length === 0
+            ? `All changed files are within the '${sourceKind}' branch scope`
+            : `${unrelated.length} unrelated file(s) changed on this branch: ${unrelated.slice(0, 5).join(", ")}`,
+      });
+    }
 
     return checks;
   });
@@ -958,6 +1223,12 @@ export const showBaseline = () =>
     const branch = yield* getCurrentBranch();
     return { branch, baseline: yield* readBaseline(branch), current: yield* snapshotWorktree() };
   });
+
+/**
+ * Branch kinds that have a meaningful file-scope rule. Only `ops` does: a feature or fix
+ * branch may legitimately touch any file, so there is nothing generic to assert about it.
+ */
+const hasFileScopeRule = (branchKind: string): boolean => branchKind === "ops";
 
 const isUnrelatedFile = (filePath: string, branchKind: string): boolean => {
   if (branchKind === "docs") return false;
@@ -992,21 +1263,6 @@ const findBranchWipCommits = (
           .map((l) => l.trim())
           .filter(Boolean)
       : [];
-  });
-
-const isTargetFresh = (branch: string): Effect.Effect<boolean, ValidationError> =>
-  Effect.gen(function* () {
-    const stdout = yield* runGit([
-      "rev-parse",
-      "--abbrev-ref",
-      "--symbolic-full-name",
-      `refs/remotes/origin/${branch}`,
-    ]).pipe(Effect.catch(() => Effect.succeed("")));
-    if (!stdout) return true;
-    const fetchHead = yield* runGit(["rev-parse", "FETCH_HEAD"]).pipe(
-      Effect.catch(() => Effect.succeed("")),
-    );
-    return !!fetchHead;
   });
 
 const branchExists = (name: string): Effect.Effect<boolean, ValidationError> =>
@@ -1170,6 +1426,16 @@ export const cleanup = (options?: {
     }
 
     if (!onProtected) {
+      // `git checkout` carries uncommitted changes across, so cleaning up from a dirty tree
+      // would deposit the user's work on the protected branch — and if it conflicted there
+      // the checkout would throw part-way through, leaving cleanup half-done. Refusing keeps
+      // the command all-or-nothing; baseline-accepted files count too, because checkout
+      // carries them just the same.
+      if (status.dirty || status.baselineFiles.length > 0) {
+        return yield* new ValidationError({
+          message: `Working tree has uncommitted changes. Cleanup would switch to '${productionBranch}' and carry them onto it. Commit or stash them first, then re-run cleanup.`,
+        });
+      }
       yield* runGit(["checkout", productionBranch]);
     }
     let deleted = 0;
@@ -1237,6 +1503,8 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
           .filter(Boolean)
       : [];
 
+    const currentBranch = yield* getCurrentBranch().pipe(Effect.catch(() => Effect.succeed("")));
+
     const staleBranches: DoctorBranchInfo[] = [];
     const noUpstreamBranches: DoctorBranchInfo[] = [];
     const mergedBranches: DoctorBranchInfo[] = [];
@@ -1288,26 +1556,45 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
         }
       }
 
-      if (role === "protected") {
-        const dirty = yield* runGit(["status", "--porcelain", branch]).pipe(
+      if (role === "protected" && branch === currentBranch) {
+        // `git status` only ever describes the worktree it runs in, and the branch name was
+        // being consumed as a pathspec — which matches nothing, so this never fired. It can
+        // only be answered for the branch actually checked out here.
+        const dirty = yield* runGit(["status", "--porcelain"]).pipe(
           Effect.catch(() => Effect.succeed("")),
         );
         if (dirty) {
-          protectedDirty.push({ name: branch, detail: "Has dirty files" });
+          protectedDirty.push({
+            name: branch,
+            detail: `${dirty.split("\n").length} dirty file(s) in the current worktree`,
+          });
         }
       }
 
       if (role === "feature" || role === "maintenance") {
         for (const envBranch of envBranchNames) {
-          const baseCheck = yield* runGit(["merge-base", "--is-ancestor", envBranch, branch]).pipe(
-            Effect.catch(() => Effect.succeed("")),
-          );
-          if (baseCheck) {
-            featureOnEnvBase.push({
-              name: branch,
-              detail: `Based on environment branch '${envBranch}' instead of '${productionBranch}'`,
-            });
-          }
+          // `merge-base --is-ancestor` answers through its exit code and prints nothing, so
+          // the old truthiness test on stdout was never satisfied.
+          const basedOnEnv = yield* runGitNoThrow([
+            "merge-base",
+            "--is-ancestor",
+            envBranch,
+            branch,
+          ]);
+          if (basedOnEnv.exitCode !== 0) continue;
+          // An environment branch production already contains is an ancestor of everything,
+          // so only report one that actually carries commits production does not have.
+          const envMergedIntoProduction = yield* runGitNoThrow([
+            "merge-base",
+            "--is-ancestor",
+            envBranch,
+            productionBranch,
+          ]);
+          if (envMergedIntoProduction.exitCode === 0) continue;
+          featureOnEnvBase.push({
+            name: branch,
+            detail: `Based on environment branch '${envBranch}' instead of '${productionBranch}'`,
+          });
         }
       }
 
@@ -1328,7 +1615,11 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
       }
     }
 
-    const mergedList = yield* getMergedBranches(productionBranch, config);
+    // An unborn HEAD (or a production branch that does not exist locally) makes
+    // `git branch --merged` fail outright; report nothing merged rather than dying.
+    const mergedList = yield* getMergedBranches(productionBranch, config).pipe(
+      Effect.catch(() => Effect.succeed([] as ReadonlyArray<string>)),
+    );
     const mergedSet = new Set(mergedList);
     for (const b of mergedList) {
       if (branchList.includes(b)) {

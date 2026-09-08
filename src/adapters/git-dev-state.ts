@@ -159,7 +159,12 @@ export const readBaseline = (branch: string) =>
 export const writeBaseline = (branch: string, options?: { cwd?: string }) =>
   Effect.gen(function* () {
     const [head, entries, path] = yield* Effect.all([
-      requireGitCommand(["rev-parse", "HEAD"], { cwd: options?.cwd }),
+      // A repository with no commits has an unborn HEAD. `dev start` switches the branch
+      // before writing the baseline, so failing here left the command exiting non-zero on
+      // state it had already established. Record an empty head instead; nothing compares it.
+      requireGitCommand(["rev-parse", "HEAD"], { cwd: options?.cwd }).pipe(
+        Effect.catch(() => Effect.succeed("")),
+      ),
       snapshotWorktree(options?.cwd),
       gitStatePath("baselines", branch, options?.cwd),
     ]);

@@ -1093,3 +1093,716 @@ devTest("dev cleanup --agent reports preview mode", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Unconfigured repositories.
+//
+// Every `fizzyx dev` command must work in a project that has no `.fizzyx.yaml`.
+// Without the config the CLI simply does not touch Fizzy cards; the whole git
+// half of the workflow still has to work. The fixtures below deliberately write
+// no config file so the tests below exercise exactly that path.
+// ---------------------------------------------------------------------------
+
+const gitOut = (cwd: string, args: ReadonlyArray<string>): string => {
+  const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  return proc.stdout.toString().trim();
+};
+
+const initRepo = (root: string): void => {
+  runGit(root, ["init"]);
+  runGit(root, ["checkout", "-b", "main"]);
+  runGit(root, ["config", "user.email", "dev-workflow@example.com"]);
+  runGit(root, ["config", "user.name", "Dev Workflow"]);
+};
+
+const commitAll = (root: string, message: string): void => {
+  runGit(root, ["add", "-A"]);
+  runGit(root, ["commit", "-m", message]);
+};
+
+/** Repository with one commit on `main` and no `.fizzyx.yaml`. */
+const createUnconfiguredRepo = (): string => {
+  const root = makeTempDir();
+  initRepo(root);
+  writeFileSync(join(root, "README.md"), "# base\n");
+  commitAll(root, "chore: init");
+  return root;
+};
+
+/** Repository with no commits at all: unborn HEAD, no `.fizzyx.yaml`. */
+const createEmptyRepo = (): string => {
+  const root = makeTempDir();
+  initRepo(root);
+  return root;
+};
+
+/**
+ * `work` clones `remote.git`, and `upstream` is a second clone used to publish
+ * commits the way a teammate would. No `.fizzyx.yaml` anywhere.
+ */
+const createUnconfiguredRepoWithRemote = (): { base: string; work: string; upstream: string } => {
+  const base = makeTempDir();
+  const remote = join(base, "remote.git");
+  mkdirSync(remote);
+  runGit(remote, ["init", "--bare"]);
+  runGit(remote, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+
+  const upstream = join(base, "upstream");
+  mkdirSync(upstream);
+  initRepo(upstream);
+  writeFileSync(join(upstream, "README.md"), "# base\n");
+  commitAll(upstream, "chore: init");
+  runGit(upstream, ["remote", "add", "origin", remote]);
+  runGit(upstream, ["push", "-u", "origin", "main"]);
+
+  const work = join(base, "work");
+  runGit(base, ["clone", remote, work]);
+  runGit(work, ["config", "user.email", "dev-workflow@example.com"]);
+  runGit(work, ["config", "user.name", "Dev Workflow"]);
+
+  return { base, work, upstream };
+};
+
+// --- A1: checkpoint must not commit pre-existing user changes ---------------
+
+devTest("dev checkpoint stages only task-owned files, including untracked ones", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    // A change the user already had in the tree before the task started.
+    writeFileSync(join(root, "README.md"), "# base\nUSER PRE-EXISTING EDIT\n");
+    await runCli(["dev", "start", "mytask", "--allow-dirty", "--agent"], { cwd: root });
+
+    // The task's own work: one new untracked file.
+    writeFileSync(join(root, "task.txt"), "task work\n");
+
+    const result = await runCli(["dev", "checkpoint", "--agent"], { cwd: root });
+    expect(result.exitCode).toBe(0);
+    expect(normalizeOutput(result)).toContain("checkpointed: yes");
+
+    const committed = gitOut(root, ["show", "--name-only", "--format=", "HEAD"]);
+    expect(committed).toContain("task.txt");
+    expect(committed).not.toContain("README.md");
+
+    // The user's pre-existing edit is still theirs, still uncommitted.
+    expect(gitOut(root, ["status", "--porcelain"])).toContain("README.md");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev checkpoint --all commits pre-existing changes and untracked files", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    writeFileSync(join(root, "README.md"), "# base\nUSER PRE-EXISTING EDIT\n");
+    await runCli(["dev", "start", "mytask", "--allow-dirty", "--agent"], { cwd: root });
+    writeFileSync(join(root, "task.txt"), "task work\n");
+
+    const result = await runCli(["dev", "checkpoint", "--all", "--agent"], { cwd: root });
+    expect(result.exitCode).toBe(0);
+
+    const committed = gitOut(root, ["show", "--name-only", "--format=", "HEAD"]);
+    expect(committed).toContain("README.md");
+    expect(committed).toContain("task.txt");
+    expect(gitOut(root, ["status", "--porcelain"])).toBe("");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev checkpoint --all help says it includes pre-existing changes", async () => {
+  const help = await runCli(["dev", "checkpoint", "--help"]);
+  expect(help.exitCode).toBe(0);
+  expect(stripAnsi(help.stdout).toLowerCase()).toContain("pre-existing");
+});
+
+// --- A3: checkpoint must refuse protected branches and detached HEAD --------
+
+devTest("dev checkpoint refuses to commit on a protected branch", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    writeFileSync(join(root, "task.txt"), "task work\n");
+    const result = await runCli(["dev", "checkpoint", "--agent"], { cwd: root });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(normalizeOutput(result)).toMatch(/protected/);
+    expect(gitOut(root, ["log", "--oneline"]).split("\n")).toHaveLength(1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev checkpoint --allow-protected overrides the protected branch refusal", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    writeFileSync(join(root, "task.txt"), "task work\n");
+    const result = await runCli(["dev", "checkpoint", "--allow-protected", "--agent"], {
+      cwd: root,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(normalizeOutput(result)).toContain("checkpointed: yes");
+    expect(gitOut(root, ["log", "--oneline"]).split("\n")).toHaveLength(2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev checkpoint refuses to commit on a detached HEAD", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    runGit(root, ["checkout", "-b", "feature/task"]);
+    runGit(root, ["checkout", "--detach", "HEAD"]);
+    writeFileSync(join(root, "task.txt"), "task work\n");
+
+    const result = await runCli(["dev", "checkpoint", "--agent"], { cwd: root });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(normalizeOutput(result)).toMatch(/detached/);
+    expect(gitOut(root, ["log", "--oneline"]).split("\n")).toHaveLength(1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --- A2: ready --squash must not rewrite published commits ------------------
+
+devTest("dev ready --squash refuses to collapse commits already pushed to a remote", async () => {
+  const { base, work } = createUnconfiguredRepoWithRemote();
+
+  try {
+    runGit(work, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(work, "teammate.txt"), "published work\n");
+    commitAll(work, "feat: teammate published work");
+    runGit(work, ["push", "-u", "origin", "feature/task"]);
+
+    const publishedHead = gitOut(work, ["rev-parse", "HEAD"]);
+
+    writeFileSync(join(work, "wip.txt"), "local wip\n");
+    commitAll(work, "wip: checkpoint");
+
+    const result = await runCli(["dev", "ready", "--squash", "--agent"], { cwd: work });
+
+    expect(result.exitCode).not.toBe(0);
+    const output = normalizeOutput(result);
+    expect(output).toMatch(/already (published|pushed)|remote/);
+    expect(output).toContain(publishedHead.slice(0, 7));
+
+    // The published commit is still there, unrewritten.
+    expect(gitOut(work, ["rev-parse", "HEAD~1"])).toBe(publishedHead);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+devTest("dev ready --squash still squashes purely local WIP commits", async () => {
+  const { base, work } = createUnconfiguredRepoWithRemote();
+
+  try {
+    runGit(work, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(work, "a.txt"), "a\n");
+    commitAll(work, "wip: one");
+    writeFileSync(join(work, "b.txt"), "b\n");
+    commitAll(work, "wip: two");
+
+    const result = await runCli(["dev", "ready", "--squash", "--agent"], { cwd: work });
+
+    expect(result.exitCode).toBe(0);
+    expect(gitOut(work, ["log", "--oneline", "origin/main..HEAD"]).split("\n")).toHaveLength(1);
+    expect(gitOut(work, ["log", "-1", "--format=%s"])).toContain("squash checkpoint commits");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+devTest("dev ready --squash refuses when the WIP commits leave no net change", async () => {
+  const { base, work } = createUnconfiguredRepoWithRemote();
+
+  try {
+    runGit(work, ["checkout", "-b", "feature/task"]);
+    const mergeBase = gitOut(work, ["rev-parse", "HEAD"]);
+
+    // Two commits that cancel out: the branch has history, but no net diff against the base.
+    writeFileSync(join(work, "scratch.txt"), "scratch\n");
+    commitAll(work, "wip: add scratch");
+    rmSync(join(work, "scratch.txt"));
+    commitAll(work, "wip: remove scratch again");
+
+    const headBefore = gitOut(work, ["rev-parse", "HEAD"]);
+    const result = await runCli(["dev", "ready", "--squash", "--agent"], { cwd: work });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(normalizeOutput(result)).toMatch(/no net change/);
+
+    // The branch was not collapsed onto the merge base behind a green verdict.
+    expect(gitOut(work, ["rev-parse", "HEAD"])).toBe(headBefore);
+    expect(gitOut(work, ["rev-parse", "HEAD"])).not.toBe(mergeBase);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+devTest("dev ready --squash reports a failure rather than passing it as a check", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    // An orphan branch shares no history with main, so there is no merge base to squash to.
+    runGit(root, ["checkout", "--orphan", "feature/orphan"]);
+    writeFileSync(join(root, "only.txt"), "only\n");
+    commitAll(root, "wip: orphan work");
+
+    const result = await runCli(["dev", "ready", "--squash", "--agent"], { cwd: root });
+
+    expect(result.exitCode).not.toBe(0);
+    const output = normalizeOutput(result);
+    expect(output).toMatch(/merge base/i);
+    // The squash-wip check must not be reported as green when it did not happen.
+    expect(output).not.toMatch(/squash-wip[^\n]*\bpassed\b/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --- A4: cleanup must not drag an uncommitted tree onto the protected branch -
+
+devTest("dev cleanup --confirm-delete refuses to switch branches with a dirty tree", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    runGit(root, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(root, "work.txt"), "uncommitted task work\n");
+
+    const result = await runCli(["dev", "cleanup", "--confirm-delete", "--agent"], { cwd: root });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(normalizeOutput(result)).toMatch(/uncommitted|dirty/);
+    expect(gitOut(root, ["branch", "--show-current"])).toBe("feature/task");
+    expect(gitOut(root, ["status", "--porcelain"])).toContain("work.txt");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev cleanup --confirm-delete still works on a clean tree", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    runGit(root, ["checkout", "-b", "feature/task"]);
+    const result = await runCli(["dev", "cleanup", "--confirm-delete", "--agent"], { cwd: root });
+
+    expect(result.exitCode).toBe(0);
+    expect(gitOut(root, ["branch", "--show-current"])).toBe("main");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --- B1: sync and status must agree on what "base" means -------------------
+
+devTest("dev sync rebases onto the remote base ref, not the stale local one", async () => {
+  const { base, work, upstream } = createUnconfiguredRepoWithRemote();
+
+  try {
+    runGit(work, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(work, "task.txt"), "task\n");
+    commitAll(work, "feat: task");
+
+    // A teammate advances main on the remote.
+    writeFileSync(join(upstream, "upstream.txt"), "upstream work\n");
+    commitAll(upstream, "feat: upstream advance");
+    runGit(upstream, ["push", "origin", "main"]);
+    const advanced = gitOut(upstream, ["rev-parse", "HEAD"]);
+
+    const result = await runCli(["dev", "sync", "--agent"], { cwd: work });
+    expect(result.exitCode).toBe(0);
+
+    // The remote base commit is now an ancestor of the feature branch.
+    expect(gitOut(work, ["rev-list", "HEAD"]).split("\n")).toContain(advanced);
+    expect(gitOut(work, ["rev-list", "--count", "HEAD..origin/main"])).toBe("0");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+devTest("dev status counts behind_base against the remote base with no upstream", async () => {
+  const { base, work, upstream } = createUnconfiguredRepoWithRemote();
+
+  try {
+    runGit(work, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(work, "task.txt"), "task\n");
+    commitAll(work, "feat: task");
+
+    writeFileSync(join(upstream, "upstream.txt"), "upstream work\n");
+    commitAll(upstream, "feat: upstream advance");
+    runGit(upstream, ["push", "origin", "main"]);
+    runGit(work, ["fetch"]);
+
+    const status = await runCli(["dev", "status", "--agent"], { cwd: work });
+    const output = normalizeOutput(status);
+
+    expect(status.exitCode).toBe(0);
+    expect(output).toContain("has_upstream: no");
+    expect(output).toContain("behind_base: 1");
+    expect(output).toContain("behind_upstream: 0");
+    // `behind` stays an alias of behind_base.
+    expect(output).toContain("behind: 1");
+
+    const ready = await runCli(["dev", "ready", "--agent"], { cwd: work });
+    expect(ready.exitCode).not.toBe(0);
+    expect(normalizeOutput(ready)).toContain("behind base");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+devTest("dev status separates distance from base and distance from upstream", async () => {
+  const { base, work, upstream } = createUnconfiguredRepoWithRemote();
+
+  try {
+    runGit(work, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(work, "task.txt"), "task\n");
+    commitAll(work, "feat: task");
+    runGit(work, ["push", "-u", "origin", "feature/task"]);
+
+    // Someone else pushes onto the same feature branch.
+    runGit(upstream, ["fetch", "origin"]);
+    runGit(upstream, ["checkout", "-b", "feature/task", "origin/feature/task"]);
+    writeFileSync(join(upstream, "teammate.txt"), "teammate\n");
+    commitAll(upstream, "feat: teammate");
+    runGit(upstream, ["push", "origin", "feature/task"]);
+    runGit(work, ["fetch"]);
+
+    const status = await runCli(["dev", "status", "--agent"], { cwd: work });
+    const output = normalizeOutput(status);
+
+    expect(output).toContain("behind_upstream: 1");
+    expect(output).toContain("behind_base: 0");
+    // `dev sync` cannot fix a branch that is behind its own upstream, so `ready`
+    // must not send the agent into that loop.
+    expect(output).not.toMatch(/next_action:.*behind base/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+devTest("dev sync_from_remote: false keeps the old local-base behaviour", async () => {
+  const { base, work, upstream } = createUnconfiguredRepoWithRemote();
+
+  try {
+    writeFileSync(
+      join(work, ".fizzyx.yaml"),
+      `api_url: https://example.com\naccount: 1\n\ndev:\n  production_branch: main\n  default_base: main\n  sync_from_remote: false\n`,
+    );
+    commitAll(work, "chore: add config");
+    runGit(work, ["checkout", "-b", "feature/task"]);
+
+    writeFileSync(join(upstream, "upstream.txt"), "upstream work\n");
+    commitAll(upstream, "feat: upstream advance");
+    runGit(upstream, ["push", "origin", "main"]);
+    const advanced = gitOut(upstream, ["rev-parse", "HEAD"]);
+
+    const result = await runCli(["dev", "sync", "--agent"], { cwd: work });
+    expect(result.exitCode).toBe(0);
+    // Opted out: the remote commit is deliberately not pulled in.
+    expect(gitOut(work, ["rev-list", "HEAD"]).split("\n")).not.toContain(advanced);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+devTest("dev sync with the merge strategy also uses the remote base ref", async () => {
+  const { base, work, upstream } = createUnconfiguredRepoWithRemote();
+
+  try {
+    writeFileSync(
+      join(work, ".fizzyx.yaml"),
+      `api_url: https://example.com\naccount: 1\n\ndev:\n  production_branch: main\n  default_base: main\n  sync_strategy: merge\n`,
+    );
+    commitAll(work, "chore: add config");
+    runGit(work, ["checkout", "-b", "feature/task"]);
+
+    writeFileSync(join(upstream, "upstream.txt"), "upstream work\n");
+    commitAll(upstream, "feat: upstream advance");
+    runGit(upstream, ["push", "origin", "main"]);
+    const advanced = gitOut(upstream, ["rev-parse", "HEAD"]);
+
+    const result = await runCli(["dev", "sync", "--agent"], { cwd: work });
+    expect(result.exitCode).toBe(0);
+    expect(gitOut(work, ["rev-list", "HEAD"]).split("\n")).toContain(advanced);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// --- B2: ahead, and the route to `dev ready` --------------------------------
+
+devTest("dev status counts unpushed commits and routes to dev ready", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    runGit(root, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(root, "a.txt"), "a\n");
+    commitAll(root, "feat: one");
+    writeFileSync(join(root, "b.txt"), "b\n");
+    commitAll(root, "feat: two");
+
+    const status = await runCli(["dev", "status", "--agent"], { cwd: root });
+    const output = normalizeOutput(status);
+
+    expect(status.exitCode).toBe(0);
+    expect(output).toContain("has_upstream: no");
+    expect(output).toContain("ahead: 2");
+    expect(output).toMatch(/next_action:.*fizzyx dev ready/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev status on a detached HEAD does not claim the branch is behind base", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    writeFileSync(join(root, "second.txt"), "second\n");
+    commitAll(root, "chore: second");
+    runGit(root, ["checkout", "--detach", "HEAD~1"]);
+
+    const status = await runCli(["dev", "status", "--agent"], { cwd: root });
+    const output = normalizeOutput(status);
+
+    expect(status.exitCode).toBe(0);
+    expect(output).toContain("detached");
+    expect(output).not.toMatch(/next_action:.*behind base/);
+    expect(output).toMatch(/next_action:.*detached/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --- C1: sync must report the real failure ---------------------------------
+
+devTest("dev sync reports the real git error and no conflict script without a rebase", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    runGit(root, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(root, "task.txt"), "task\n");
+    commitAll(root, "feat: task");
+
+    // Baseline-accepted files keep `dirty` false, so sync proceeds and git refuses.
+    writeFileSync(join(root, "README.md"), "# base\nPRE-EXISTING\n");
+    await runCli(["dev", "baseline", "accept", "--agent"], { cwd: root });
+
+    // Advance main so the rebase has real work to do.
+    runGit(root, ["stash", "push", "-m", "hold"]);
+    runGit(root, ["checkout", "main"]);
+    writeFileSync(join(root, "other.txt"), "other\n");
+    commitAll(root, "chore: advance main");
+    runGit(root, ["checkout", "feature/task"]);
+    runGit(root, ["stash", "pop"]);
+
+    const result = await runCli(["dev", "sync", "--agent"], { cwd: root });
+    const output = normalizeOutput(result);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(output).toContain("unstaged changes");
+    expect(output).not.toContain("git rebase --continue");
+    expect(output).not.toContain("git rebase --abort");
+    expect(output).toContain("--stash");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev sync --stash can sync a baseline-accepted tree", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    runGit(root, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(root, "task.txt"), "task\n");
+    commitAll(root, "feat: task");
+
+    writeFileSync(join(root, "README.md"), "# base\nPRE-EXISTING\n");
+    await runCli(["dev", "baseline", "accept", "--agent"], { cwd: root });
+
+    runGit(root, ["stash", "push", "-m", "hold"]);
+    runGit(root, ["checkout", "main"]);
+    writeFileSync(join(root, "other.txt"), "other\n");
+    commitAll(root, "chore: advance main");
+    const advanced = gitOut(root, ["rev-parse", "HEAD"]);
+    runGit(root, ["checkout", "feature/task"]);
+    runGit(root, ["stash", "pop"]);
+
+    const result = await runCli(["dev", "sync", "--stash", "--agent"], { cwd: root });
+
+    expect(result.exitCode).toBe(0);
+    expect(gitOut(root, ["rev-list", "HEAD"]).split("\n")).toContain(advanced);
+    // The pre-existing edit is restored, not left in a stash.
+    expect(gitOut(root, ["status", "--porcelain"])).toContain("README.md");
+    expect(gitOut(root, ["stash", "list"])).toBe("");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --- C2: audit checks that could never fire --------------------------------
+
+devTest("dev doctor reports a dirty protected branch", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    writeFileSync(join(root, "d1.txt"), "one\n");
+    writeFileSync(join(root, "d2.txt"), "two\n");
+    writeFileSync(join(root, "README.md"), "# base\ndirty\n");
+
+    const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+    const output = normalizeOutput(result);
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toMatch(/protected_dirty: [1-9]/);
+    expect(output).toContain("main");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev doctor leaves protected_dirty at zero on a clean protected branch", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+    expect(normalizeOutput(result)).toContain("protected_dirty: 0");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev doctor reports feature branches based on an environment branch", async () => {
+  const root = createWorkflowRepo();
+
+  try {
+    // Give `dev` a commit of its own so it is genuinely ahead of production.
+    runGit(root, ["checkout", "dev"]);
+    writeFileSync(join(root, "env-only.txt"), "env work\n");
+    commitAll(root, "feat: environment-only commit");
+    runGit(root, ["checkout", "-b", "feature/on-dev"]);
+    writeFileSync(join(root, "on-dev.txt"), "branched from dev\n");
+    commitAll(root, "feat: branched off the environment branch");
+    runGit(root, ["checkout", "main"]);
+
+    const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+    const output = normalizeOutput(result);
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toMatch(/feature_on_env_base: [1-9]/);
+    expect(output).toContain("feature/on-dev");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev doctor does not flag feature branches based on production", async () => {
+  const root = createWorkflowRepo();
+
+  try {
+    runGit(root, ["checkout", "main"]);
+    const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+    expect(normalizeOutput(result)).toContain("feature_on_env_base: 0");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev promote does not claim file-scope or freshness checks it never ran", async () => {
+  const root = createWorkflowRepo();
+
+  try {
+    const result = await runCli(
+      ["dev", "promote", "feature/demo", "--to", "staging", "--dry-run"],
+      { cwd: root },
+    );
+    const output = normalizeOutput(result);
+
+    // No scope rule exists for `feature` branches, so no verdict is reported either way.
+    expect(output).not.toContain("appear related to branch purpose");
+    // The freshness check was never computed; the promotion plan starts with `git fetch`.
+    expect(output).not.toContain("fetched recently");
+    expect(output).not.toContain("may be stale");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --- C3: a failed check must say why ----------------------------------------
+
+devTest("dev ready surfaces stderr from a failed check", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    // The marker must live only in the check's stderr, never in the command text the
+    // report echoes back, or the assertion would pass without the fix.
+    writeFileSync(join(root, "failing-check.sh"), "echo COMPILER-DIAGNOSTIC 1>&2\nexit 1\n");
+    writeFileSync(
+      join(root, ".fizzyx.yaml"),
+      `api_url: https://example.com\naccount: 1\n\ndev:\n  production_branch: main\n  checks:\n    ready:\n      - bash failing-check.sh\n`,
+    );
+    commitAll(root, "chore: add config");
+    runGit(root, ["checkout", "-b", "feature/task"]);
+
+    const result = await runCli(["dev", "ready"], { cwd: root });
+    const output = normalizeOutput(result);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(output).toContain("compiler-diagnostic");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev ready runs with no configured checks in an unconfigured repo", async () => {
+  const root = createUnconfiguredRepo();
+
+  try {
+    runGit(root, ["checkout", "-b", "feature/task"]);
+    writeFileSync(join(root, "task.txt"), "task\n");
+    commitAll(root, "feat: task");
+
+    const result = await runCli(["dev", "ready", "--agent"], { cwd: root });
+    expect(result.exitCode).toBe(0);
+    expect(normalizeOutput(result)).toContain("ready: yes");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --- D1: empty repository ---------------------------------------------------
+
+devTest("dev start works in a repository with no commits", async () => {
+  const root = createEmptyRepo();
+
+  try {
+    const result = await runCli(["dev", "start", "firsttask", "--agent"], { cwd: root });
+
+    expect(result.exitCode).toBe(0);
+    expect(normalizeOutput(result)).toContain("branch: feature/firsttask");
+    expect(gitOut(root, ["branch", "--show-current"])).toBe("feature/firsttask");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+devTest("dev doctor works in a repository with no commits", async () => {
+  const root = createEmptyRepo();
+
+  try {
+    const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+
+    expect(result.exitCode).toBe(0);
+    expect(normalizeOutput(result)).toContain("merged: 0");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

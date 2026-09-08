@@ -56,6 +56,10 @@ jobs:
           npm pack --dry-run
 
       - name: The published binary must exist and run
+        # Run it with bun, not node: the bundle is built for the bun target and
+        # its shebang is `#!/usr/bin/env bun`, so node fails at module load on
+        # `globalThis.Bun` before ever reaching the CLI.
         run: |
           test -f dist/main.js
-          node dist/main.js --version
+          head -1 dist/main.js | grep -qx '#!/usr/bin/env bun'
+          bun dist/main.js --version

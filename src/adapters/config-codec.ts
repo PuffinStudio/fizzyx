@@ -138,6 +138,10 @@ const renderDevConfig = (dev: DevConfig): YamlObject => {
     result.sync_strategy = dev.syncStrategy;
   }
 
+  if (dev.syncFromRemote !== undefined) {
+    result.sync_from_remote = dev.syncFromRemote;
+  }
+
   if (dev.protectedBranches) {
     result.protected_branches = dev.protectedBranches;
   }
@@ -432,6 +436,8 @@ const parseDevConfig = (raw: unknown): DevConfig | undefined => {
   const productionBranch = stringValue(dev.production_branch);
   const defaultBase = stringValue(dev.default_base);
   const syncStrategy = parseDevSyncStrategy(dev.sync_strategy);
+  const syncFromRemote =
+    typeof dev.sync_from_remote === "boolean" ? dev.sync_from_remote : undefined;
   const protectedBranches = stringArrayValue(dev.protected_branches);
   const environmentBranches = parseDevEnvironmentBranches(dev.environment_branches);
   const branchPrefixes = parseDevBranchPrefixes(dev.branch_prefixes);
@@ -445,6 +451,7 @@ const parseDevConfig = (raw: unknown): DevConfig | undefined => {
   if (productionBranch) parsed.productionBranch = productionBranch;
   if (defaultBase) parsed.defaultBase = defaultBase;
   if (syncStrategy) parsed.syncStrategy = syncStrategy;
+  if (syncFromRemote !== undefined) parsed.syncFromRemote = syncFromRemote;
   if (protectedBranches) parsed.protectedBranches = protectedBranches;
   if (environmentBranches) parsed.environmentBranches = environmentBranches;
   if (branchPrefixes) parsed.branchPrefixes = branchPrefixes;

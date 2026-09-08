@@ -11,7 +11,20 @@ Use this when making code changes. Prefer safe sequencing and explicit handoff.
 `AGENTS.md`. It preserves all instructions outside that section. Skill materialization remains
 separate and explicit through `fizzyx skill init --project` or `--global`.
 
-## Card workflow
+## Works with or without a `.fizzyx.yaml`
+
+The git half of this workflow — `fizzyx dev status`, `start`, `sync`, `checkpoint`, `ready`,
+`promote`, `cleanup`, `doctor`, `baseline` — works in **any** git repository, configured or
+not. Without a config the CLI simply does not touch Fizzy cards; every default (production
+branch `main`, protected branches `main`/`master`/`production`/`stable`, branch prefixes named
+after the kind) applies as if it had been written out.
+
+The card half — every `fizzyx flow` command, and the `--card` association on `dev start` —
+needs a `.fizzyx.yaml` with an API URL and account. In a repository without one, **skip the
+steps marked (card only)** below and report that the project is not card-backed. Do not stop
+the git workflow, and do not create a config just to make a step work unless the user asks.
+
+## Card workflow (card only)
 
 When creating a Fizzy card, do not pass plain text directly to `flow create`.
 
@@ -59,8 +72,8 @@ generic move to bypass the guarded `flow done` completion checks.
 
 ## What to do
 
-1. If working from a card, run `fizzyx flow show <card>` and keep the card number attached
-   to branch work with `fizzyx dev start <slug> --kind <kind> --card <card>`.
+1. (card only) If working from a card, run `fizzyx flow show <card>` and keep the card number
+   attached to branch work with `fizzyx dev start <slug> --kind <kind> --card <card>`.
 2. Run `fizzyx dev status --agent` before editing.
    If pre-existing changes must remain, inspect them and explicitly record them with
    `fizzyx dev baseline accept` before task edits.
@@ -73,20 +86,35 @@ generic move to bypass the guarded `flow done` completion checks.
    machine-readable fields.
 6. Commit or checkpoint only changes made during the current task. Do not include files that
    were already dirty before you started unless the user explicitly asks.
-7. Keep long-running work safe with `fizzyx dev checkpoint`.
-8. Sync with base using `fizzyx dev sync` (never raw `git merge main`).
-9. Re-run `fizzyx dev status --agent` after branch or sync changes.
-10. Before moving a card to review or reporting completion, run `fizzyx dev ready --agent`.
-11. Move cards with `fizzyx flow review <card>` only after ready checks pass.
-12. Close cards with `fizzyx flow done <card> <ref>` only after the relevant commit, branch,
-    or accepted change is complete according to project policy. `flow done` blocks while the
-    card has unfinished steps — finish them or pass `--complete-steps`. Provide `<ref>`
+7. Keep long-running work safe with `fizzyx dev checkpoint`. It stages only the files this
+   task touched, untracked ones included, and leaves recorded baseline files alone. `--all`
+   is the explicit escape that also commits pre-existing changes you did not make — use it
+   only when the user asks. `checkpoint` refuses to commit on a protected branch or a
+   detached HEAD; move the work onto its own branch rather than passing `--allow-protected`.
+8. Sync with base using `fizzyx dev sync` (never raw `git merge main`). It fetches and then
+   rebases (or merges) onto `origin/<base>` when that remote-tracking ref exists, so it
+   advances against what was just fetched instead of a stale local branch. On a tree with
+   uncommitted or baseline-accepted changes, pass `--stash`.
+9. Re-run `fizzyx dev status --agent` after branch or sync changes. `behind_base` is the
+   distance from the base ref and is what `dev sync` and `dev ready` act on; `behind_upstream`
+   is the distance from the branch's own upstream, which `dev sync` does not change — a
+   non-zero value there means someone else pushed to your branch, so coordinate instead of
+   rewriting it. `behind` is a deprecated alias of `behind_base`.
+10. Run `fizzyx dev ready --agent` before reporting the work complete. This gates completion in
+    every repository, card-backed or not: it is a check on the branch, not on a card.
+11. (card only) Move cards with `fizzyx flow review <card>` only after ready checks pass.
+12. (card only) Close cards with `fizzyx flow done <card> <ref>` only after the relevant commit,
+    branch, or accepted change is complete according to project policy. `flow done` blocks while
+    the card has unfinished steps — finish them or pass `--complete-steps`. Provide `<ref>`
     explicitly when git cannot infer the closing commit/branch.
 13. For movement between environments or release, use `fizzyx dev promote --dry-run` first.
 14. Use `fizzyx dev cleanup` only as a cleanup preview, then report pending branch deletions.
+    `--confirm-delete` switches to the production branch, so it refuses to run while the tree
+    has uncommitted changes; commit or stash them first.
 15. When blocked by config/guardrail checks, report the blocker and next safe step.
-16. Use `flow unblock` to return a blocked card to the configured default column, `flow reopen` for
-    a closed card, and `flow untriage` only when intentionally returning a card to Fizzy Maybe.
+16. (card only) Use `flow unblock` to return a blocked card to the configured default column,
+    `flow reopen` for a closed card, and `flow untriage` only when intentionally returning a
+    card to Fizzy Maybe.
 
 ## Worktrees
 
@@ -134,6 +162,9 @@ Regenerate the index with `fizzyx init --workspace`.
 - Refuse to commit solely because `git status` is dirty when the dirty files are your own
   current-task edits. Stage only your files and commit/checkpoint them.
 - Commit pre-existing dirty files from before your task unless the user explicitly asks.
+- Squash commits that are already published. `fizzyx dev ready --squash` collapses everything
+  back to the merge base, so it refuses when any commit in that range is reachable from a
+  remote; land those commits as they are instead of rewriting them.
 
 ## Dirty Work Ownership
 
