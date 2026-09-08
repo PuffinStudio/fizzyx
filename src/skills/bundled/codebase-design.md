@@ -47,7 +47,7 @@ Write a `CONTEXT.md` to the root of the project, containing:
 
 ## Pass 3: Deepen (optional)
 
-If the user wants to go deeper, run the `/deepen` command.
+If the user wants to go deeper, run the `/improve-codebase` skill: it scans for shallow modules worth deepening and walks through one with you.
 
 ## Pass 4: Design
 
