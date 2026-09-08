@@ -54,6 +54,12 @@ const createWorkflowRepo = (): string => {
 
   runGit(root, ["init"]);
   runGit(root, ["checkout", "-b", "main"]);
+  // Configure the identity on the repository, not per `git commit` invocation: commits made
+  // by the CLI under test (`dev checkpoint`, `ready --squash`) get no `-c` flags from here,
+  // so without this they only succeed on a machine that happens to have a global git
+  // identity. CI has none, which is where that showed up.
+  runGit(root, ["config", "user.email", "dev-workflow@example.com"]);
+  runGit(root, ["config", "user.name", "Dev Workflow"]);
 
   writeFileSync(
     join(root, ".fizzyx.yaml"),
