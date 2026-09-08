@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to a PR makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Lint, format, types, tests
+        # check:ci uses `oxfmt --check`. The local `check` script writes
+        # formatting fixes, which in CI would silently pass a dirty branch.
+        run: bun run check:ci
+
+  pack:
+    name: Package publishability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build and pack
+        # `files` in package.json ships dist/main.js, and `bin` points at it.
+        # Packing here means a broken build or a missing entry fails the PR
+        # rather than the release.
+        run: |
+          bun run build
+          npm pack --dry-run
+
+      - name: The published binary must exist and run
+        run: |
+          test -f dist/main.js
+          node dist/main.js --version
