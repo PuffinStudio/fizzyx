@@ -1,31 +1,31 @@
 {
-	"compilerOptions": {
-		// Environment setup & latest features
-		"lib": ["ESNext", "DOM"],
-		"target": "ESNext",
-		"module": "Preserve",
-		"moduleDetection": "force",
-		"jsx": "react-jsx",
-		"allowJs": true,
-		"types": ["bun", "miniprogram-api-typings", "react", "react-dom"],
-		// Bundler mode
-		"moduleResolution": "bundler",
-		"allowImportingTsExtensions": true,
-		"verbatimModuleSyntax": true,
-		"noEmit": true,
-		"paths": {
-			"@/*": ["./src/planner/*"]
-		},
-		// Best practices
-		"strict": true,
-		"skipLibCheck": true,
-		"noFallthroughCasesInSwitch": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		// Some stricter flags (disabled by default)
-		"noUnusedLocals": false,
-		"noUnusedParameters": false,
-		"noPropertyAccessFromIndexSignature": false
-	},
-	"exclude": ["tests/pet-admin-*", "tests/admin"]
+  "compilerOptions": {
+    // Environment setup & latest features
+    "lib": ["ESNext", "DOM"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "types": ["bun", "miniprogram-api-typings", "react", "react-dom"],
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/planner/*"]
+    },
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    // Some stricter flags (disabled by default)
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "exclude": ["tests/pet-admin-*", "tests/admin"]
 }

@@ -10,16 +10,16 @@ import { devDoctorCmd } from "./doctor";
 import { devBaselineCmd } from "./baseline";
 
 export const devCmd = Command.make("dev").pipe(
-	Command.withDescription("Git workflow commands for daily development"),
-	Command.withSubcommands([
-		devStatusCmd,
-		devStartCmd,
-		devSyncCmd,
-		devCheckpointCmd,
-		devReadyCmd,
-		devPromoteCmd,
-		devCleanupCmd,
-		devDoctorCmd,
-		devBaselineCmd,
-	]),
+  Command.withDescription("Git workflow commands for daily development"),
+  Command.withSubcommands([
+    devStatusCmd,
+    devStartCmd,
+    devSyncCmd,
+    devCheckpointCmd,
+    devReadyCmd,
+    devPromoteCmd,
+    devCleanupCmd,
+    devDoctorCmd,
+    devBaselineCmd,
+  ]),
 );

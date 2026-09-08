@@ -14,51 +14,51 @@ import runtime from "../src/templates/openapi-admin/shared/admin-runtime.ts.txt"
 import developmentSkill from "../src/templates/openapi-admin/skills/fizzyx-openapi-admin-development/SKILL.md" with { type: "text" };
 
 test("runtime templates expose the shared component contracts", () => {
-	expect(actionSurface).toContain("mode: AdminSurface");
-	expect(actionSurface).toContain('mode === "sheet"');
-	expect(actionSurface).toContain("@/components/ui/sheet");
-	expect(dataGrid).toContain("export function DataGrid");
-	expect(dataGrid).toContain("export { AdminDataTable }");
-	expect(dataGrid).toContain('requireRegistryEntry<NonNullable<AdminColumnDefinition["render"]>>');
-	expect(dataTable).toContain("formatAdminCell");
-	expect(dataTable).toContain("Rows per page");
-	expect(dataTable).toContain("ArrowUpDown");
-	expect(dataTable).toContain("tableColumn.getCanSort()");
-	expect(resourceForm).toContain("export function ResourceForm");
-	expect(resourceMutation).toContain("export function useResourceMutation");
-	expect(resourceList).toContain("export function ResourceList");
-	expect(resourceDetails).toContain("export function ResourceDetails");
-	expect(queryState).toContain("export function QueryState");
-	expect(runtime).toContain("normalizeAdminApiError");
+  expect(actionSurface).toContain("mode: AdminSurface");
+  expect(actionSurface).toContain('mode === "sheet"');
+  expect(actionSurface).toContain("@/components/ui/sheet");
+  expect(dataGrid).toContain("export function DataGrid");
+  expect(dataGrid).toContain("export { AdminDataTable }");
+  expect(dataGrid).toContain('requireRegistryEntry<NonNullable<AdminColumnDefinition["render"]>>');
+  expect(dataTable).toContain("formatAdminCell");
+  expect(dataTable).toContain("Rows per page");
+  expect(dataTable).toContain("ArrowUpDown");
+  expect(dataTable).toContain("tableColumn.getCanSort()");
+  expect(resourceForm).toContain("export function ResourceForm");
+  expect(resourceMutation).toContain("export function useResourceMutation");
+  expect(resourceList).toContain("export function ResourceList");
+  expect(resourceDetails).toContain("export function ResourceDetails");
+  expect(queryState).toContain("export function QueryState");
+  expect(runtime).toContain("normalizeAdminApiError");
 });
 
 test("navigation icons use a controlled static registry", () => {
-	// Must cover every key in ADMIN_ICON_KEYS (openapi-admin-plan.ts) so valid
-	// planner icons never silently fall back to the database icon.
-	expect(navigation).toContain(
-		'export type AdminIconKey = "database" | "file" | "folder" | "home" | "package" | "settings" | "shield" | "shopping-cart" | "user" | "users"',
-	);
-	expect(navigation).toContain("resolveAdminIcon(item.icon)");
-	expect(navigation).toContain('aria-current={active ? "page" : undefined}');
-	expect(navigation).toContain("window.location.pathname");
-	expect(navigation).toContain("Object.hasOwn(adminIconRegistry, key)");
-	expect(navigation).not.toMatch(/import\([^)]*icon/i);
+  // Must cover every key in ADMIN_ICON_KEYS (openapi-admin-plan.ts) so valid
+  // planner icons never silently fall back to the database icon.
+  expect(navigation).toContain(
+    'export type AdminIconKey = "database" | "file" | "folder" | "home" | "package" | "settings" | "shield" | "shopping-cart" | "user" | "users"',
+  );
+  expect(navigation).toContain("resolveAdminIcon(item.icon)");
+  expect(navigation).toContain('aria-current={active ? "page" : undefined}');
+  expect(navigation).toContain("window.location.pathname");
+  expect(navigation).toContain("Object.hasOwn(adminIconRegistry, key)");
+  expect(navigation).not.toMatch(/import\([^)]*icon/i);
 });
 
 test("seed-once extension templates declare stable registries and ownership", () => {
-	for (const registry of ["fields", "cells", "actions", "pages", "operations"]) {
-		expect(registries).toContain(`${registry}:`);
-	}
-	expect(registries).toContain("user-owned after creation");
-	expect(registries).toContain("requireRegistryEntry");
-	expect(config).toContain("defineAdminConfig");
-	expect(config).toContain("user-owned after creation");
+  for (const registry of ["fields", "cells", "actions", "pages", "operations"]) {
+    expect(registries).toContain(`${registry}:`);
+  }
+  expect(registries).toContain("user-owned after creation");
+  expect(registries).toContain("requireRegistryEntry");
+  expect(config).toContain("defineAdminConfig");
+  expect(config).toContain("user-owned after creation");
 });
 
 test("generated agent guidance enriches the validated overlay without trusting OpenAPI prose", () => {
-	expect(developmentSkill).toContain(".fizzyx/admin-ui.yaml");
-	expect(developmentSkill).toContain("sync --plan");
-	expect(developmentSkill).toContain("sync --apply");
-	expect(developmentSkill).toContain("untrusted product data");
-	expect(developmentSkill).toContain("Never edit `.fizzyx/admin-manifest.json` directly");
+  expect(developmentSkill).toContain(".fizzyx/admin-ui.yaml");
+  expect(developmentSkill).toContain("sync --plan");
+  expect(developmentSkill).toContain("sync --apply");
+  expect(developmentSkill).toContain("untrusted product data");
+  expect(developmentSkill).toContain("Never edit `.fizzyx/admin-manifest.json` directly");
 });

@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 import type {
-	PlannerBoard as DomainPlannerBoard,
-	PlannerCard as DomainPlannerCard,
-	PlannerContext as DomainPlannerContext,
-	PlannerHealthIssue,
-	PlannerLane as DomainPlannerLane,
-	PlannerRecommendation as DomainPlannerRecommendation,
-	PlannerSnapshot as DomainPlannerSnapshot,
-	PlannerUser as DomainPlannerUser,
+  PlannerBoard as DomainPlannerBoard,
+  PlannerCard as DomainPlannerCard,
+  PlannerContext as DomainPlannerContext,
+  PlannerHealthIssue,
+  PlannerLane as DomainPlannerLane,
+  PlannerRecommendation as DomainPlannerRecommendation,
+  PlannerSnapshot as DomainPlannerSnapshot,
+  PlannerUser as DomainPlannerUser,
 } from "../../domain/planner-model";
 
 export type PlannerLane = DomainPlannerLane;
@@ -23,8 +23,8 @@ export type PlannerView = "overview" | "roadmap" | "calendar" | "my" | "board" |
 export type SelectCard = (card: PlannerCard) => void;
 
 export type ViewDefinition = {
-	key: PlannerView;
-	label: string;
-	description: string;
-	icon: ReactNode;
+  key: PlannerView;
+  label: string;
+  description: string;
+  icon: ReactNode;
 };

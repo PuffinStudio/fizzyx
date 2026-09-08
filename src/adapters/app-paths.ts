@@ -14,9 +14,9 @@ const CREDENTIALS_DIR = "credentials";
 const CACHE_DIR = "cache";
 
 const resolveHome = (): string => {
-	const home = homedir();
-	if (!home) throw new Error("HOME is not set");
-	return home;
+  const home = homedir();
+  if (!home) throw new Error("HOME is not set");
+  return home;
 };
 
 /** ~/.config/fizzyx */
@@ -24,20 +24,20 @@ export const resolveFizzyxConfigDir = (): string => `${resolveHome()}/${FIZZYX_C
 
 /** ~/.config/fizzyx/credentials/<safeName>.json */
 export const resolveCredentialPath = (profile: string): string =>
-	`${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CREDENTIALS_DIR}/${safePathSegment(profile)}.json`;
+  `${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CREDENTIALS_DIR}/${safePathSegment(profile)}.json`;
 
 /** ~/.config/fizzy/cache/<account>/<board>/board.json */
 export const resolveCachePath = (account: string, board: string): string => {
-	if (!account) throw new Error("cache requires account");
-	if (!board) throw new Error("cache requires board");
-	return `${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CACHE_DIR}/${safePathSegment(account)}/${safePathSegment(board)}/board.json`;
+  if (!account) throw new Error("cache requires account");
+  if (!board) throw new Error("cache requires board");
+  return `${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CACHE_DIR}/${safePathSegment(account)}/${safePathSegment(board)}/board.json`;
 };
 
 /** ~/.config/fizzy/cache/<account>/<board>/planner-snapshot.json */
 export const resolvePlannerSnapshotCachePath = (account: string, board: string): string => {
-	if (!account) throw new Error("cache requires account");
-	if (!board) throw new Error("cache requires board");
-	return `${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CACHE_DIR}/${safePathSegment(account)}/${safePathSegment(board)}/planner-snapshot.json`;
+  if (!account) throw new Error("cache requires account");
+  if (!board) throw new Error("cache requires board");
+  return `${resolveHome()}/${FIZZYX_CONFIG_DIR}/${CACHE_DIR}/${safePathSegment(account)}/${safePathSegment(board)}/planner-snapshot.json`;
 };
 
 /** ~/.config/fizzy/config.yaml */
@@ -45,6 +45,6 @@ export const resolveOfficialConfigPath = (): string => `${resolveHome()}/${OFFIC
 
 /** Current-directory .fizzyx.yaml */
 export const resolveProjectConfigPath = (cwd?: string): string =>
-	`${cwd ?? process.cwd()}/${CONFIG_FILE}`;
+  `${cwd ?? process.cwd()}/${CONFIG_FILE}`;
 
 const safePathSegment = (name: string): string => name.replace(/[./\\]/g, "_");

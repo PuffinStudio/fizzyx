@@ -11,20 +11,20 @@ import { skillCmd } from "./skill-command";
 import { devCmd } from "./dev";
 
 const rootCmd = Command.make("fizzyx").pipe(
-	Command.withDescription("Fizzyx CLI — Fizzy workflow and code generation tool"),
-	Command.withSubcommands([
-		setupCmd,
-		authCmd,
-		flowCmd,
-		skillCmd,
-		devCmd,
-		ossCmd,
-		openapiCmd,
-		updateCmd,
-		plannerCmd,
-	]),
+  Command.withDescription("Fizzyx CLI — Fizzy workflow and code generation tool"),
+  Command.withSubcommands([
+    setupCmd,
+    authCmd,
+    flowCmd,
+    skillCmd,
+    devCmd,
+    ossCmd,
+    openapiCmd,
+    updateCmd,
+    plannerCmd,
+  ]),
 );
 
 export const runCli = (args: ReadonlyArray<string>) => {
-	return Command.runWith(rootCmd, { version: VERSION })(args);
+  return Command.runWith(rootCmd, { version: VERSION })(args);
 };

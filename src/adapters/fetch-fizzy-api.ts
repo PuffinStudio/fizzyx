@@ -2,15 +2,15 @@ import { Effect, Layer } from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import { ApiError, FileError } from "../domain/errors";
 import type {
-	Assignee,
-	Board,
-	BoardColumn,
-	Card,
-	Comment,
-	Identity,
-	ProjectConfig,
-	ColumnRef,
-	Step,
+  Assignee,
+  Board,
+  BoardColumn,
+  Card,
+  Comment,
+  Identity,
+  ProjectConfig,
+  ColumnRef,
+  Step,
 } from "../domain/models";
 import { FizzyApi } from "../ports/fizzy-api";
 import { ConfigRepo, type ConfigRepository } from "../ports/config-repository";
@@ -20,534 +20,532 @@ import { execute } from "../fizzy-effect/effect-http";
 import type { UpdateStepRequestContent } from "../fizzy-effect/types";
 
 export const Live = Layer.effect(FizzyApi)(
-	Effect.gen(function* () {
-		const configRepo = yield* ConfigRepo;
-		const config = yield* configRepo.loadProjectConfig();
-		const credentials = yield* configRepo
-			.loadCredentials(config.account)
-			.pipe(
-				Effect.catch(() =>
-					Effect.fail(new ApiError({ message: "Not logged in. Run: fizzyx auth login" })),
-				),
-			);
-		return makeAuthenticatedFetchFizzyApi({ configRepo, config, initialToken: credentials.token });
-	}),
+  Effect.gen(function* () {
+    const configRepo = yield* ConfigRepo;
+    const config = yield* configRepo.loadProjectConfig();
+    const credentials = yield* configRepo
+      .loadCredentials(config.account)
+      .pipe(
+        Effect.catch(() =>
+          Effect.fail(new ApiError({ message: "Not logged in. Run: fizzyx auth login" })),
+        ),
+      );
+    return makeAuthenticatedFetchFizzyApi({ configRepo, config, initialToken: credentials.token });
+  }),
 );
 
 type JsonObject = Record<string, unknown>;
 type JsonValue = unknown;
 
 interface FetchFizzyApiOptions {
-	refreshToken?: () => Effect.Effect<string, ApiError>;
+  refreshToken?: () => Effect.Effect<string, ApiError>;
 }
 
 export interface AuthenticatedFetchFizzyApiOptions {
-	configRepo: ConfigRepository;
-	config: ProjectConfig;
-	initialToken: string;
+  configRepo: ConfigRepository;
+  config: ProjectConfig;
+  initialToken: string;
 }
 
 export const makeAuthenticatedFetchFizzyApi = ({
-	configRepo,
-	config,
-	initialToken,
+  configRepo,
+  config,
+  initialToken,
 }: AuthenticatedFetchFizzyApiOptions): FizzyApi =>
-	makeFetchFizzyApi(config, initialToken, {
-		refreshToken: () =>
-			Effect.gen(function* () {
-				const migrated = yield* configRepo
-					.migrateCredentialsFromOfficial(config.account)
-					.pipe(Effect.mapError((cause) => new ApiError({ message: cause.message, status: 401 })));
-				yield* configRepo.saveCredentials(config.account, migrated).pipe(
-					Effect.mapError(
-						(cause) =>
-							new ApiError({
-								message: `Failed to persist migrated credentials: ${cause instanceof FileError ? cause.message : String(cause)}`,
-							}),
-					),
-				);
-				return migrated.token;
-			}),
-	});
+  makeFetchFizzyApi(config, initialToken, {
+    refreshToken: () =>
+      Effect.gen(function* () {
+        const migrated = yield* configRepo
+          .migrateCredentialsFromOfficial(config.account)
+          .pipe(Effect.mapError((cause) => new ApiError({ message: cause.message, status: 401 })));
+        yield* configRepo.saveCredentials(config.account, migrated).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ApiError({
+                message: `Failed to persist migrated credentials: ${cause instanceof FileError ? cause.message : String(cause)}`,
+              }),
+          ),
+        );
+        return migrated.token;
+      }),
+  });
 
 export const makeFetchFizzyApi = (
-	config: ProjectConfig,
-	initialToken: string,
-	options: FetchFizzyApiOptions = {},
+  config: ProjectConfig,
+  initialToken: string,
+  options: FetchFizzyApiOptions = {},
 ): FizzyApi => {
-	let token = initialToken;
-	const configureGeneratedClient = (activeToken: string): void => {
-		FizzyEffect.configure({
-			baseUrl: config.apiUrl.replace(/\/+$/, ""),
-			responseExtractor: envelopeData,
-		});
-		FizzyEffect.setToken(activeToken);
-	};
+  let token = initialToken;
+  const configureGeneratedClient = (activeToken: string): void => {
+    FizzyEffect.configure({
+      baseUrl: config.apiUrl.replace(/\/+$/, ""),
+      responseExtractor: envelopeData,
+    });
+    FizzyEffect.setToken(activeToken);
+  };
 
-	const runGenerated = <A>(
-		effect: Effect.Effect<A, EffectHttpClientError, HttpClient.HttpClient>,
-	): Effect.Effect<A, ApiError> => {
-		const runOnce = () =>
-			Effect.sync(() => configureGeneratedClient(token)).pipe(
-				Effect.flatMap(() => effect),
-				Effect.provide(FizzyEffect.FetchLayer),
-				Effect.mapError(toApiError),
-			);
-		return Effect.suspend(runOnce).pipe(
-			Effect.catch((failure) => {
-				if (failure.status !== 401 || !options.refreshToken) return Effect.fail(failure);
-				return options.refreshToken().pipe(
-					Effect.catch((refreshFailure) =>
-						refreshFailure.status === 401 ? Effect.fail(failure) : Effect.fail(refreshFailure),
-					),
-					Effect.tap((refreshedToken) => Effect.sync(() => void (token = refreshedToken))),
-					Effect.flatMap(() => runOnce()),
-				);
-			}),
-		);
-	};
+  const runGenerated = <A>(
+    effect: Effect.Effect<A, EffectHttpClientError, HttpClient.HttpClient>,
+  ): Effect.Effect<A, ApiError> => {
+    const runOnce = () =>
+      Effect.sync(() => configureGeneratedClient(token)).pipe(
+        Effect.flatMap(() => effect),
+        Effect.provide(FizzyEffect.FetchLayer),
+        Effect.mapError(toApiError),
+      );
+    return Effect.suspend(runOnce).pipe(
+      Effect.catch((failure) => {
+        if (failure.status !== 401 || !options.refreshToken) return Effect.fail(failure);
+        return options.refreshToken().pipe(
+          Effect.catch((refreshFailure) =>
+            refreshFailure.status === 401 ? Effect.fail(failure) : Effect.fail(refreshFailure),
+          ),
+          Effect.tap((refreshedToken) => Effect.sync(() => void (token = refreshedToken))),
+          Effect.flatMap(() => runOnce()),
+        );
+      }),
+    );
+  };
 
-	const toApiError = (cause: unknown): ApiError => {
-		if (cause instanceof ApiError) return cause;
-		const error = toRecord(cause);
-		const reason = toRecord(error?.reason);
-		const response = toRecord(reason?.response) || toRecord(error?.response);
-		const status = readFiniteNumber(response?.status);
-		if (Number.isFinite(status)) {
-			return new ApiError({ message: `HTTP ${String(status)}`, status });
-		}
-		return new ApiError({ message: String(cause) });
-	};
+  const toApiError = (cause: unknown): ApiError => {
+    if (cause instanceof ApiError) return cause;
+    const error = toRecord(cause);
+    const reason = toRecord(error?.reason);
+    const response = toRecord(reason?.response) || toRecord(error?.response);
+    const status = readFiniteNumber(response?.status);
+    if (Number.isFinite(status)) {
+      return new ApiError({ message: `HTTP ${String(status)}`, status });
+    }
+    return new ApiError({ message: String(cause) });
+  };
 
-	const asVoid = <A>(effect: Effect.Effect<A, ApiError>): Effect.Effect<void, ApiError> =>
-		effect.pipe(Effect.map(() => undefined));
+  const asVoid = <A>(effect: Effect.Effect<A, ApiError>): Effect.Effect<void, ApiError> =>
+    effect.pipe(Effect.map(() => undefined));
 
-	const envelopeData = (value: JsonValue): JsonValue => {
-		if (isRecord(value) && "data" in value) return value.data;
-		return value;
-	};
+  const envelopeData = (value: JsonValue): JsonValue => {
+    if (isRecord(value) && "data" in value) return value.data;
+    return value;
+  };
 
-	const decodeIdentity = (value: JsonValue): Effect.Effect<Identity, ApiError> =>
-		Effect.try({
-			try: () => {
-				const obj = toRecord(envelopeData(value));
-				const accounts = Array.isArray(obj?.accounts) ? obj.accounts : [];
-				const firstAccount = toRecord(accounts[0]);
-				const userCandidate = toRecord(obj?.user) || toRecord(firstAccount?.user) || obj;
-				const userId = readString(userCandidate?.id) || readString(obj?.user_id);
-				if (!userId) {
-					throw new ApiError({ message: "Failed to decode identity: missing userId" });
-				}
-				return {
-					userId,
-					name: readString(userCandidate?.name),
-					email: readString(userCandidate?.email),
-				};
-			},
-			catch: (cause) =>
-				cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
-		});
+  const decodeIdentity = (value: JsonValue): Effect.Effect<Identity, ApiError> =>
+    Effect.try({
+      try: () => {
+        const obj = toRecord(envelopeData(value));
+        const accounts = Array.isArray(obj?.accounts) ? obj.accounts : [];
+        const firstAccount = toRecord(accounts[0]);
+        const userCandidate = toRecord(obj?.user) || toRecord(firstAccount?.user) || obj;
+        const userId = readString(userCandidate?.id) || readString(obj?.user_id);
+        if (!userId) {
+          throw new ApiError({ message: "Failed to decode identity: missing userId" });
+        }
+        return {
+          userId,
+          name: readString(userCandidate?.name),
+          email: readString(userCandidate?.email),
+        };
+      },
+      catch: (cause) =>
+        cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
+    });
 
-	const decodeCard = (value: JsonValue): Effect.Effect<Card, ApiError> =>
-		Effect.try({
-			try: () => {
-				const obj = toRecord(value);
-				if (!obj) {
-					throw new ApiError({ message: "Failed to decode card: expected object" });
-				}
+  const decodeCard = (value: JsonValue): Effect.Effect<Card, ApiError> =>
+    Effect.try({
+      try: () => {
+        const obj = toRecord(value);
+        if (!obj) {
+          throw new ApiError({ message: "Failed to decode card: expected object" });
+        }
 
-				const number = readFiniteNumber(obj.number);
-				if (!Number.isFinite(number)) {
-					throw new ApiError({ message: "Failed to decode card: number must be finite" });
-				}
+        const number = readFiniteNumber(obj.number);
+        if (!Number.isFinite(number)) {
+          throw new ApiError({ message: "Failed to decode card: number must be finite" });
+        }
 
-				const title = readString(obj.title);
-				if (!title) {
-					throw new ApiError({ message: "Failed to decode card: title must be string" });
-				}
+        const title = readString(obj.title);
+        if (!title) {
+          throw new ApiError({ message: "Failed to decode card: title must be string" });
+        }
 
-				const descriptionHtml = readString(obj.description_html);
-				const tags = decodeTags(obj.tags);
-				const board = decodeCardBoard(obj.board);
-				const postponed = readBoolean(obj.postponed);
-				return {
-					id: readString(obj.id),
-					number,
-					title,
-					description: readString(obj.description),
-					...(descriptionHtml ? { descriptionHtml } : {}),
-					...(tags.length > 0 ? { tags } : {}),
-					column: decodeColumnRef(obj.column),
-					...(board ? { board } : {}),
-					assignees: decodeAssignees(obj.assignees),
-					closed: readBoolean(obj.closed),
-					...(postponed !== undefined ? { postponed } : {}),
-					golden: readBoolean(obj.golden),
-					steps: decodeSteps(obj.steps),
-				};
-			},
-			catch: (cause) =>
-				cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
-		});
+        const descriptionHtml = readString(obj.description_html);
+        const tags = decodeTags(obj.tags);
+        const board = decodeCardBoard(obj.board);
+        const postponed = readBoolean(obj.postponed);
+        return {
+          id: readString(obj.id),
+          number,
+          title,
+          description: readString(obj.description),
+          ...(descriptionHtml ? { descriptionHtml } : {}),
+          ...(tags.length > 0 ? { tags } : {}),
+          column: decodeColumnRef(obj.column),
+          ...(board ? { board } : {}),
+          assignees: decodeAssignees(obj.assignees),
+          closed: readBoolean(obj.closed),
+          ...(postponed !== undefined ? { postponed } : {}),
+          golden: readBoolean(obj.golden),
+          steps: decodeSteps(obj.steps),
+        };
+      },
+      catch: (cause) =>
+        cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
+    });
 
-	const decodeCards = (value: JsonValue): Effect.Effect<ReadonlyArray<Card>, ApiError> => {
-		if (!Array.isArray(value)) {
-			return Effect.fail(new ApiError({ message: "Failed to decode cards: expected array" }));
-		}
+  const decodeCards = (value: JsonValue): Effect.Effect<ReadonlyArray<Card>, ApiError> => {
+    if (!Array.isArray(value)) {
+      return Effect.fail(new ApiError({ message: "Failed to decode cards: expected array" }));
+    }
 
-		return Effect.forEach(value, decodeCard);
-	};
+    return Effect.forEach(value, decodeCard);
+  };
 
-	const decodeBoardColumns = (
-		value: JsonValue,
-	): Effect.Effect<ReadonlyArray<BoardColumn>, ApiError> => {
-		if (!Array.isArray(value)) {
-			return Effect.fail(new ApiError({ message: "Failed to decode columns: expected array" }));
-		}
+  const decodeBoardColumns = (
+    value: JsonValue,
+  ): Effect.Effect<ReadonlyArray<BoardColumn>, ApiError> => {
+    if (!Array.isArray(value)) {
+      return Effect.fail(new ApiError({ message: "Failed to decode columns: expected array" }));
+    }
 
-		const result: BoardColumn[] = [];
-		for (const item of value) {
-			const obj = toRecord(item);
-			if (!obj) continue;
+    const result: BoardColumn[] = [];
+    for (const item of value) {
+      const obj = toRecord(item);
+      if (!obj) continue;
 
-			const id = readString(obj.id);
-			const name = readString(obj.name);
-			if (!id || !name) continue;
+      const id = readString(obj.id);
+      const name = readString(obj.name);
+      if (!id || !name) continue;
 
-			result.push({ id, name });
-		}
+      result.push({ id, name });
+    }
 
-		return Effect.succeed(result);
-	};
+    return Effect.succeed(result);
+  };
 
-	const decodeBoard = (value: JsonValue): Effect.Effect<Board, ApiError> =>
-		Effect.try({
-			try: () => {
-				const obj = toRecord(value);
-				if (!obj) {
-					throw new ApiError({ message: "Failed to decode board: expected object" });
-				}
+  const decodeBoard = (value: JsonValue): Effect.Effect<Board, ApiError> =>
+    Effect.try({
+      try: () => {
+        const obj = toRecord(value);
+        if (!obj) {
+          throw new ApiError({ message: "Failed to decode board: expected object" });
+        }
 
-				const id = readString(obj.id);
-				if (!id) {
-					throw new ApiError({ message: "Failed to decode board: missing id" });
-				}
+        const id = readString(obj.id);
+        if (!id) {
+          throw new ApiError({ message: "Failed to decode board: missing id" });
+        }
 
-				return {
-					id,
-					name: readString(obj.name) || "",
-				};
-			},
-			catch: (cause) =>
-				cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
-		});
+        return {
+          id,
+          name: readString(obj.name) || "",
+        };
+      },
+      catch: (cause) =>
+        cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
+    });
 
-	const decodeBoards = (value: JsonValue): Effect.Effect<ReadonlyArray<Board>, ApiError> => {
-		if (!Array.isArray(value)) {
-			return Effect.fail(new ApiError({ message: "Failed to decode boards: expected array" }));
-		}
+  const decodeBoards = (value: JsonValue): Effect.Effect<ReadonlyArray<Board>, ApiError> => {
+    if (!Array.isArray(value)) {
+      return Effect.fail(new ApiError({ message: "Failed to decode boards: expected array" }));
+    }
 
-		return Effect.forEach(value, decodeBoard);
-	};
+    return Effect.forEach(value, decodeBoard);
+  };
 
-	const decodeBoardColumn = (value: JsonValue): Effect.Effect<BoardColumn, ApiError> =>
-		Effect.try({
-			try: () => {
-				const obj = toRecord(value);
-				if (!obj) {
-					throw new ApiError({ message: "Failed to decode column: expected object" });
-				}
+  const decodeBoardColumn = (value: JsonValue): Effect.Effect<BoardColumn, ApiError> =>
+    Effect.try({
+      try: () => {
+        const obj = toRecord(value);
+        if (!obj) {
+          throw new ApiError({ message: "Failed to decode column: expected object" });
+        }
 
-				const id = readString(obj.id);
-				const name = readString(obj.name);
-				if (!id || !name) {
-					throw new ApiError({ message: "Failed to decode column: missing id or name" });
-				}
+        const id = readString(obj.id);
+        const name = readString(obj.name);
+        if (!id || !name) {
+          throw new ApiError({ message: "Failed to decode column: missing id or name" });
+        }
 
-				return { id, name };
-			},
-			catch: (cause) =>
-				cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
-		});
+        return { id, name };
+      },
+      catch: (cause) =>
+        cause instanceof ApiError ? cause : new ApiError({ message: String(cause) }),
+    });
 
-	const decodeComments = (value: JsonValue): Effect.Effect<ReadonlyArray<Comment>, ApiError> => {
-		if (!Array.isArray(value)) {
-			return Effect.fail(new ApiError({ message: "Failed to decode comments: expected array" }));
-		}
+  const decodeComments = (value: JsonValue): Effect.Effect<ReadonlyArray<Comment>, ApiError> => {
+    if (!Array.isArray(value)) {
+      return Effect.fail(new ApiError({ message: "Failed to decode comments: expected array" }));
+    }
 
-		return Effect.succeed(value.map((entry) => decodeComment(entry)));
-	};
+    return Effect.succeed(value.map((entry) => decodeComment(entry)));
+  };
 
-	const decodeComment = (value: JsonValue): Comment => {
-		const obj = toRecord(value);
-		if (!obj) return {};
+  const decodeComment = (value: JsonValue): Comment => {
+    const obj = toRecord(value);
+    if (!obj) return {};
 
-		return {
-			id: readString(obj.id),
-			created_at: readString(obj.created_at),
-			creator: decodeCommentCreator(obj.creator),
-			body: decodeCommentBody(obj.body),
-		};
-	};
+    return {
+      id: readString(obj.id),
+      created_at: readString(obj.created_at),
+      creator: decodeCommentCreator(obj.creator),
+      body: decodeCommentBody(obj.body),
+    };
+  };
 
-	const decodeCommentCreator = (value: JsonValue): Comment["creator"] => {
-		const obj = toRecord(value);
-		if (!obj) return undefined;
-		const name = readString(obj.name);
-		if (!name) return {};
-		return { name };
-	};
+  const decodeCommentCreator = (value: JsonValue): Comment["creator"] => {
+    const obj = toRecord(value);
+    if (!obj) return undefined;
+    const name = readString(obj.name);
+    if (!name) return {};
+    return { name };
+  };
 
-	const decodeCommentBody = (value: JsonValue): Comment["body"] => {
-		const obj = toRecord(value);
-		if (!obj) return undefined;
-		const plainText = readString(obj.plain_text);
-		if (!plainText) return {};
-		return { plain_text: plainText };
-	};
+  const decodeCommentBody = (value: JsonValue): Comment["body"] => {
+    const obj = toRecord(value);
+    if (!obj) return undefined;
+    const plainText = readString(obj.plain_text);
+    if (!plainText) return {};
+    return { plain_text: plainText };
+  };
 
-	const decodeColumnRef = (value: JsonValue): ColumnRef | undefined => {
-		const obj = toRecord(value);
-		if (!obj) return undefined;
-		return {
-			id: readString(obj.id),
-			name: readString(obj.name),
-		};
-	};
+  const decodeColumnRef = (value: JsonValue): ColumnRef | undefined => {
+    const obj = toRecord(value);
+    if (!obj) return undefined;
+    return {
+      id: readString(obj.id),
+      name: readString(obj.name),
+    };
+  };
 
-	const decodeCardBoard = (value: JsonValue): Board | undefined => {
-		const obj = toRecord(value);
-		if (!obj) return undefined;
-		const id = readString(obj.id);
-		if (!id) return undefined;
-		return { id, name: readString(obj.name) || "" };
-	};
+  const decodeCardBoard = (value: JsonValue): Board | undefined => {
+    const obj = toRecord(value);
+    if (!obj) return undefined;
+    const id = readString(obj.id);
+    if (!id) return undefined;
+    return { id, name: readString(obj.name) || "" };
+  };
 
-	const decodeAssignees = (value: JsonValue): ReadonlyArray<Assignee> => {
-		if (!Array.isArray(value)) return [];
+  const decodeAssignees = (value: JsonValue): ReadonlyArray<Assignee> => {
+    if (!Array.isArray(value)) return [];
 
-		const result: Assignee[] = [];
-		for (const item of value) {
-			const obj = toRecord(item);
-			if (!obj) continue;
-			const id = readString(obj.id);
-			if (!id) continue;
-			const name = readString(obj.name);
-			if (!name) continue;
-			result.push({ id, name });
-		}
-		return result;
-	};
+    const result: Assignee[] = [];
+    for (const item of value) {
+      const obj = toRecord(item);
+      if (!obj) continue;
+      const id = readString(obj.id);
+      if (!id) continue;
+      const name = readString(obj.name);
+      if (!name) continue;
+      result.push({ id, name });
+    }
+    return result;
+  };
 
-	const decodeTags = (value: JsonValue): ReadonlyArray<string> => {
-		if (!Array.isArray(value)) return [];
+  const decodeTags = (value: JsonValue): ReadonlyArray<string> => {
+    if (!Array.isArray(value)) return [];
 
-		const result: string[] = [];
-		for (const item of value) {
-			if (typeof item === "string") {
-				result.push(item);
-				continue;
-			}
-			const obj = toRecord(item);
-			const title = readString(obj?.title) || readString(obj?.name);
-			if (title) result.push(title);
-		}
-		return result;
-	};
+    const result: string[] = [];
+    for (const item of value) {
+      if (typeof item === "string") {
+        result.push(item);
+        continue;
+      }
+      const obj = toRecord(item);
+      const title = readString(obj?.title) || readString(obj?.name);
+      if (title) result.push(title);
+    }
+    return result;
+  };
 
-	const decodeSteps = (value: JsonValue): ReadonlyArray<Step> => {
-		if (!Array.isArray(value)) return [];
+  const decodeSteps = (value: JsonValue): ReadonlyArray<Step> => {
+    if (!Array.isArray(value)) return [];
 
-		const result: Step[] = [];
-		for (const item of value) {
-			const obj = toRecord(item);
-			if (!obj) continue;
-			const content = readString(obj.content);
-			if (!content) continue;
-			const completed = readBoolean(obj.completed);
-			if (completed === undefined) continue;
-			result.push({
-				id: readString(obj.id),
-				content,
-				completed,
-			});
-		}
-		return result;
-	};
+    const result: Step[] = [];
+    for (const item of value) {
+      const obj = toRecord(item);
+      if (!obj) continue;
+      const content = readString(obj.content);
+      if (!content) continue;
+      const completed = readBoolean(obj.completed);
+      if (completed === undefined) continue;
+      result.push({
+        id: readString(obj.id),
+        content,
+        completed,
+      });
+    }
+    return result;
+  };
 
-	const isRecord = (value: JsonValue): value is JsonObject =>
-		value !== null && typeof value === "object" && !Array.isArray(value);
+  const isRecord = (value: JsonValue): value is JsonObject =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
 
-	const toRecord = (value: JsonValue): JsonObject | undefined =>
-		isRecord(value) ? value : undefined;
+  const toRecord = (value: JsonValue): JsonObject | undefined =>
+    isRecord(value) ? value : undefined;
 
-	const readString = (value: JsonValue): string | undefined =>
-		typeof value === "string" ? value : undefined;
+  const readString = (value: JsonValue): string | undefined =>
+    typeof value === "string" ? value : undefined;
 
-	const readBoolean = (value: JsonValue): boolean | undefined =>
-		typeof value === "boolean" ? value : undefined;
+  const readBoolean = (value: JsonValue): boolean | undefined =>
+    typeof value === "boolean" ? value : undefined;
 
-	const readFiniteNumber = (value: JsonValue): number => {
-		if (typeof value === "number" && Number.isFinite(value)) return value;
-		return Number.NaN;
-	};
+  const readFiniteNumber = (value: JsonValue): number => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    return Number.NaN;
+  };
 
-	const accountParams = { accountId: config.account };
-	const boardParams = { accountId: config.account, boardId: config.board ?? "" };
+  const accountParams = { accountId: config.account };
+  const boardParams = { accountId: config.account, boardId: config.board ?? "" };
 
-	const listColumns = () =>
-		runGenerated(FizzyEffect.listColumns(boardParams)).pipe(Effect.flatMap(decodeBoardColumns));
+  const listColumns = () =>
+    runGenerated(FizzyEffect.listColumns(boardParams)).pipe(Effect.flatMap(decodeBoardColumns));
 
-	const createColumn = (name: string): Effect.Effect<JsonValue, ApiError> =>
-		runGenerated(FizzyEffect.createColumn(boardParams, { name }));
+  const createColumn = (name: string): Effect.Effect<JsonValue, ApiError> =>
+    runGenerated(FizzyEffect.createColumn(boardParams, { name }));
 
-	return {
-		identity: () => runGenerated(FizzyEffect.getMyIdentity()).pipe(Effect.flatMap(decodeIdentity)),
-		listBoards: () =>
-			runGenerated(FizzyEffect.listBoards(accountParams)).pipe(Effect.flatMap(decodeBoards)),
-		listColumns: () => listColumns(),
-		createColumn: (name) =>
-			Effect.gen(function* () {
-				const payload = yield* createColumn(name);
+  return {
+    identity: () => runGenerated(FizzyEffect.getMyIdentity()).pipe(Effect.flatMap(decodeIdentity)),
+    listBoards: () =>
+      runGenerated(FizzyEffect.listBoards(accountParams)).pipe(Effect.flatMap(decodeBoards)),
+    listColumns: () => listColumns(),
+    createColumn: (name) =>
+      Effect.gen(function* () {
+        const payload = yield* createColumn(name);
 
-				const fromBody = yield* decodeBoardColumn(payload).pipe(
-					Effect.catch(() => Effect.succeed(undefined)),
-				);
-				if (fromBody) {
-					return fromBody;
-				}
+        const fromBody = yield* decodeBoardColumn(payload).pipe(
+          Effect.catch(() => Effect.succeed(undefined)),
+        );
+        if (fromBody) {
+          return fromBody;
+        }
 
-				const columns = yield* listColumns();
-				const found = columns.find((column) => column.name === name);
-				if (!found) {
-					return yield* new ApiError({ message: `Failed to create column ${name}` });
-				}
+        const columns = yield* listColumns();
+        const found = columns.find((column) => column.name === name);
+        if (!found) {
+          return yield* new ApiError({ message: `Failed to create column ${name}` });
+        }
 
-				return found;
-			}),
-		listCards: (options) => {
-			const query: FizzyEffect.ListCardsQueryParams = {};
-			if (config.board) {
-				query["board_ids[]"] = [config.board];
-			}
-			if (options?.indexedBy) query.indexed_by = options.indexedBy;
-			if (options?.terms?.length) query["terms[]"] = [...options.terms];
-			const request = options?.all
-				? execute<unknown>("GET", `/${config.account}/cards.json`, {
-						query,
-						paginate: true,
-					})
-				: FizzyEffect.listCards(accountParams, query);
-			return runGenerated(request).pipe(Effect.flatMap(decodeCards));
-		},
-		searchCards: (query) =>
-			runGenerated(FizzyEffect.searchCards(accountParams, { q: query })).pipe(
-				Effect.flatMap(decodeCards),
-			),
-		showCard: (number) =>
-			runGenerated(FizzyEffect.getCard({ ...accountParams, cardNumber: number })).pipe(
-				Effect.flatMap(decodeCard),
-			),
-		listComments: (number) =>
-			// The generated client takes no options, so it cannot ask execute() to
-			// follow the Link: rel="next" header — only page one was ever fetched,
-			// and a card whose comment history outgrew one page returned a snapshot
-			// frozen at that page forever. Call execute() directly with
-			// paginate: true, the same way listCards does above.
-			runGenerated(
-				execute<unknown>(
-					"GET",
-					`/${config.account}/cards/${number}/comments.json`,
-					{ paginate: true },
-				),
-			).pipe(Effect.flatMap(decodeComments)),
-		createCard: (input) =>
-			runGenerated(
-				FizzyEffect.createCard(accountParams, {
-					title: input.title,
-					description: input.description,
-					board_id: input.board,
-					column_id: input.columnId,
-				}),
-			).pipe(Effect.flatMap(decodeCard)),
-		updateCard: (number, input) =>
-			asVoid(runGenerated(FizzyEffect.updateCard({ ...accountParams, cardNumber: number }, input))),
-		updateCardDescription: (number, description) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.updateCard({ ...accountParams, cardNumber: number }, { description }),
-				),
-			),
-		assignCard: (number, userId) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.assignCard({ ...accountParams, cardNumber: number }, { assignee_id: userId }),
-				),
-			),
-		tagCard: (number, tag) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.tagCard({ ...accountParams, cardNumber: number }, { tag_title: tag }),
-				),
-			),
-		moveCard: (number, columnId) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.triageCard({ ...accountParams, cardNumber: number }, { column_id: columnId }),
-				),
-			),
-		triageCard: (number, columnId) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.triageCard({ ...accountParams, cardNumber: number }, { column_id: columnId }),
-				),
-			),
-		untriageCard: (number) =>
-			asVoid(runGenerated(FizzyEffect.unTriageCard({ ...accountParams, cardNumber: number }))),
-		comment: (number, body) =>
-			asVoid(
-				runGenerated(FizzyEffect.createComment({ ...accountParams, cardNumber: number }, { body })),
-			),
-		updateComment: (number, commentId, body) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.updateComment({ ...accountParams, cardNumber: number, commentId }, { body }),
-				),
-			),
-		closeCard: (number) =>
-			asVoid(runGenerated(FizzyEffect.closeCard({ ...accountParams, cardNumber: number }))),
-		reopenCard: (number) =>
-			asVoid(runGenerated(FizzyEffect.reopenCard({ ...accountParams, cardNumber: number }))),
-		postponeCard: (number) =>
-			asVoid(runGenerated(FizzyEffect.postponeCard({ ...accountParams, cardNumber: number }))),
-		createStep: (number, content, completed) =>
-			asVoid(
-				runGenerated(
-					FizzyEffect.createStep(
-						{ ...accountParams, cardNumber: number },
-						{
-							content,
-							completed: Boolean(completed),
-						},
-					),
-				),
-			),
-		updateStep: (number, stepId, input) => {
-			const body: JsonObject = {};
-			if (input.completed !== undefined) body.completed = input.completed;
-			if (input.content !== undefined) body.content = input.content;
-			return asVoid(
-				runGenerated(
-					FizzyEffect.updateStep(
-						{ ...accountParams, cardNumber: number, stepId },
-						body as UpdateStepRequestContent,
-					),
-				),
-			);
-		},
-		deleteStep: (number, stepId) =>
-			asVoid(
-				runGenerated(FizzyEffect.deleteStep({ ...accountParams, cardNumber: number, stepId })),
-			),
-	};
+        return found;
+      }),
+    listCards: (options) => {
+      const query: FizzyEffect.ListCardsQueryParams = {};
+      if (config.board) {
+        query["board_ids[]"] = [config.board];
+      }
+      if (options?.indexedBy) query.indexed_by = options.indexedBy;
+      if (options?.terms?.length) query["terms[]"] = [...options.terms];
+      const request = options?.all
+        ? execute<unknown>("GET", `/${config.account}/cards.json`, {
+            query,
+            paginate: true,
+          })
+        : FizzyEffect.listCards(accountParams, query);
+      return runGenerated(request).pipe(Effect.flatMap(decodeCards));
+    },
+    searchCards: (query) =>
+      runGenerated(FizzyEffect.searchCards(accountParams, { q: query })).pipe(
+        Effect.flatMap(decodeCards),
+      ),
+    showCard: (number) =>
+      runGenerated(FizzyEffect.getCard({ ...accountParams, cardNumber: number })).pipe(
+        Effect.flatMap(decodeCard),
+      ),
+    listComments: (number) =>
+      // The generated client takes no options, so it cannot ask execute() to
+      // follow the Link: rel="next" header — only page one was ever fetched,
+      // and a card whose comment history outgrew one page returned a snapshot
+      // frozen at that page forever. Call execute() directly with
+      // paginate: true, the same way listCards does above.
+      runGenerated(
+        execute<unknown>("GET", `/${config.account}/cards/${number}/comments.json`, {
+          paginate: true,
+        }),
+      ).pipe(Effect.flatMap(decodeComments)),
+    createCard: (input) =>
+      runGenerated(
+        FizzyEffect.createCard(accountParams, {
+          title: input.title,
+          description: input.description,
+          board_id: input.board,
+          column_id: input.columnId,
+        }),
+      ).pipe(Effect.flatMap(decodeCard)),
+    updateCard: (number, input) =>
+      asVoid(runGenerated(FizzyEffect.updateCard({ ...accountParams, cardNumber: number }, input))),
+    updateCardDescription: (number, description) =>
+      asVoid(
+        runGenerated(
+          FizzyEffect.updateCard({ ...accountParams, cardNumber: number }, { description }),
+        ),
+      ),
+    assignCard: (number, userId) =>
+      asVoid(
+        runGenerated(
+          FizzyEffect.assignCard({ ...accountParams, cardNumber: number }, { assignee_id: userId }),
+        ),
+      ),
+    tagCard: (number, tag) =>
+      asVoid(
+        runGenerated(
+          FizzyEffect.tagCard({ ...accountParams, cardNumber: number }, { tag_title: tag }),
+        ),
+      ),
+    moveCard: (number, columnId) =>
+      asVoid(
+        runGenerated(
+          FizzyEffect.triageCard({ ...accountParams, cardNumber: number }, { column_id: columnId }),
+        ),
+      ),
+    triageCard: (number, columnId) =>
+      asVoid(
+        runGenerated(
+          FizzyEffect.triageCard({ ...accountParams, cardNumber: number }, { column_id: columnId }),
+        ),
+      ),
+    untriageCard: (number) =>
+      asVoid(runGenerated(FizzyEffect.unTriageCard({ ...accountParams, cardNumber: number }))),
+    comment: (number, body) =>
+      asVoid(
+        runGenerated(FizzyEffect.createComment({ ...accountParams, cardNumber: number }, { body })),
+      ),
+    updateComment: (number, commentId, body) =>
+      asVoid(
+        runGenerated(
+          FizzyEffect.updateComment({ ...accountParams, cardNumber: number, commentId }, { body }),
+        ),
+      ),
+    closeCard: (number) =>
+      asVoid(runGenerated(FizzyEffect.closeCard({ ...accountParams, cardNumber: number }))),
+    reopenCard: (number) =>
+      asVoid(runGenerated(FizzyEffect.reopenCard({ ...accountParams, cardNumber: number }))),
+    postponeCard: (number) =>
+      asVoid(runGenerated(FizzyEffect.postponeCard({ ...accountParams, cardNumber: number }))),
+    createStep: (number, content, completed) =>
+      asVoid(
+        runGenerated(
+          FizzyEffect.createStep(
+            { ...accountParams, cardNumber: number },
+            {
+              content,
+              completed: Boolean(completed),
+            },
+          ),
+        ),
+      ),
+    updateStep: (number, stepId, input) => {
+      const body: JsonObject = {};
+      if (input.completed !== undefined) body.completed = input.completed;
+      if (input.content !== undefined) body.content = input.content;
+      return asVoid(
+        runGenerated(
+          FizzyEffect.updateStep(
+            { ...accountParams, cardNumber: number, stepId },
+            body as UpdateStepRequestContent,
+          ),
+        ),
+      );
+    },
+    deleteStep: (number, stepId) =>
+      asVoid(
+        runGenerated(FizzyEffect.deleteStep({ ...accountParams, cardNumber: number, stepId })),
+      ),
+  };
 };

@@ -1,3 +1,11 @@
 [serve.static]
 plugins = ["bun-plugin-tailwind"]
 env = "BUN_PUBLIC_*"
+
+[install]
+# `bun-plugin-tailwind` declares a peer dependency on `bun`, which made bun install
+# the `bun` npm package into node_modules. Its bin then shadowed the toolchain bun on
+# PATH inside every `bun run` script, so `bun test` silently ran an older bun locally
+# and, in CI where its postinstall is untrusted and never downloads the binary, failed
+# outright. The peer is already satisfied by the bun running the script.
+peer = false

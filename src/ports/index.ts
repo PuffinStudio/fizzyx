@@ -1,8 +1,8 @@
 export type {
-	ConfigRepository,
-	SetupProjectConfigInput,
-	OssSetupInput,
-	OpenApiSetupInput,
+  ConfigRepository,
+  SetupProjectConfigInput,
+  OssSetupInput,
+  OpenApiSetupInput,
 } from "./config-repository";
 export { ConfigRepo, CONFIG_FILE, LEGACY_CONFIG_FILE } from "./config-repository";
 

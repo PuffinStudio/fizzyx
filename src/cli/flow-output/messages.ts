@@ -25,7 +25,7 @@ export const formatBlockingCardMessage = (): string => "Marking card blocked..."
 export const formatAssigningCardMessage = (): string => "Assigning card...";
 
 export const formatReadingWorkflowTemplateMessage = (): string =>
-	"Reading local workflow template...";
+  "Reading local workflow template...";
 
 export const formatWritingSkillScaffoldMessage = (): string => "Writing flow skill scaffold...";
 

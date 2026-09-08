@@ -2,27 +2,27 @@ import { Effect } from "effect";
 import { existsSync } from "node:fs";
 import type { CodeExtensionGenerator, CodeGenerator } from "../ports/code-generator";
 import {
-	ConfigRepo,
-	CONFIG_FILE,
-	LEGACY_CONFIG_FILE,
-	type ConfigRepository,
+  ConfigRepo,
+  CONFIG_FILE,
+  LEGACY_CONFIG_FILE,
+  type ConfigRepository,
 } from "../ports/config-repository";
 import { GeneratorRegistry } from "../ports/generator-registry";
 import {
-	CodegenError,
-	FileError,
-	ConfigError,
-	ConfigValidationError,
-	SpecLoadError,
-	SpecParseError,
+  CodegenError,
+  FileError,
+  ConfigError,
+  ConfigValidationError,
+  SpecLoadError,
+  SpecParseError,
 } from "../domain/errors";
 import type {
-	GenFileOptions,
-	GeneratedFile,
-	KnownGenerator,
-	ParsedSpec,
-	OpenApiGenConfig,
-	OpenApiProjectConfig,
+  GenFileOptions,
+  GeneratedFile,
+  KnownGenerator,
+  ParsedSpec,
+  OpenApiGenConfig,
+  OpenApiProjectConfig,
 } from "../domain/openapi-models";
 import { EFFECT_GENERATOR_DEFAULTS } from "../adapters/codegen-effect";
 import { generateIndexFile, planOpenApiArtifacts } from "./openapi-artifact-plan";
@@ -39,389 +39,389 @@ const normalizeClient = (value: string): string => value.trim().toLowerCase();
 const STATE_MANAGEMENT_GENERATOR_NAMES = ["tanstack-query"];
 
 const isStateManagementPlugin = (generator: CodeGenerator): generator is CodeExtensionGenerator =>
-	"exportPath" in generator && typeof generator.exportPath === "string";
+  "exportPath" in generator && typeof generator.exportPath === "string";
 
 export interface GenerateInput {
-	input: string;
-	output: string;
-	client: string;
-	apiName?: string;
-	typesName?: string | false;
-	runtimeName?: string;
-	posthook?: string;
-	headers?: Record<string, string>;
-	stateManagement?: string;
+  input: string;
+  output: string;
+  client: string;
+  apiName?: string;
+  typesName?: string | false;
+  runtimeName?: string;
+  posthook?: string;
+  headers?: Record<string, string>;
+  stateManagement?: string;
 }
 
 export interface GenerateResult {
-	files: GeneratedFile[];
-	spec: ParsedSpec;
-	outputDir: string;
-	posthook?: string;
+  files: GeneratedFile[];
+  spec: ParsedSpec;
+  outputDir: string;
+  posthook?: string;
 }
 
 export interface GenerateManyResult {
-	results: GenerateResult[];
+  results: GenerateResult[];
 }
 
 function resolveOutputPath(output: string): { dir: string; opts: Partial<GenFileOptions> } {
-	if (output.endsWith(".ts")) {
-		const lastSlash = output.lastIndexOf("/");
-		if (lastSlash >= 0) {
-			return {
-				dir: output.substring(0, lastSlash),
-				opts: { apiName: output.substring(lastSlash + 1) },
-			};
-		}
-		return { dir: ".", opts: { apiName: output } };
-	}
-	return { dir: output, opts: {} };
+  if (output.endsWith(".ts")) {
+    const lastSlash = output.lastIndexOf("/");
+    if (lastSlash >= 0) {
+      return {
+        dir: output.substring(0, lastSlash),
+        opts: { apiName: output.substring(lastSlash + 1) },
+      };
+    }
+    return { dir: ".", opts: { apiName: output } };
+  }
+  return { dir: output, opts: {} };
 }
 
 export const generate = (
-	input: GenerateInput,
+  input: GenerateInput,
 ): Effect.Effect<
-	GenerateResult,
-	SpecLoadError | SpecParseError | CodegenError,
-	GeneratorRegistry
+  GenerateResult,
+  SpecLoadError | SpecParseError | CodegenError,
+  GeneratorRegistry
 > =>
-	Effect.gen(function* () {
-		const generatorRegistry = yield* GeneratorRegistry;
-		const loader = generatorRegistry.getLoader(input.input);
-		const spec = yield* loader.load(input.input, input.headers);
+  Effect.gen(function* () {
+    const generatorRegistry = yield* GeneratorRegistry;
+    const loader = generatorRegistry.getLoader(input.input);
+    const spec = yield* loader.load(input.input, input.headers);
 
-		const availableClients = generatorRegistry.listGenerators().map((g) => g.name);
-		const generator = yield* generatorRegistry.getGenerator(input.client).pipe(
-			Effect.mapError(
-				() =>
-					new CodegenError({
-						message: `unknown client target: ${input.client}. available: ${availableClients.join(", ")}`,
-						target: input.client,
-					}),
-			),
-		);
+    const availableClients = generatorRegistry.listGenerators().map((g) => g.name);
+    const generator = yield* generatorRegistry.getGenerator(input.client).pipe(
+      Effect.mapError(
+        () =>
+          new CodegenError({
+            message: `unknown client target: ${input.client}. available: ${availableClients.join(", ")}`,
+            target: input.client,
+          }),
+      ),
+    );
 
-		const generatorDefaults =
-			input.client === "effect"
-				? {
-						apiName: EFFECT_GENERATOR_DEFAULTS.apiName,
-						runtimeName: EFFECT_GENERATOR_DEFAULTS.runtimeName,
-					}
-				: {};
-		const fileOpts = {
-			...generatorDefaults,
-			...Object.fromEntries(
-				Object.entries({
-					apiName: input.apiName,
-					typesName: input.typesName,
-					runtimeName: input.runtimeName,
-				}).filter(([_, v]) => v !== undefined),
-			),
-		};
+    const generatorDefaults =
+      input.client === "effect"
+        ? {
+            apiName: EFFECT_GENERATOR_DEFAULTS.apiName,
+            runtimeName: EFFECT_GENERATOR_DEFAULTS.runtimeName,
+          }
+        : {};
+    const fileOpts = {
+      ...generatorDefaults,
+      ...Object.fromEntries(
+        Object.entries({
+          apiName: input.apiName,
+          typesName: input.typesName,
+          runtimeName: input.runtimeName,
+        }).filter(([_, v]) => v !== undefined),
+      ),
+    };
 
-		const files = yield* generator.generate(spec, input.output, fileOpts);
-		const artifactPlan = planOpenApiArtifacts(spec, fileOpts);
-		const extensionExports: string[] = [];
+    const files = yield* generator.generate(spec, input.output, fileOpts);
+    const artifactPlan = planOpenApiArtifacts(spec, fileOpts);
+    const extensionExports: string[] = [];
 
-		// State management plugin
-		if (input.stateManagement) {
-			const plugin = yield* generatorRegistry.getGenerator(input.stateManagement).pipe(
-				Effect.mapError(
-					() =>
-						new CodegenError({
-							message: `unknown state management: ${input.stateManagement}. available: ${STATE_MANAGEMENT_GENERATOR_NAMES.join(", ")}`,
-							target: input.stateManagement,
-						}),
-				),
-			);
-			if (!isStateManagementPlugin(plugin)) {
-				return yield* Effect.fail(
-					new CodegenError({
-						message: `unknown state management: ${input.stateManagement}. available: ${STATE_MANAGEMENT_GENERATOR_NAMES.join(", ")}`,
-						target: input.stateManagement,
-					}),
-				);
-			}
+    // State management plugin
+    if (input.stateManagement) {
+      const plugin = yield* generatorRegistry.getGenerator(input.stateManagement).pipe(
+        Effect.mapError(
+          () =>
+            new CodegenError({
+              message: `unknown state management: ${input.stateManagement}. available: ${STATE_MANAGEMENT_GENERATOR_NAMES.join(", ")}`,
+              target: input.stateManagement,
+            }),
+        ),
+      );
+      if (!isStateManagementPlugin(plugin)) {
+        return yield* Effect.fail(
+          new CodegenError({
+            message: `unknown state management: ${input.stateManagement}. available: ${STATE_MANAGEMENT_GENERATOR_NAMES.join(", ")}`,
+            target: input.stateManagement,
+          }),
+        );
+      }
 
-			const smFiles = yield* plugin.generate(spec, input.output, fileOpts);
-			files.push(...smFiles);
-			extensionExports.push(plugin.exportPath);
-		}
+      const smFiles = yield* plugin.generate(spec, input.output, fileOpts);
+      files.push(...smFiles);
+      extensionExports.push(plugin.exportPath);
+    }
 
-		files.push(generateIndexFile(artifactPlan, extensionExports));
+    files.push(generateIndexFile(artifactPlan, extensionExports));
 
-		return { files, spec, outputDir: input.output, posthook: input.posthook };
-	});
+    return { files, spec, outputDir: input.output, posthook: input.posthook };
+  });
 
 function dedupeRuntimeFiles(
-	results: { files: GeneratedFile[]; outputDir: string }[],
-	shareRuntime: boolean,
+  results: { files: GeneratedFile[]; outputDir: string }[],
+  shareRuntime: boolean,
 ): void {
-	if (!shareRuntime) return;
-	const seen = new Set<string>();
-	for (const result of results) {
-		const deduped: GeneratedFile[] = [];
-		for (const file of result.files) {
-			const fullPath = file.path.startsWith("/") ? file.path : `${result.outputDir}/${file.path}`;
-			if (file.path.endsWith("-request.ts") || file.path.endsWith("request.ts")) {
-				if (seen.has(fullPath)) continue;
-				seen.add(fullPath);
-			}
-			deduped.push(file);
-		}
-		result.files.length = 0;
-		result.files.push(...deduped);
-	}
+  if (!shareRuntime) return;
+  const seen = new Set<string>();
+  for (const result of results) {
+    const deduped: GeneratedFile[] = [];
+    for (const file of result.files) {
+      const fullPath = file.path.startsWith("/") ? file.path : `${result.outputDir}/${file.path}`;
+      if (file.path.endsWith("-request.ts") || file.path.endsWith("request.ts")) {
+        if (seen.has(fullPath)) continue;
+        seen.add(fullPath);
+      }
+      deduped.push(file);
+    }
+    result.files.length = 0;
+    result.files.push(...deduped);
+  }
 }
 
 export const generateMany = (
-	inputs: GenerateInput[],
-	shareRuntime = false,
+  inputs: GenerateInput[],
+  shareRuntime = false,
 ): Effect.Effect<
-	GenerateManyResult,
-	SpecLoadError | SpecParseError | CodegenError,
-	GeneratorRegistry
+  GenerateManyResult,
+  SpecLoadError | SpecParseError | CodegenError,
+  GeneratorRegistry
 > =>
-	Effect.gen(function* () {
-		const results: GenerateResult[] = [];
-		for (const input of inputs) {
-			const r = yield* generate(input);
-			results.push(r);
-		}
-		dedupeRuntimeFiles(results, shareRuntime);
-		return { results };
-	});
+  Effect.gen(function* () {
+    const results: GenerateResult[] = [];
+    for (const input of inputs) {
+      const r = yield* generate(input);
+      results.push(r);
+    }
+    dedupeRuntimeFiles(results, shareRuntime);
+    return { results };
+  });
 
 export const writeFiles = (files: GeneratedFile[], baseDir: string): Effect.Effect<void, Error> =>
-	Effect.gen(function* () {
-		for (const file of files) {
-			const fullPath = file.path.startsWith("/") ? file.path : `${baseDir}/${file.path}`;
-			yield* Effect.tryPromise({
-				try: async () => {
-					const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
-					if (dir) {
-						await Bun.$`mkdir -p ${dir}`.quiet();
-					}
-					await Bun.write(fullPath, file.content);
-				},
-				catch: (cause) =>
-					new Error(
-						`failed to write ${fullPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
-					),
-			});
-		}
-	});
+  Effect.gen(function* () {
+    for (const file of files) {
+      const fullPath = file.path.startsWith("/") ? file.path : `${baseDir}/${file.path}`;
+      yield* Effect.tryPromise({
+        try: async () => {
+          const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
+          if (dir) {
+            await Bun.$`mkdir -p ${dir}`.quiet();
+          }
+          await Bun.write(fullPath, file.content);
+        },
+        catch: (cause) =>
+          new Error(
+            `failed to write ${fullPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          ),
+      });
+    }
+  });
 
 export const writeManyFiles = (results: GenerateResult[]): Effect.Effect<void, Error> =>
-	Effect.gen(function* () {
-		for (const result of results) {
-			yield* writeFiles(result.files, result.outputDir);
-		}
-	});
+  Effect.gen(function* () {
+    for (const result of results) {
+      yield* writeFiles(result.files, result.outputDir);
+    }
+  });
 
 export interface OpenApiInitInput {
-	input?: string;
-	output?: string;
-	client?: string;
-	force?: boolean;
+  input?: string;
+  output?: string;
+  client?: string;
+  force?: boolean;
 }
 
 export const initOpenApiConfig = (
-	options: OpenApiInitInput = {},
+  options: OpenApiInitInput = {},
 ): Effect.Effect<boolean, ConfigError | FileError, ConfigRepository> =>
-	Effect.gen(function* () {
-		const configRepo = yield* ConfigRepo;
-		const projectConfig = configFileExists()
-			? yield* configRepo.loadProjectConfig().pipe(Effect.catch((cause) => Effect.fail(cause)))
-			: undefined;
+  Effect.gen(function* () {
+    const configRepo = yield* ConfigRepo;
+    const projectConfig = configFileExists()
+      ? yield* configRepo.loadProjectConfig().pipe(Effect.catch((cause) => Effect.fail(cause)))
+      : undefined;
 
-		const hasOpenApiConfig = (projectConfig?.openapi?.entries?.length ?? 0) > 0;
-		if (hasOpenApiConfig && !options.force) {
-			return false;
-		}
+    const hasOpenApiConfig = (projectConfig?.openapi?.entries?.length ?? 0) > 0;
+    if (hasOpenApiConfig && !options.force) {
+      return false;
+    }
 
-		const resolvedClient = normalizeClient(options.client ?? DEFAULT_OPENAPI_CLIENT);
-		const supportedClient = SUPPORTED_OPENAPI_CLIENTS.has(resolvedClient)
-			? resolvedClient
-			: DEFAULT_OPENAPI_CLIENT;
+    const resolvedClient = normalizeClient(options.client ?? DEFAULT_OPENAPI_CLIENT);
+    const supportedClient = SUPPORTED_OPENAPI_CLIENTS.has(resolvedClient)
+      ? resolvedClient
+      : DEFAULT_OPENAPI_CLIENT;
 
-		const entry: OpenApiGenConfig = {
-			input: options.input?.trim() || DEFAULT_OPENAPI_INPUT,
-			output: options.output || DEFAULT_OPENAPI_OUTPUT,
-			client: supportedClient,
-		};
+    const entry: OpenApiGenConfig = {
+      input: options.input?.trim() || DEFAULT_OPENAPI_INPUT,
+      output: options.output || DEFAULT_OPENAPI_OUTPUT,
+      client: supportedClient,
+    };
 
-		const configPath = projectConfig?.configPath ?? `${process.cwd()}/${CONFIG_FILE}`;
-		yield* configRepo.setupOpenApiConfig({
-			entry,
-			force: options.force ?? false,
-			configPath,
-		});
-		return true;
-	});
+    const configPath = projectConfig?.configPath ?? `${process.cwd()}/${CONFIG_FILE}`;
+    yield* configRepo.setupOpenApiConfig({
+      entry,
+      force: options.force ?? false,
+      configPath,
+    });
+    return true;
+  });
 
 export const listGenerators = (): Effect.Effect<KnownGenerator[], never, GeneratorRegistry> =>
-	Effect.gen(function* () {
-		const generatorRegistry = yield* GeneratorRegistry;
-		return generatorRegistry.listGenerators();
-	});
+  Effect.gen(function* () {
+    const generatorRegistry = yield* GeneratorRegistry;
+    return generatorRegistry.listGenerators();
+  });
 
 export interface GenerateCliInput {
-	inputs?: string[];
-	outputs?: string[];
-	client?: string;
-	apiName?: string;
-	typesName?: string | false;
-	runtimeName?: string;
-	posthook?: string;
-	headers?: Record<string, string>;
-	stateManagement?: string;
+  inputs?: string[];
+  outputs?: string[];
+  client?: string;
+  apiName?: string;
+  typesName?: string | false;
+  runtimeName?: string;
+  posthook?: string;
+  headers?: Record<string, string>;
+  stateManagement?: string;
 }
 
 export const generateFromCli = (cli: GenerateCliInput) =>
-	Effect.gen(function* () {
-		const resolved: GenerateInput[] = yield* resolveConfigs(cli);
-		const shareRuntime = yield* resolveShareRuntime(cli);
-		return yield* generateMany(resolved, shareRuntime);
-	});
+  Effect.gen(function* () {
+    const resolved: GenerateInput[] = yield* resolveConfigs(cli);
+    const shareRuntime = yield* resolveShareRuntime(cli);
+    return yield* generateMany(resolved, shareRuntime);
+  });
 
 function resolveShareRuntime(_cli: GenerateCliInput) {
-	return Effect.gen(function* () {
-		if (!configFileExists()) return false;
-		const configRepo = yield* ConfigRepo;
-		const projectConfig = yield* configRepo
-			.loadProjectConfigOptional()
-			.pipe(Effect.catch(() => Effect.succeed(undefined)));
-		const pc = projectConfig?.openapi;
-		if (!pc?.entries) return false;
-		return pc.entries.some((e) => e.shareRuntime === true);
-	});
+  return Effect.gen(function* () {
+    if (!configFileExists()) return false;
+    const configRepo = yield* ConfigRepo;
+    const projectConfig = yield* configRepo
+      .loadProjectConfigOptional()
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+    const pc = projectConfig?.openapi;
+    if (!pc?.entries) return false;
+    return pc.entries.some((e) => e.shareRuntime === true);
+  });
 }
 
 function loadAllProjectOpenapiConfigs() {
-	return Effect.gen(function* () {
-		if (!configFileExists()) return undefined;
-		const configRepo = yield* ConfigRepo;
-		const projectConfig = yield* configRepo
-			.loadProjectConfigOptional()
-			.pipe(Effect.catch(() => Effect.succeed(undefined)));
-		return projectConfig?.openapi;
-	});
+  return Effect.gen(function* () {
+    if (!configFileExists()) return undefined;
+    const configRepo = yield* ConfigRepo;
+    const projectConfig = yield* configRepo
+      .loadProjectConfigOptional()
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+    return projectConfig?.openapi;
+  });
 }
 
 function resolveConfigs(cli: GenerateCliInput) {
-	return Effect.gen(function* () {
-		const projectCfg: OpenApiProjectConfig | undefined = yield* loadAllProjectOpenapiConfigs();
-		const entries = projectCfg?.entries;
-		const globalPosthook = projectCfg?.posthook;
+  return Effect.gen(function* () {
+    const projectCfg: OpenApiProjectConfig | undefined = yield* loadAllProjectOpenapiConfigs();
+    const entries = projectCfg?.entries;
+    const globalPosthook = projectCfg?.posthook;
 
-		if (cli.inputs && cli.inputs.length > 0) {
-			const first = entries?.[0];
-			const client = cli.client ?? first?.client;
-			if (!client) {
-				return yield* Effect.fail(
-					new ConfigValidationError({
-						message: "--client required (targets: wx, fetch)",
-						field: "client",
-					}),
-				);
-			}
-			return cli.inputs.map((input, i) => {
-				const rawOutput = cli.outputs?.[i] ?? first?.output;
-				const { dir, opts } = resolveOutputPath(rawOutput ?? "./src/api");
-				return {
-					input,
-					output: dir,
-					client,
-					apiName: cli.apiName ?? opts.apiName ?? first?.apiName,
-					typesName: cli.typesName ?? first?.typesName ?? opts.typesName,
-					runtimeName: cli.runtimeName ?? first?.runtimeName ?? opts.runtimeName,
-					posthook: cli.posthook,
-					headers: cli.headers ?? first?.headers,
-					stateManagement: cli.stateManagement ?? first?.stateManagement,
-				} satisfies GenerateInput;
-			});
-		}
+    if (cli.inputs && cli.inputs.length > 0) {
+      const first = entries?.[0];
+      const client = cli.client ?? first?.client;
+      if (!client) {
+        return yield* Effect.fail(
+          new ConfigValidationError({
+            message: "--client required (targets: wx, fetch)",
+            field: "client",
+          }),
+        );
+      }
+      return cli.inputs.map((input, i) => {
+        const rawOutput = cli.outputs?.[i] ?? first?.output;
+        const { dir, opts } = resolveOutputPath(rawOutput ?? "./src/api");
+        return {
+          input,
+          output: dir,
+          client,
+          apiName: cli.apiName ?? opts.apiName ?? first?.apiName,
+          typesName: cli.typesName ?? first?.typesName ?? opts.typesName,
+          runtimeName: cli.runtimeName ?? first?.runtimeName ?? opts.runtimeName,
+          posthook: cli.posthook,
+          headers: cli.headers ?? first?.headers,
+          stateManagement: cli.stateManagement ?? first?.stateManagement,
+        } satisfies GenerateInput;
+      });
+    }
 
-		if (!entries || entries.length === 0) {
-			return yield* Effect.fail(
-				new ConfigValidationError({
-					message: "--input required (spec file path or URL)",
-					field: "input",
-				}),
-			);
-		}
+    if (!entries || entries.length === 0) {
+      return yield* Effect.fail(
+        new ConfigValidationError({
+          message: "--input required (spec file path or URL)",
+          field: "input",
+        }),
+      );
+    }
 
-		return entries.map((cfg) => {
-			const { dir, opts } = resolveOutputPath(cfg.output);
-			return {
-				input: cfg.input,
-				output: dir,
-				client: cfg.client,
-				apiName: cfg.apiName ?? opts.apiName,
-				typesName: cfg.typesName ?? opts.typesName,
-				runtimeName: cfg.runtimeName ?? opts.runtimeName,
-				posthook: cfg.posthook ?? globalPosthook,
-				headers: cfg.headers,
-				stateManagement: cfg.stateManagement,
-			} satisfies GenerateInput;
-		});
-	});
+    return entries.map((cfg) => {
+      const { dir, opts } = resolveOutputPath(cfg.output);
+      return {
+        input: cfg.input,
+        output: dir,
+        client: cfg.client,
+        apiName: cfg.apiName ?? opts.apiName,
+        typesName: cfg.typesName ?? opts.typesName,
+        runtimeName: cfg.runtimeName ?? opts.runtimeName,
+        posthook: cfg.posthook ?? globalPosthook,
+        headers: cfg.headers,
+        stateManagement: cfg.stateManagement,
+      } satisfies GenerateInput;
+    });
+  });
 }
 
 const resolveShellCommand = (command: string): string[] =>
-	process.platform === "win32" ? ["cmd", "/c", command] : ["sh", "-lc", command];
+  process.platform === "win32" ? ["cmd", "/c", command] : ["sh", "-lc", command];
 
 export const runPostGenScript = (script: string): Effect.Effect<void, Error> =>
-	Effect.tryPromise({
-		try: async () => {
-			const pkgPath = `${process.cwd()}/package.json`;
-			const pkgFile = Bun.file(pkgPath);
-			const exists = await pkgFile.exists();
+  Effect.tryPromise({
+    try: async () => {
+      const pkgPath = `${process.cwd()}/package.json`;
+      const pkgFile = Bun.file(pkgPath);
+      const exists = await pkgFile.exists();
 
-			let cmd = script;
-			if (exists) {
-				const pkg = await pkgFile.json();
-				if (pkg.scripts?.[script]) {
-					cmd = `bun run ${script}`;
-				}
-			}
+      let cmd = script;
+      if (exists) {
+        const pkg = await pkgFile.json();
+        if (pkg.scripts?.[script]) {
+          cmd = `bun run ${script}`;
+        }
+      }
 
-			await Bun.write(Bun.stderr, `running: ${cmd}\n`);
-			const shell = resolveShellCommand(cmd);
-			const proc = Bun.spawnSync(shell, {
-				stdio: ["inherit", "inherit", "inherit"],
-			});
-			if (proc.exitCode !== 0) {
-				throw new Error(`"${cmd}" exited with code ${proc.exitCode}`);
-			}
-		},
-		catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
-	}).pipe(
-		Effect.catch((cause) =>
-			Effect.fail(
-				new Error(
-					`post-gen script failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-				),
-			),
-		),
-	);
+      await Bun.write(Bun.stderr, `running: ${cmd}\n`);
+      const shell = resolveShellCommand(cmd);
+      const proc = Bun.spawnSync(shell, {
+        stdio: ["inherit", "inherit", "inherit"],
+      });
+      if (proc.exitCode !== 0) {
+        throw new Error(`"${cmd}" exited with code ${proc.exitCode}`);
+      }
+    },
+    catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.fail(
+        new Error(
+          `post-gen script failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+      ),
+    ),
+  );
 
 export const runOpenApiGenerateLifecycle = (
-	cli: GenerateCliInput,
+  cli: GenerateCliInput,
 ): Effect.Effect<
-	GenerateManyResult,
-	SpecLoadError | SpecParseError | CodegenError | ConfigValidationError | Error,
-	ConfigRepository | GeneratorRegistry
+  GenerateManyResult,
+  SpecLoadError | SpecParseError | CodegenError | ConfigValidationError | Error,
+  ConfigRepository | GeneratorRegistry
 > =>
-	Effect.gen(function* () {
-		const result = yield* generateFromCli(cli);
-		yield* writeManyFiles(result.results);
-		const hooks = Array.from(new Set(result.results.map((r) => r.posthook).filter(Boolean)));
-		for (const hook of hooks) {
-			if (hook) {
-				yield* runPostGenScript(hook);
-			}
-		}
-		return result;
-	});
+  Effect.gen(function* () {
+    const result = yield* generateFromCli(cli);
+    yield* writeManyFiles(result.results);
+    const hooks = Array.from(new Set(result.results.map((r) => r.posthook).filter(Boolean)));
+    for (const hook of hooks) {
+      if (hook) {
+        yield* runPostGenScript(hook);
+      }
+    }
+    return result;
+  });

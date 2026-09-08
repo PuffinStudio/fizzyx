@@ -15,32 +15,32 @@ import { NuqsAdapter } from "nuqs/adapters/react";
 const elem = document.getElementById("root")!;
 
 const isResizeObserverLoopError = (message: unknown): boolean =>
-	typeof message === "string" && message.includes("ResizeObserver loop completed");
+  typeof message === "string" && message.includes("ResizeObserver loop completed");
 
 window.addEventListener("error", (event) => {
-	if (isResizeObserverLoopError(event.message)) {
-		event.preventDefault();
-		event.stopImmediatePropagation();
-	}
+  if (isResizeObserverLoopError(event.message)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
 });
 
 window.onerror = (message) => {
-	if (isResizeObserverLoopError(message)) {
-		return true;
-	}
+  if (isResizeObserverLoopError(message)) {
+    return true;
+  }
 };
 
 const app = (
-	<StrictMode>
-		<ThemeProvider>
-			<NuqsAdapter>
-				<TooltipProvider>
-					<App />
-					<Toaster />
-				</TooltipProvider>
-			</NuqsAdapter>
-		</ThemeProvider>
-	</StrictMode>
+  <StrictMode>
+    <ThemeProvider>
+      <NuqsAdapter>
+        <TooltipProvider>
+          <App />
+          <Toaster />
+        </TooltipProvider>
+      </NuqsAdapter>
+    </ThemeProvider>
+  </StrictMode>
 );
 
 // https://bun.com/docs/bundler/hot-reloading#import-meta-hot-data
