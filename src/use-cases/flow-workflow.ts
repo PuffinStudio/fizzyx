@@ -6,97 +6,97 @@ export const IN_PROGRESS_COLUMN_ALIASES = ["IN PROGRESS", "INPROGRESS"] as const
 export const REVIEW_COLUMN_ALIASES = ["REVIEW"] as const;
 
 export const normalizeColumnName = (name: string): string =>
-	name.trim().toLowerCase().replace(/\s+/g, "");
+  name.trim().toLowerCase().replace(/\s+/g, "");
 
 const BACKLOG_COLUMN_NAME_SET = new Set(
-	BACKLOG_COLUMN_ALIASES.map((name) => normalizeColumnName(name)),
+  BACKLOG_COLUMN_ALIASES.map((name) => normalizeColumnName(name)),
 );
 const IN_PROGRESS_COLUMN_NAME_SET = new Set(IN_PROGRESS_COLUMN_ALIASES.map(normalizeColumnName));
 const READY_COLUMN_NAME_SET = new Set(READY_COLUMN_ALIASES.map(normalizeColumnName));
 const REVIEW_COLUMN_NAME_SET = new Set(REVIEW_COLUMN_ALIASES.map(normalizeColumnName));
 
 export const resolveTodoColumnId = (
-	cards: ReadonlyArray<BoardColumn> | undefined,
-	configuredColumnId: string,
+  cards: ReadonlyArray<BoardColumn> | undefined,
+  configuredColumnId: string,
 ): string => {
-	if (!cards) {
-		return configuredColumnId;
-	}
+  if (!cards) {
+    return configuredColumnId;
+  }
 
-	const byId = cards.find((column) => column.id === configuredColumnId);
-	if (byId && isTodoColumn(byId.name)) {
-		return byId.id;
-	}
+  const byId = cards.find((column) => column.id === configuredColumnId);
+  if (byId && isTodoColumn(byId.name)) {
+    return byId.id;
+  }
 
-	for (const alias of BACKLOG_COLUMN_ALIASES) {
-		const backlogColumn = cards.find(
-			(column) => normalizeColumnName(column.name) === normalizeColumnName(alias),
-		);
-		if (backlogColumn) {
-			return backlogColumn.id;
-		}
-	}
+  for (const alias of BACKLOG_COLUMN_ALIASES) {
+    const backlogColumn = cards.find(
+      (column) => normalizeColumnName(column.name) === normalizeColumnName(alias),
+    );
+    if (backlogColumn) {
+      return backlogColumn.id;
+    }
+  }
 
-	return configuredColumnId;
+  return configuredColumnId;
 };
 
 export const resolveInProgressColumnId = (
-	columns: ReadonlyArray<BoardColumn>,
-	configuredColumnId: string,
+  columns: ReadonlyArray<BoardColumn>,
+  configuredColumnId: string,
 ): string => {
-	const byId = columns.find((column) => column.id === configuredColumnId);
-	if (byId) {
-		return byId.id;
-	}
+  const byId = columns.find((column) => column.id === configuredColumnId);
+  if (byId) {
+    return byId.id;
+  }
 
-	const inProgressColumn = columns.find((column) => isInProgressColumn(column.name));
+  const inProgressColumn = columns.find((column) => isInProgressColumn(column.name));
 
-	return inProgressColumn ? inProgressColumn.id : configuredColumnId;
+  return inProgressColumn ? inProgressColumn.id : configuredColumnId;
 };
 
 export const resolveReadyColumnId = (
-	columns: ReadonlyArray<BoardColumn>,
-	configuredTodoColumnId: string,
+  columns: ReadonlyArray<BoardColumn>,
+  configuredTodoColumnId: string,
 ): string | null => {
-	const readyColumn = columns.find((column) =>
-		READY_COLUMN_NAME_SET.has(normalizeColumnName(column.name)),
-	);
-	if (readyColumn) {
-		return readyColumn.id;
-	}
+  const readyColumn = columns.find((column) =>
+    READY_COLUMN_NAME_SET.has(normalizeColumnName(column.name)),
+  );
+  if (readyColumn) {
+    return readyColumn.id;
+  }
 
-	const todoColumnId = resolveTodoColumnId(columns, configuredTodoColumnId);
-	return todoColumnId || null;
+  const todoColumnId = resolveTodoColumnId(columns, configuredTodoColumnId);
+  return todoColumnId || null;
 };
 
 export const isTodoColumn = (name?: string): boolean => {
-	if (!name) {
-		return false;
-	}
+  if (!name) {
+    return false;
+  }
 
-	return BACKLOG_COLUMN_NAME_SET.has(normalizeColumnName(name));
+  return BACKLOG_COLUMN_NAME_SET.has(normalizeColumnName(name));
 };
 
 export const isInProgressColumn = (name?: string): boolean => {
-	if (!name) {
-		return false;
-	}
+  if (!name) {
+    return false;
+  }
 
-	return IN_PROGRESS_COLUMN_NAME_SET.has(normalizeColumnName(name));
+  return IN_PROGRESS_COLUMN_NAME_SET.has(normalizeColumnName(name));
 };
 
 export const isReadyColumn = (name?: string): boolean => {
-	if (!name) {
-		return false;
-	}
+  if (!name) {
+    return false;
+  }
 
-	return READY_COLUMN_NAME_SET.has(normalizeColumnName(name));
+  return READY_COLUMN_NAME_SET.has(normalizeColumnName(name));
 };
 
 export const isReviewColumn = (name?: string): boolean => {
-	if (!name) {
-		return false;
-	}
+  if (!name) {
+    return false;
+  }
 
-	return REVIEW_COLUMN_NAME_SET.has(normalizeColumnName(name));
+  return REVIEW_COLUMN_NAME_SET.has(normalizeColumnName(name));
 };

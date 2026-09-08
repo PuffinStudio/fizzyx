@@ -116,55 +116,55 @@ export async function request<T, B = unknown>(
 `;
 
 export const fetchGenerator: CodeGenerator = {
-	name: "fetch",
-	info: { name: "fetch", description: "HTTP client based on fetch (swappable implementation)" },
+  name: "fetch",
+  info: { name: "fetch", description: "HTTP client based on fetch (swappable implementation)" },
 
-	generate: (spec: ParsedSpec, output: string, options?: GenFileOptions) =>
-		Effect.gen(function* () {
-			try {
-				const opts = {
-					apiName: options?.apiName ?? "api.ts",
-					typesName: options?.typesName ?? "types.ts",
-					runtimeName: options?.runtimeName ?? "http-request.ts",
-				} as Required<GenFileOptions>;
-				const files: GeneratedFile[] = [];
+  generate: (spec: ParsedSpec, output: string, options?: GenFileOptions) =>
+    Effect.gen(function* () {
+      try {
+        const opts = {
+          apiName: options?.apiName ?? "api.ts",
+          typesName: options?.typesName ?? "types.ts",
+          runtimeName: options?.runtimeName ?? "http-request.ts",
+        } as Required<GenFileOptions>;
+        const files: GeneratedFile[] = [];
 
-				const typesCode = generateTypes(spec);
-				const hasTypes = spec.types && Object.keys(spec.types).length > 0;
+        const typesCode = generateTypes(spec);
+        const hasTypes = spec.types && Object.keys(spec.types).length > 0;
 
-				const typesFile = opts.typesName === false ? undefined : (opts.typesName as string);
-				const typesImportPath = typesFile ? `./${typesFile.replace(/\.ts$/, "")}` : undefined;
+        const typesFile = opts.typesName === false ? undefined : (opts.typesName as string);
+        const typesImportPath = typesFile ? `./${typesFile.replace(/\.ts$/, "")}` : undefined;
 
-				const runtimeFile = opts.runtimeName;
-				const runtimeImportPath = `./${runtimeFile.replace(/\.ts$/, "")}`;
+        const runtimeFile = opts.runtimeName;
+        const runtimeImportPath = `./${runtimeFile.replace(/\.ts$/, "")}`;
 
-				const apiCode = generateApi(
-					spec,
-					{
-						runtimeModule: runtimeImportPath,
-						typeExports: ["ClientConfig"],
-						valueExports: ["configure", "setToken", "setHeaders"],
-					},
-					typesImportPath,
-					hasTypes,
-				);
+        const apiCode = generateApi(
+          spec,
+          {
+            runtimeModule: runtimeImportPath,
+            typeExports: ["ClientConfig"],
+            valueExports: ["configure", "setToken", "setHeaders"],
+          },
+          typesImportPath,
+          hasTypes,
+        );
 
-				if (hasTypes && typesFile) {
-					files.push({ path: typesFile, content: typesCode });
-				}
+        if (hasTypes && typesFile) {
+          files.push({ path: typesFile, content: typesCode });
+        }
 
-				files.push({ path: runtimeFile, content: KY_RUNTIME_CODE });
-				files.push({ path: opts.apiName, content: apiCode });
+        files.push({ path: runtimeFile, content: KY_RUNTIME_CODE });
+        files.push({ path: opts.apiName, content: apiCode });
 
-				return files;
-			} catch (e) {
-				return yield* Effect.fail(
-					new CodegenError({
-						message: `fetch codegen failed: ${e instanceof Error ? e.message : String(e)}`,
-						target: "fetch",
-						cause: e,
-					}),
-				);
-			}
-		}),
+        return files;
+      } catch (e) {
+        return yield* Effect.fail(
+          new CodegenError({
+            message: `fetch codegen failed: ${e instanceof Error ? e.message : String(e)}`,
+            target: "fetch",
+            cause: e,
+          }),
+        );
+      }
+    }),
 };

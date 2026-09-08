@@ -12,25 +12,25 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 export type EffectHttpClientError = HttpClientError.HttpClientError | HttpBody.HttpBodyError;
 
 export interface EffectClientConfig {
-	/** API base URL (prepended to relative paths). */
-	baseUrl?: string;
-	/** Default headers sent with every request. */
-	headers?: Record<string, string>;
-	/**
-	 * Transform the raw response body before returning.
-	 * Default unwraps `{ code, data }` envelope → `data`.
-	 * Set to `(raw) => raw` to disable unwrapping.
-	 */
-	responseExtractor?: (raw: unknown) => unknown;
+  /** API base URL (prepended to relative paths). */
+  baseUrl?: string;
+  /** Default headers sent with every request. */
+  headers?: Record<string, string>;
+  /**
+   * Transform the raw response body before returning.
+   * Default unwraps `{ code, data }` envelope → `data`.
+   * Set to `(raw) => raw` to disable unwrapping.
+   */
+  responseExtractor?: (raw: unknown) => unknown;
 }
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS";
 
 export interface ExecuteOptions<B = unknown> {
-	query?: Record<string, unknown>;
-	body?: B;
-	headers?: Record<string, string>;
-	paginate?: boolean;
+  query?: Record<string, unknown>;
+  body?: B;
+  headers?: Record<string, string>;
+  paginate?: boolean;
 }
 
 export const FetchLayer = FetchHttpClient.layer;
@@ -41,92 +41,92 @@ let _defaultHeaders: Record<string, string> = {};
 
 /** Configure the client. Call once at app startup. */
 export function configure(config: EffectClientConfig): void {
-	_config = { ..._config, ...config };
+  _config = { ..._config, ...config };
 }
 
 /** Set auth token. Pass `null` to clear. */
 export function setToken(token: string | null): void {
-	_token = token;
+  _token = token;
 }
 
 /** Set default headers sent with every request. Merge with existing defaults. */
 export function setHeaders(headers: Record<string, string>): void {
-	_defaultHeaders = { ..._defaultHeaders, ...headers };
+  _defaultHeaders = { ..._defaultHeaders, ...headers };
 }
 
 function defaultExtractor(raw: unknown): unknown {
-	if (
-		raw !== null &&
-		typeof raw === "object" &&
-		"code" in (raw as Record<string, unknown>) &&
-		"data" in (raw as Record<string, unknown>)
-	) {
-		return (raw as Record<string, unknown>).data;
-	}
-	return raw;
+  if (
+    raw !== null &&
+    typeof raw === "object" &&
+    "code" in (raw as Record<string, unknown>) &&
+    "data" in (raw as Record<string, unknown>)
+  ) {
+    return (raw as Record<string, unknown>).data;
+  }
+  return raw;
 }
 
 function buildUrl(url: string, query?: Record<string, unknown>): string {
-	let finalUrl = url.startsWith("http") ? url : (_config.baseUrl ?? "") + url;
-	if (query) {
-		const params = new URLSearchParams();
-		for (const [key, val] of Object.entries(query)) {
-			if (val === undefined) continue;
-			if (Array.isArray(val)) {
-				for (const item of val) {
-					if (item !== undefined) params.append(key, String(item));
-				}
-			} else {
-				params.set(key, String(val));
-			}
-		}
-		const qs = params.toString();
-		if (qs) finalUrl += (finalUrl.includes("?") ? "&" : "?") + qs;
-	}
-	return finalUrl;
+  let finalUrl = url.startsWith("http") ? url : (_config.baseUrl ?? "") + url;
+  if (query) {
+    const params = new URLSearchParams();
+    for (const [key, val] of Object.entries(query)) {
+      if (val === undefined) continue;
+      if (Array.isArray(val)) {
+        for (const item of val) {
+          if (item !== undefined) params.append(key, String(item));
+        }
+      } else {
+        params.set(key, String(val));
+      }
+    }
+    const qs = params.toString();
+    if (qs) finalUrl += (finalUrl.includes("?") ? "&" : "?") + qs;
+  }
+  return finalUrl;
 }
 
 function readResponse(
-	response: HttpClientResponse.HttpClientResponse,
+  response: HttpClientResponse.HttpClientResponse,
 ): Effect.Effect<unknown, HttpClientError.HttpClientError> {
-	const contentType = response.headers["content-type"] ?? "";
-	return contentType.includes("application/json") ? response.json : response.text;
+  const contentType = response.headers["content-type"] ?? "";
+  return contentType.includes("application/json") ? response.json : response.text;
 }
 
 function nextLink(linkHeader: string | undefined, currentUrl: string): string | undefined {
-	if (!linkHeader) return undefined;
-	for (const part of linkHeader.split(/,(?=\s*<)/)) {
-		if (!/\brel\s*=\s*"?next"?/i.test(part)) continue;
-		const match = part.match(/<([^>]+)>/);
-		if (match?.[1]) return new URL(match[1], currentUrl).toString();
-	}
-	return undefined;
+  if (!linkHeader) return undefined;
+  for (const part of linkHeader.split(/,(?=\s*<)/)) {
+    if (!/\brel\s*=\s*"?next"?/i.test(part)) continue;
+    const match = part.match(/<([^>]+)>/);
+    if (match?.[1]) return new URL(match[1], currentUrl).toString();
+  }
+  return undefined;
 }
 
 function makeRequest<B>(
-	method: HttpMethod,
-	url: string,
-	options: ExecuteOptions<B> | undefined,
+  method: HttpMethod,
+  url: string,
+  options: ExecuteOptions<B> | undefined,
 ): Effect.Effect<HttpClientRequest.HttpClientRequest, HttpBody.HttpBodyError> {
-	return Effect.sync(() => {
-		const headers: Record<string, string> = {
-			..._config.headers,
-			..._defaultHeaders,
-			...options?.headers,
-		};
-		if (_token) headers["Authorization"] = `Bearer ${_token}`;
+  return Effect.sync(() => {
+    const headers: Record<string, string> = {
+      ..._config.headers,
+      ..._defaultHeaders,
+      ...options?.headers,
+    };
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
 
-		return HttpClientRequest.make(method)(url, {
-			headers,
-			acceptJson: true,
-		});
-	}).pipe(
-		Effect.flatMap((baseRequest) =>
-			options?.body === undefined
-				? Effect.succeed(baseRequest)
-				: HttpClientRequest.bodyJson(options.body)(baseRequest),
-		),
-	);
+    return HttpClientRequest.make(method)(url, {
+      headers,
+      acceptJson: true,
+    });
+  }).pipe(
+    Effect.flatMap((baseRequest) =>
+      options?.body === undefined
+        ? Effect.succeed(baseRequest)
+        : HttpClientRequest.bodyJson(options.body)(baseRequest),
+    ),
+  );
 }
 
 /**
@@ -136,44 +136,44 @@ function makeRequest<B>(
  * `program.pipe(Effect.provide(FetchLayer))`
  */
 export function execute<T, B = unknown>(
-	method: HttpMethod,
-	url: string,
-	options?: ExecuteOptions<B>,
+  method: HttpMethod,
+  url: string,
+  options?: ExecuteOptions<B>,
 ): Effect.Effect<T, EffectHttpClientError, HttpClient.HttpClient> {
-	const fetchPage = (pageUrl: string) =>
-		makeRequest(method, pageUrl, options).pipe(
-			Effect.flatMap((request) => HttpClient.execute(request)),
-			Effect.flatMap(HttpClientResponse.filterStatusOk),
-			Effect.flatMap((response) =>
-				readResponse(response).pipe(
-					Effect.map((raw) => ({
-						response,
-						value: (_config.responseExtractor || defaultExtractor)(raw),
-					})),
-				),
-			),
-		);
+  const fetchPage = (pageUrl: string) =>
+    makeRequest(method, pageUrl, options).pipe(
+      Effect.flatMap((request) => HttpClient.execute(request)),
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap((response) =>
+        readResponse(response).pipe(
+          Effect.map((raw) => ({
+            response,
+            value: (_config.responseExtractor || defaultExtractor)(raw),
+          })),
+        ),
+      ),
+    );
 
-	if (!options?.paginate) {
-		return Effect.sync(() => buildUrl(url, options?.query)).pipe(
-			Effect.flatMap(fetchPage),
-			Effect.map(({ value }) => value as T),
-		);
-	}
+  if (!options?.paginate) {
+    return Effect.sync(() => buildUrl(url, options?.query)).pipe(
+      Effect.flatMap(fetchPage),
+      Effect.map(({ value }) => value as T),
+    );
+  }
 
-	return Effect.gen(function* () {
-		const combined: unknown[] = [];
-		const visited = new Set<string>();
-		let pageUrl: string | undefined = buildUrl(url, options?.query);
+  return Effect.gen(function* () {
+    const combined: unknown[] = [];
+    const visited = new Set<string>();
+    let pageUrl: string | undefined = buildUrl(url, options?.query);
 
-		while (pageUrl && !visited.has(pageUrl)) {
-			visited.add(pageUrl);
-			const { response, value } = yield* fetchPage(pageUrl);
-			if (!Array.isArray(value)) return value as T;
-			combined.push(...value);
-			pageUrl = nextLink(response.headers.link, pageUrl);
-		}
+    while (pageUrl && !visited.has(pageUrl)) {
+      visited.add(pageUrl);
+      const { response, value } = yield* fetchPage(pageUrl);
+      if (!Array.isArray(value)) return value as T;
+      combined.push(...value);
+      pageUrl = nextLink(response.headers.link, pageUrl);
+    }
 
-		return combined as T;
-	});
+    return combined as T;
+  });
 }

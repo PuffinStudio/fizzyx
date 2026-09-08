@@ -4,980 +4,980 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 type CliResult = {
-	stdout: string;
-	stderr: string;
-	exitCode: number;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
 };
 
 const runCli = async (
-	args: string[],
-	options?: { cwd?: string; env?: Record<string, string> },
+  args: string[],
+  options?: { cwd?: string; env?: Record<string, string> },
 ): Promise<CliResult> => {
-	const projectRoot = join(import.meta.dir, "..");
-	const entry = join(projectRoot, "src", "main.ts");
-	const proc = Bun.spawn(["bun", "run", entry, ...args], {
-		cwd: options?.cwd || projectRoot,
-		env: {
-			...process.env,
-			...options?.env,
-		} as NodeJS.ProcessEnv,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const [stdout, stderr] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-	]);
-	const exitCode = await proc.exited;
-	return { stdout, stderr, exitCode };
+  const projectRoot = join(import.meta.dir, "..");
+  const entry = join(projectRoot, "src", "main.ts");
+  const proc = Bun.spawn(["bun", "run", entry, ...args], {
+    cwd: options?.cwd || projectRoot,
+    env: {
+      ...process.env,
+      ...options?.env,
+    } as NodeJS.ProcessEnv,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  const exitCode = await proc.exited;
+  return { stdout, stderr, exitCode };
 };
 
 const makeTempDir = () => mkdtempSync(join(tmpdir(), "fizzyx-openapi-"));
 
 const SAMPLE_SPEC = {
-	openapi: "3.0.0",
-	info: { title: "Pet Store", version: "1.0.0" },
-	paths: {
-		"/pets": {
-			get: {
-				operationId: "listPets",
-				summary: "List all pets",
-				parameters: [{ name: "limit", in: "query", schema: { type: "integer" } }],
-				responses: {
-					"200": {
-						description: "Pet list",
-						content: {
-							"application/json": {
-								schema: {
-									type: "array",
-									items: { $ref: "#/components/schemas/Pet" },
-								},
-							},
-						},
-					},
-				},
-			},
-			post: {
-				operationId: "createPet",
-				summary: "Create a pet",
-				requestBody: {
-					required: true,
-					content: {
-						"application/json": {
-							schema: { $ref: "#/components/schemas/CreatePetInput" },
-						},
-					},
-				},
-				responses: {
-					"201": {
-						description: "Created pet",
-						content: {
-							"application/json": {
-								schema: { $ref: "#/components/schemas/Pet" },
-							},
-						},
-					},
-				},
-			},
-		},
-		"/pets/{petId}": {
-			get: {
-				operationId: "getPetById",
-				summary: "Get pet by ID",
-				parameters: [
-					{
-						name: "petId",
-						in: "path",
-						required: true,
-						schema: { type: "integer" },
-					},
-				],
-				responses: {
-					"200": {
-						description: "A pet",
-						content: {
-							"application/json": {
-								schema: { $ref: "#/components/schemas/Pet" },
-							},
-						},
-					},
-				},
-			},
-			delete: {
-				operationId: "deletePet",
-				summary: "Delete a pet",
-				parameters: [
-					{
-						name: "petId",
-						in: "path",
-						required: true,
-						schema: { type: "string" },
-					},
-				],
-				responses: { "204": { description: "Deleted" } },
-			},
-		},
-	},
-	components: {
-		schemas: {
-			Pet: {
-				type: "object",
-				required: ["id", "name"],
-				properties: {
-					id: { type: "integer" },
-					name: { type: "string" },
-					tag: { type: "string" },
-				},
-			},
-			CreatePetInput: {
-				type: "object",
-				required: ["name"],
-				properties: {
-					name: { type: "string" },
-					tag: { type: "string" },
-				},
-			},
-		},
-	},
+  openapi: "3.0.0",
+  info: { title: "Pet Store", version: "1.0.0" },
+  paths: {
+    "/pets": {
+      get: {
+        operationId: "listPets",
+        summary: "List all pets",
+        parameters: [{ name: "limit", in: "query", schema: { type: "integer" } }],
+        responses: {
+          "200": {
+            description: "Pet list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Pet" },
+                },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        operationId: "createPet",
+        summary: "Create a pet",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreatePetInput" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Created pet",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Pet" },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/pets/{petId}": {
+      get: {
+        operationId: "getPetById",
+        summary: "Get pet by ID",
+        parameters: [
+          {
+            name: "petId",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "A pet",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Pet" },
+              },
+            },
+          },
+        },
+      },
+      delete: {
+        operationId: "deletePet",
+        summary: "Delete a pet",
+        parameters: [
+          {
+            name: "petId",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: { "204": { description: "Deleted" } },
+      },
+    },
+  },
+  components: {
+    schemas: {
+      Pet: {
+        type: "object",
+        required: ["id", "name"],
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          tag: { type: "string" },
+        },
+      },
+      CreatePetInput: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string" },
+          tag: { type: "string" },
+        },
+      },
+    },
+  },
 };
 
 test("openapi generate --help prints usage", async () => {
-	const { stdout, exitCode } = await runCli(["openapi", "generate", "--help"]);
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("fizzyx openapi generate");
-	expect(stdout).toContain("--input");
-	expect(stdout).toContain("--output");
-	expect(stdout).toContain("--client");
-	expect(stdout).toContain("--api-name");
-	expect(stdout).toContain("--types-name");
-	expect(stdout).toContain("--runtime-name");
-	expect(stdout).toContain("--header");
-	expect(stdout).toContain("--state-management");
+  const { stdout, exitCode } = await runCli(["openapi", "generate", "--help"]);
+  expect(exitCode).toBe(0);
+  expect(stdout).toContain("fizzyx openapi generate");
+  expect(stdout).toContain("--input");
+  expect(stdout).toContain("--output");
+  expect(stdout).toContain("--client");
+  expect(stdout).toContain("--api-name");
+  expect(stdout).toContain("--types-name");
+  expect(stdout).toContain("--runtime-name");
+  expect(stdout).toContain("--header");
+  expect(stdout).toContain("--state-management");
 });
 
 test("openapi init --help prints usage", async () => {
-	const { stdout, exitCode } = await runCli(["openapi", "init", "--help"]);
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("fizzyx openapi init");
-	expect(stdout).toContain("--force");
+  const { stdout, exitCode } = await runCli(["openapi", "init", "--help"]);
+  expect(exitCode).toBe(0);
+  expect(stdout).toContain("fizzyx openapi init");
+  expect(stdout).toContain("--force");
 });
 
 test("openapi init writes a scaffold config when missing", async () => {
-	const root = makeTempDir();
-	try {
-		const fizzyPath = join(root, ".fizzyx.yaml");
-		expect(existsSync(fizzyPath)).toBe(false);
+  const root = makeTempDir();
+  try {
+    const fizzyPath = join(root, ".fizzyx.yaml");
+    expect(existsSync(fizzyPath)).toBe(false);
 
-		const { stdout, exitCode } = await runCli(
-			["openapi", "init", "-i", "https://example.com/openapi.json", "-o", "./src/api", "-c", "wx"],
-			{ cwd: root },
-		);
+    const { stdout, exitCode } = await runCli(
+      ["openapi", "init", "-i", "https://example.com/openapi.json", "-o", "./src/api", "-c", "wx"],
+      { cwd: root },
+    );
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("OpenAPI config scaffold written to .fizzyx.yaml");
-		const yaml = readFileSync(fizzyPath, "utf-8");
-		expect(yaml).toContain("openapi:");
-		expect(yaml).toContain("input: https://example.com/openapi.json");
-		expect(yaml).toContain("output: ./src/api");
-		expect(yaml).toContain("client: wx");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("OpenAPI config scaffold written to .fizzyx.yaml");
+    const yaml = readFileSync(fizzyPath, "utf-8");
+    expect(yaml).toContain("openapi:");
+    expect(yaml).toContain("input: https://example.com/openapi.json");
+    expect(yaml).toContain("output: ./src/api");
+    expect(yaml).toContain("client: wx");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi init writes scaffold with empty input when input is omitted", async () => {
-	const root = makeTempDir();
-	try {
-		const fizzyPath = join(root, ".fizzyx.yaml");
-		const { stdout, exitCode } = await runCli(["openapi", "init", "-o", "./src/api", "-c", "wx"], {
-			cwd: root,
-		});
+  const root = makeTempDir();
+  try {
+    const fizzyPath = join(root, ".fizzyx.yaml");
+    const { stdout, exitCode } = await runCli(["openapi", "init", "-o", "./src/api", "-c", "wx"], {
+      cwd: root,
+    });
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("OpenAPI config scaffold written to .fizzyx.yaml");
-		const yaml = readFileSync(fizzyPath, "utf-8");
-		expect(yaml).toContain("openapi:");
-		expect(yaml).toContain("input:");
-		expect(yaml).not.toContain("https://openapi.example.com/openapi.json");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("OpenAPI config scaffold written to .fizzyx.yaml");
+    const yaml = readFileSync(fizzyPath, "utf-8");
+    expect(yaml).toContain("openapi:");
+    expect(yaml).toContain("input:");
+    expect(yaml).not.toContain("https://openapi.example.com/openapi.json");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi init will skip when config already has openapi entries unless --force", async () => {
-	const root = makeTempDir();
-	try {
-		const fizzyPath = join(root, ".fizzyx.yaml");
-		writeFileSync(
-			fizzyPath,
-			"openapi:\n  - input: ./old-spec.json\n    output: ./old-api\n    client: wx\n",
-		);
+  const root = makeTempDir();
+  try {
+    const fizzyPath = join(root, ".fizzyx.yaml");
+    writeFileSync(
+      fizzyPath,
+      "openapi:\n  - input: ./old-spec.json\n    output: ./old-api\n    client: wx\n",
+    );
 
-		const { stdout, exitCode } = await runCli(
-			["openapi", "init", "-i", "https://example.com/openapi.json", "-o", "./src/api", "-c", "wx"],
-			{ cwd: root },
-		);
+    const { stdout, exitCode } = await runCli(
+      ["openapi", "init", "-i", "https://example.com/openapi.json", "-o", "./src/api", "-c", "wx"],
+      { cwd: root },
+    );
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("openapi config already exists");
-		const yaml = readFileSync(fizzyPath, "utf-8");
-		expect(yaml).toContain("input: ./old-spec.json");
-		expect(yaml).not.toContain("https://example.com/openapi.json");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("openapi config already exists");
+    const yaml = readFileSync(fizzyPath, "utf-8");
+    expect(yaml).toContain("input: ./old-spec.json");
+    expect(yaml).not.toContain("https://example.com/openapi.json");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi init --force replaces existing openapi config", async () => {
-	const root = makeTempDir();
-	try {
-		const fizzyPath = join(root, ".fizzyx.yaml");
-		writeFileSync(
-			fizzyPath,
-			"openapi:\n  - input: ./old-spec.json\n    output: ./old-api\n    client: wx\n",
-		);
+  const root = makeTempDir();
+  try {
+    const fizzyPath = join(root, ".fizzyx.yaml");
+    writeFileSync(
+      fizzyPath,
+      "openapi:\n  - input: ./old-spec.json\n    output: ./old-api\n    client: wx\n",
+    );
 
-		const { exitCode } = await runCli(
-			[
-				"openapi",
-				"init",
-				"--force",
-				"-i",
-				"https://example.com/new-spec.json",
-				"-o",
-				"./src/api",
-				"-c",
-				"fetch",
-			],
-			{ cwd: root },
-		);
+    const { exitCode } = await runCli(
+      [
+        "openapi",
+        "init",
+        "--force",
+        "-i",
+        "https://example.com/new-spec.json",
+        "-o",
+        "./src/api",
+        "-c",
+        "fetch",
+      ],
+      { cwd: root },
+    );
 
-		expect(exitCode).toBe(0);
-		const yaml = readFileSync(fizzyPath, "utf-8");
-		expect(yaml).toContain("input: https://example.com/new-spec.json");
-		expect(yaml).toContain("client: fetch");
-		expect(yaml).not.toContain("input: ./old-spec.json");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    const yaml = readFileSync(fizzyPath, "utf-8");
+    expect(yaml).toContain("input: https://example.com/new-spec.json");
+    expect(yaml).toContain("client: fetch");
+    expect(yaml).not.toContain("input: ./old-spec.json");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi list shows built-in generators", async () => {
-	const { stdout, exitCode } = await runCli(["openapi", "list"]);
-	expect(exitCode).toBe(0);
-	expect(stdout).toContain("wx");
-	expect(stdout).toContain("WeChat Mini Program");
-	expect(stdout).toContain("effect");
-	expect(stdout).toContain("Effect 4 HTTP client");
+  const { stdout, exitCode } = await runCli(["openapi", "list"]);
+  expect(exitCode).toBe(0);
+  expect(stdout).toContain("wx");
+  expect(stdout).toContain("WeChat Mini Program");
+  expect(stdout).toContain("effect");
+  expect(stdout).toContain("Effect 4 HTTP client");
 });
 
 test("openapi generate requires --input", async () => {
-	const root = makeTempDir();
-	try {
-		const { stderr, exitCode } = await runCli(["openapi", "generate", "-o", root, "-c", "wx"], {
-			cwd: root,
-		});
-		expect(exitCode).not.toBe(0);
-		expect(stderr).toMatch(/input|--input/i);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+  const root = makeTempDir();
+  try {
+    const { stderr, exitCode } = await runCli(["openapi", "generate", "-o", root, "-c", "wx"], {
+      cwd: root,
+    });
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/input|--input/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate produces correct files from spec file", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
 
-		const { stdout, stderr, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outputDir,
-			"-c",
-			"wx",
-		]);
+    const { stdout, stderr, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outputDir,
+      "-c",
+      "wx",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stderr).toContain("Generating client");
-		expect(stdout).toContain("generated 4 file(s)");
-		expect(stdout).toContain("endpoints: 4");
-		expect(stdout).toContain("types: 2");
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("Generating client");
+    expect(stdout).toContain("generated 4 file(s)");
+    expect(stdout).toContain("endpoints: 4");
+    expect(stdout).toContain("types: 2");
 
-		expect(existsSync(join(outputDir, "types.ts"))).toBe(true);
-		expect(existsSync(join(outputDir, "wx-request.ts"))).toBe(true);
-		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
-		expect(existsSync(join(outputDir, "index.ts"))).toBe(true);
+    expect(existsSync(join(outputDir, "types.ts"))).toBe(true);
+    expect(existsSync(join(outputDir, "wx-request.ts"))).toBe(true);
+    expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+    expect(existsSync(join(outputDir, "index.ts"))).toBe(true);
 
-		const types = readFileSync(join(outputDir, "types.ts"), "utf-8");
-		expect(types).toContain("export interface Pet {");
-		expect(types).toContain("  id: number");
-		expect(types).toContain("  name: string");
-		expect(types).toContain("export interface CreatePetInput {");
+    const types = readFileSync(join(outputDir, "types.ts"), "utf-8");
+    expect(types).toContain("export interface Pet {");
+    expect(types).toContain("  id: number");
+    expect(types).toContain("  name: string");
+    expect(types).toContain("export interface CreatePetInput {");
 
-		const runtime = readFileSync(join(outputDir, "wx-request.ts"), "utf-8");
-		expect(runtime).toContain("export function configure");
-		expect(runtime).toContain("export function setToken");
-		expect(runtime).toContain("export function onError");
-		expect(runtime).toContain("export async function request");
-		expect(runtime).toContain("wx.request({");
-		expect(runtime).toContain("export async function initToken");
-		expect(runtime).toContain("console.error");
-		expect(runtime).toContain("reject(new Error(errMsg))");
-		expect(runtime).toContain("hasHooks");
+    const runtime = readFileSync(join(outputDir, "wx-request.ts"), "utf-8");
+    expect(runtime).toContain("export function configure");
+    expect(runtime).toContain("export function setToken");
+    expect(runtime).toContain("export function onError");
+    expect(runtime).toContain("export async function request");
+    expect(runtime).toContain("wx.request({");
+    expect(runtime).toContain("export async function initToken");
+    expect(runtime).toContain("console.error");
+    expect(runtime).toContain("reject(new Error(errMsg))");
+    expect(runtime).toContain("hasHooks");
 
-		const api = readFileSync(join(outputDir, "api.ts"), "utf-8");
-		expect(api).toContain("export function listPets");
-		expect(api).toContain("export function createPet");
-		expect(api).toContain("export function getPetById");
-		expect(api).toContain("export function deletePet");
-		expect(api).toContain("Pet[]");
-		expect(api).toContain("CreatePetInput");
-		expect(api).toContain("export interface ListPetsQueryParams extends BaseParams {");
-		expect(api).toContain("  limit?: number");
-		expect(api).toContain("export interface GetPetByIdPathParams extends BaseParams {");
-		expect(api).toContain("  petId: number");
-		expect(api).toContain("export interface DeletePetPathParams extends BaseParams {");
-		expect(api).toContain("  petId: string");
-		expect(api).toContain("`/pets/${encodeURIComponent(String(params.petId))}`");
-		expect(api).toContain("export interface BaseParams {");
+    const api = readFileSync(join(outputDir, "api.ts"), "utf-8");
+    expect(api).toContain("export function listPets");
+    expect(api).toContain("export function createPet");
+    expect(api).toContain("export function getPetById");
+    expect(api).toContain("export function deletePet");
+    expect(api).toContain("Pet[]");
+    expect(api).toContain("CreatePetInput");
+    expect(api).toContain("export interface ListPetsQueryParams extends BaseParams {");
+    expect(api).toContain("  limit?: number");
+    expect(api).toContain("export interface GetPetByIdPathParams extends BaseParams {");
+    expect(api).toContain("  petId: number");
+    expect(api).toContain("export interface DeletePetPathParams extends BaseParams {");
+    expect(api).toContain("  petId: string");
+    expect(api).toContain("`/pets/${encodeURIComponent(String(params.petId))}`");
+    expect(api).toContain("export interface BaseParams {");
 
-		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
-		expect(idx).toContain('export * from "./api"');
-		expect(idx).toContain('export * from "./types"');
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
+    expect(idx).toContain('export * from "./api"');
+    expect(idx).toContain('export * from "./types"');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("generated fetch client keeps reserved path parameter characters inside one segment", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
 
-		const { exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outputDir,
-			"-c",
-			"fetch",
-		]);
-		expect(exitCode).toBe(0);
+    const { exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outputDir,
+      "-c",
+      "fetch",
+    ]);
+    expect(exitCode).toBe(0);
 
-		const client = await import(join(outputDir, "api.ts"));
-		let requestedUrl = "";
-		client.configure({
-			baseUrl: "https://api.example.com",
-			fetch: (async (input: RequestInfo | URL) => {
-				requestedUrl = String(input);
-				return new Response(null, { status: 204 });
-			}) as typeof fetch,
-		});
+    const client = await import(join(outputDir, "api.ts"));
+    let requestedUrl = "";
+    client.configure({
+      baseUrl: "https://api.example.com",
+      fetch: (async (input: RequestInfo | URL) => {
+        requestedUrl = String(input);
+        return new Response(null, { status: 204 });
+      }) as typeof fetch,
+    });
 
-		await client.deletePet({ petId: "50% /猫?#" });
+    await client.deletePet({ petId: "50% /猫?#" });
 
-		expect(requestedUrl).toBe("https://api.example.com/pets/50%25%20%2F%E7%8C%AB%3F%23");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(requestedUrl).toBe("https://api.example.com/pets/50%25%20%2F%E7%8C%AB%3F%23");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate creates .fizzy.yaml when no config exists", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
 
-		const fizzyPath = join(root, ".fizzy.yaml");
-		expect(existsSync(fizzyPath)).toBe(false);
+    const fizzyPath = join(root, ".fizzy.yaml");
+    expect(existsSync(fizzyPath)).toBe(false);
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outputDir,
-			"-c",
-			"wx",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outputDir,
+      "-c",
+      "wx",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
 
-		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
-		expect(existsSync(join(outputDir, "index.ts"))).toBe(true);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+    expect(existsSync(join(outputDir, "index.ts"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with --output file path sets custom api name", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
 
-		const { exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			join(root, "api", "sdk.ts"),
-			"-c",
-			"wx",
-		]);
+    const { exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      join(root, "api", "sdk.ts"),
+      "-c",
+      "wx",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(existsSync(join(root, "api", "sdk.ts"))).toBe(true);
-		expect(existsSync(join(root, "api", "types.ts"))).toBe(true);
-		expect(existsSync(join(root, "api", "wx-request.ts"))).toBe(true);
+    expect(exitCode).toBe(0);
+    expect(existsSync(join(root, "api", "sdk.ts"))).toBe(true);
+    expect(existsSync(join(root, "api", "types.ts"))).toBe(true);
+    expect(existsSync(join(root, "api", "wx-request.ts"))).toBe(true);
 
-		const api = readFileSync(join(root, "api", "sdk.ts"), "utf-8");
-		expect(api).toContain("export function listPets");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    const api = readFileSync(join(root, "api", "sdk.ts"), "utf-8");
+    expect(api).toContain("export function listPets");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate accepts YAML from URL input", async () => {
-	const root = makeTempDir();
-	const server = Bun.serve({
-		port: 0,
-		hostname: "127.0.0.1",
-		fetch() {
-			return new Response(Bun.YAML.stringify(SAMPLE_SPEC), {
-				headers: { "content-type": "application/yaml; charset=utf-8" },
-			});
-		},
-	});
+  const root = makeTempDir();
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch() {
+      return new Response(Bun.YAML.stringify(SAMPLE_SPEC), {
+        headers: { "content-type": "application/yaml; charset=utf-8" },
+      });
+    },
+  });
 
-	try {
-		const outDir = join(root, "api");
+  try {
+    const outDir = join(root, "api");
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			`http://127.0.0.1:${server.port}/openapi.yaml`,
-			"-o",
-			outDir,
-			"-c",
-			"wx",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      `http://127.0.0.1:${server.port}/openapi.yaml`,
+      "-o",
+      outDir,
+      "-c",
+      "wx",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
-		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
-	} finally {
-		server.stop();
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
+    expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+  } finally {
+    server.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate accepts YAML from URL with text/yaml header", async () => {
-	const root = makeTempDir();
-	const server = Bun.serve({
-		port: 0,
-		hostname: "127.0.0.1",
-		fetch() {
-			return new Response(Bun.YAML.stringify(SAMPLE_SPEC), {
-				headers: { "content-type": "text/yaml; charset=utf-8" },
-			});
-		},
-	});
+  const root = makeTempDir();
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch() {
+      return new Response(Bun.YAML.stringify(SAMPLE_SPEC), {
+        headers: { "content-type": "text/yaml; charset=utf-8" },
+      });
+    },
+  });
 
-	try {
-		const outDir = join(root, "api");
+  try {
+    const outDir = join(root, "api");
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			`http://127.0.0.1:${server.port}/openapi.yaml`,
-			"-o",
-			outDir,
-			"-c",
-			"wx",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      `http://127.0.0.1:${server.port}/openapi.yaml`,
+      "-o",
+      outDir,
+      "-c",
+      "wx",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
-		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
-	} finally {
-		server.stop();
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
+    expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+  } finally {
+    server.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate accepts YAML from URL without content-type header", async () => {
-	const root = makeTempDir();
-	const server = Bun.serve({
-		port: 0,
-		hostname: "127.0.0.1",
-		fetch() {
-			return new Response(Bun.YAML.stringify(SAMPLE_SPEC));
-		},
-	});
+  const root = makeTempDir();
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch() {
+      return new Response(Bun.YAML.stringify(SAMPLE_SPEC));
+    },
+  });
 
-	try {
-		const outDir = join(root, "api");
+  try {
+    const outDir = join(root, "api");
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			`http://127.0.0.1:${server.port}/openapi.yaml`,
-			"-o",
-			outDir,
-			"-c",
-			"wx",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      `http://127.0.0.1:${server.port}/openapi.yaml`,
+      "-o",
+      outDir,
+      "-c",
+      "wx",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
-		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
-	} finally {
-		server.stop();
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
+    expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+  } finally {
+    server.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with --api-name flag", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		const outDir = join(root, "api");
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    const outDir = join(root, "api");
 
-		const { exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outDir,
-			"-c",
-			"wx",
-			"--api-name",
-			"client.ts",
-		]);
+    const { exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outDir,
+      "-c",
+      "wx",
+      "--api-name",
+      "client.ts",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(existsSync(join(outDir, "client.ts"))).toBe(true);
-		expect(existsSync(join(outDir, "types.ts"))).toBe(true);
+    expect(exitCode).toBe(0);
+    expect(existsSync(join(outDir, "client.ts"))).toBe(true);
+    expect(existsSync(join(outDir, "types.ts"))).toBe(true);
 
-		const api = readFileSync(join(outDir, "client.ts"), "utf-8");
-		expect(api).toContain("export function listPets");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    const api = readFileSync(join(outDir, "client.ts"), "utf-8");
+    expect(api).toContain("export function listPets");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with --types-name flag", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		const outDir = join(root, "api");
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    const outDir = join(root, "api");
 
-		const { exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outDir,
-			"-c",
-			"wx",
-			"--types-name",
-			"models.ts",
-		]);
+    const { exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outDir,
+      "-c",
+      "wx",
+      "--types-name",
+      "models.ts",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(existsSync(join(outDir, "models.ts"))).toBe(true);
-		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+    expect(exitCode).toBe(0);
+    expect(existsSync(join(outDir, "models.ts"))).toBe(true);
+    expect(existsSync(join(outDir, "api.ts"))).toBe(true);
 
-		const types = readFileSync(join(outDir, "models.ts"), "utf-8");
-		expect(types).toContain("export interface Pet");
+    const types = readFileSync(join(outDir, "models.ts"), "utf-8");
+    expect(types).toContain("export interface Pet");
 
-		// api.ts should import from ./models, not ./types
-		const api = readFileSync(join(outDir, "api.ts"), "utf-8");
-		expect(api).toContain('from "./models"');
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    // api.ts should import from ./models, not ./types
+    const api = readFileSync(join(outDir, "api.ts"), "utf-8");
+    expect(api).toContain('from "./models"');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with custom runtime name", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		const outDir = join(root, "api");
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    const outDir = join(root, "api");
 
-		const { exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outDir,
-			"-c",
-			"wx",
-			"--runtime-name",
-			"request.ts",
-		]);
+    const { exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outDir,
+      "-c",
+      "wx",
+      "--runtime-name",
+      "request.ts",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(existsSync(join(outDir, "request.ts"))).toBe(true);
-		expect(existsSync(join(outDir, "types.ts"))).toBe(true);
-		expect(existsSync(join(outDir, "api.ts"))).toBe(true);
+    expect(exitCode).toBe(0);
+    expect(existsSync(join(outDir, "request.ts"))).toBe(true);
+    expect(existsSync(join(outDir, "types.ts"))).toBe(true);
+    expect(existsSync(join(outDir, "api.ts"))).toBe(true);
 
-		const runtime = readFileSync(join(outDir, "request.ts"), "utf-8");
-		expect(runtime).toContain("export function configure");
+    const runtime = readFileSync(join(outDir, "request.ts"), "utf-8");
+    expect(runtime).toContain("export function configure");
 
-		// api.ts should import from ./request, not ./wx-request
-		const api = readFileSync(join(outDir, "api.ts"), "utf-8");
-		expect(api).toContain('from "./request"');
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    // api.ts should import from ./request, not ./wx-request
+    const api = readFileSync(join(outDir, "api.ts"), "utf-8");
+    expect(api).toContain('from "./request"');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with effect client emits Effect 4 HttpClient files", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api-effect");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api-effect");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outputDir,
-			"-c",
-			"effect",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outputDir,
+      "-c",
+      "effect",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
-		expect(existsSync(join(outputDir, "effect-http.ts"))).toBe(true);
-		expect(existsSync(join(outputDir, "effect-client.ts"))).toBe(true);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
+    expect(existsSync(join(outputDir, "effect-http.ts"))).toBe(true);
+    expect(existsSync(join(outputDir, "effect-client.ts"))).toBe(true);
 
-		const runtime = readFileSync(join(outputDir, "effect-http.ts"), "utf-8");
-		expect(runtime).toContain('import { Effect } from "effect"');
-		expect(runtime).toContain(
-			'import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"',
-		);
-		expect(runtime).toContain('import * as HttpClient from "effect/unstable/http/HttpClient"');
-		expect(runtime).toContain(
-			'import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"',
-		);
-		expect(runtime).toContain("export const FetchLayer = FetchHttpClient.layer");
-		expect(runtime).toContain("HttpClientRequest.bodyJson");
-		expect(runtime).toContain("HttpClient.execute");
-		expect(runtime).toContain("HttpClientResponse.filterStatusOk");
-		expect(runtime).toContain("export function execute");
-		expect(runtime).toContain("Effect.Effect<T, EffectHttpClientError, HttpClient.HttpClient>");
+    const runtime = readFileSync(join(outputDir, "effect-http.ts"), "utf-8");
+    expect(runtime).toContain('import { Effect } from "effect"');
+    expect(runtime).toContain(
+      'import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"',
+    );
+    expect(runtime).toContain('import * as HttpClient from "effect/unstable/http/HttpClient"');
+    expect(runtime).toContain(
+      'import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"',
+    );
+    expect(runtime).toContain("export const FetchLayer = FetchHttpClient.layer");
+    expect(runtime).toContain("HttpClientRequest.bodyJson");
+    expect(runtime).toContain("HttpClient.execute");
+    expect(runtime).toContain("HttpClientResponse.filterStatusOk");
+    expect(runtime).toContain("export function execute");
+    expect(runtime).toContain("Effect.Effect<T, EffectHttpClientError, HttpClient.HttpClient>");
 
-		const client = readFileSync(join(outputDir, "effect-client.ts"), "utf-8");
-		expect(client).toContain('import { Effect } from "effect"');
-		expect(client).toContain('import * as HttpClient from "effect/unstable/http/HttpClient"');
-		expect(client).toContain('import type { EffectHttpClientError } from "./effect-http"');
-		expect(client).toContain("Effect.Effect<Pet[], EffectHttpClientError, HttpClient.HttpClient>");
-		expect(client).toContain("export function createPet");
-		expect(client).toContain('execute<Pet[]>("GET", `/pets`, { query })');
-		expect(client).toContain(
-			'execute<Pet>("GET", `/pets/${encodeURIComponent(String(params.petId))}`)',
-		);
+    const client = readFileSync(join(outputDir, "effect-client.ts"), "utf-8");
+    expect(client).toContain('import { Effect } from "effect"');
+    expect(client).toContain('import * as HttpClient from "effect/unstable/http/HttpClient"');
+    expect(client).toContain('import type { EffectHttpClientError } from "./effect-http"');
+    expect(client).toContain("Effect.Effect<Pet[], EffectHttpClientError, HttpClient.HttpClient>");
+    expect(client).toContain("export function createPet");
+    expect(client).toContain('execute<Pet[]>("GET", `/pets`, { query })');
+    expect(client).toContain(
+      'execute<Pet>("GET", `/pets/${encodeURIComponent(String(params.petId))}`)',
+    );
 
-		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
-		expect(idx).toContain('export * from "./effect-client"');
-		expect(idx).toContain('export * from "./types"');
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
+    expect(idx).toContain('export * from "./effect-client"');
+    expect(idx).toContain('export * from "./types"');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with explicit input does not inherit config run script", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		const markerPath = join(root, "ran-check");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		writeFileSync(
-			join(root, "package.json"),
-			JSON.stringify({ scripts: { check: "touch ran-check" } }),
-		);
-		writeFileSync(
-			join(root, ".fizzy.yaml"),
-			`openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: wx\n    run: check\n`,
-		);
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    const markerPath = join(root, "ran-check");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ scripts: { check: "touch ran-check" } }),
+    );
+    writeFileSync(
+      join(root, ".fizzy.yaml"),
+      `openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: wx\n    run: check\n`,
+    );
 
-		const { stderr, exitCode } = await runCli(
-			["openapi", "generate", "-i", specPath, "-o", outputDir, "-c", "wx"],
-			{ cwd: root },
-		);
+    const { stderr, exitCode } = await runCli(
+      ["openapi", "generate", "-i", specPath, "-o", outputDir, "-c", "wx"],
+      { cwd: root },
+    );
 
-		expect(exitCode).toBe(0);
-		expect(stderr).not.toContain("running: bun run check");
-		expect(existsSync(markerPath)).toBe(false);
-		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stderr).not.toContain("running: bun run check");
+    expect(existsSync(markerPath)).toBe(false);
+    expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate --posthook with npm script name", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { check: "echo done" } }));
-		const outDir = join(root, "api");
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { check: "echo done" } }));
+    const outDir = join(root, "api");
 
-		const { stderr, exitCode } = await runCli(
-			["openapi", "generate", "-i", specPath, "-o", outDir, "-c", "wx", "--posthook", "check"],
-			{ cwd: root },
-		);
+    const { stderr, exitCode } = await runCli(
+      ["openapi", "generate", "-i", specPath, "-o", outDir, "-c", "wx", "--posthook", "check"],
+      { cwd: root },
+    );
 
-		expect(exitCode).toBe(0);
-		expect(stderr).toContain("running: bun run check");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("running: bun run check");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate --header flag is accepted with file input", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outputDir,
-			"-c",
-			"wx",
-			"--header",
-			"Authorization=Bearer test-token",
-			"--header",
-			"X-Custom=value",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outputDir,
+      "-c",
+      "wx",
+      "--header",
+      "Authorization=Bearer test-token",
+      "--header",
+      "X-Custom=value",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
-		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
+    expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate reads headers from .fizzy.yaml", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		writeFileSync(
-			join(root, ".fizzy.yaml"),
-			`openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: wx\n    headers:\n      Authorization: Bearer test-token\n      X-Api-Key: secret\n`,
-		);
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    writeFileSync(
+      join(root, ".fizzy.yaml"),
+      `openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: wx\n    headers:\n      Authorization: Bearer test-token\n      X-Api-Key: secret\n`,
+    );
 
-		const { stdout, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
+    const { stdout, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
-		expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
+    expect(existsSync(join(outputDir, "api.ts"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with --state-management tanstack-query generates queries file", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outputDir,
-			"-c",
-			"fetch",
-			"--state-management",
-			"tanstack-query",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outputDir,
+      "-c",
+      "fetch",
+      "--state-management",
+      "tanstack-query",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 5 file(s)");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 5 file(s)");
 
-		// Should have the queries file
-		const queriesPath = join(outputDir, "queries.ts");
-		expect(existsSync(queriesPath)).toBe(true);
+    // Should have the queries file
+    const queriesPath = join(outputDir, "queries.ts");
+    expect(existsSync(queriesPath)).toBe(true);
 
-		// Verify generated content
-		const queries = readFileSync(queriesPath, "utf-8");
-		expect(queries).toContain("listPetsQueryKey");
-		expect(queries).toContain("listPetsOptions");
-		expect(queries).toContain("getPetByIdQueryKey");
-		expect(queries).toContain("getPetByIdOptions");
-		expect(queries).toContain("createPetMutation");
-		expect(queries).toContain("deletePetMutation");
+    // Verify generated content
+    const queries = readFileSync(queriesPath, "utf-8");
+    expect(queries).toContain("listPetsQueryKey");
+    expect(queries).toContain("listPetsOptions");
+    expect(queries).toContain("getPetByIdQueryKey");
+    expect(queries).toContain("getPetByIdOptions");
+    expect(queries).toContain("createPetMutation");
+    expect(queries).toContain("deletePetMutation");
 
-		// Should import from api module
-		expect(queries).toContain('from "./api"');
+    // Should import from api module
+    expect(queries).toContain('from "./api"');
 
-		// index.ts should export from queries.ts
-		const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
-		expect(idx).toContain('export * from "./api"');
-		expect(idx).toContain('export * from "./queries"');
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    // index.ts should export from queries.ts
+    const idx = readFileSync(join(outputDir, "index.ts"), "utf-8");
+    expect(idx).toContain('export * from "./api"');
+    expect(idx).toContain('export * from "./queries"');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with --state-management tanstack-query without types", async () => {
-	const root = makeTempDir();
-	try {
-		const specNoTypes = {
-			openapi: "3.0.0",
-			info: { title: "Minimal", version: "1.0.0" },
-			paths: {
-				"/health": {
-					get: {
-						operationId: "healthCheck",
-						responses: { "200": { description: "OK" } },
-					},
-				},
-			},
-		};
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(specNoTypes, null, 2));
+  const root = makeTempDir();
+  try {
+    const specNoTypes = {
+      openapi: "3.0.0",
+      info: { title: "Minimal", version: "1.0.0" },
+      paths: {
+        "/health": {
+          get: {
+            operationId: "healthCheck",
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+    };
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(specNoTypes, null, 2));
 
-		const { stdout, exitCode } = await runCli([
-			"openapi",
-			"generate",
-			"-i",
-			specPath,
-			"-o",
-			outputDir,
-			"-c",
-			"fetch",
-			"--state-management",
-			"tanstack-query",
-		]);
+    const { stdout, exitCode } = await runCli([
+      "openapi",
+      "generate",
+      "-i",
+      specPath,
+      "-o",
+      outputDir,
+      "-c",
+      "fetch",
+      "--state-management",
+      "tanstack-query",
+    ]);
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 4 file(s)");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 4 file(s)");
 
-		const queriesPath = join(outputDir, "queries.ts");
-		expect(existsSync(queriesPath)).toBe(true);
+    const queriesPath = join(outputDir, "queries.ts");
+    expect(existsSync(queriesPath)).toBe(true);
 
-		const queries = readFileSync(queriesPath, "utf-8");
-		expect(queries).toContain("healthCheckQueryKey");
-		expect(queries).toContain("healthCheckOptions");
-		// Should not have mutation for GET endpoint
-		expect(queries).not.toContain("healthCheckMutation");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    const queries = readFileSync(queriesPath, "utf-8");
+    expect(queries).toContain("healthCheckQueryKey");
+    expect(queries).toContain("healthCheckOptions");
+    // Should not have mutation for GET endpoint
+    expect(queries).not.toContain("healthCheckMutation");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate reads stateManagement from .fizzy.yaml", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		const outputDir = join(root, "api");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		writeFileSync(
-			join(root, ".fizzy.yaml"),
-			`openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: fetch\n    stateManagement: tanstack-query\n`,
-		);
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    const outputDir = join(root, "api");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    writeFileSync(
+      join(root, ".fizzy.yaml"),
+      `openapi:\n  - input: ${specPath}\n    output: ${outputDir}\n    client: fetch\n    stateManagement: tanstack-query\n`,
+    );
 
-		const { stdout, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
+    const { stdout, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
 
-		expect(exitCode).toBe(0);
-		expect(stdout).toContain("generated 5 file(s)");
-		expect(existsSync(join(outputDir, "queries.ts"))).toBe(true);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("generated 5 file(s)");
+    expect(existsSync(join(outputDir, "queries.ts"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate --posthook with raw command", async () => {
-	const root = makeTempDir();
-	try {
-		const specPath = join(root, "spec.json");
-		writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
-		const outDir = join(root, "api");
+  const root = makeTempDir();
+  try {
+    const specPath = join(root, "spec.json");
+    writeFileSync(specPath, JSON.stringify(SAMPLE_SPEC, null, 2));
+    const outDir = join(root, "api");
 
-		const { stderr, exitCode } = await runCli(
-			[
-				"openapi",
-				"generate",
-				"-i",
-				specPath,
-				"-o",
-				outDir,
-				"-c",
-				"wx",
-				"--posthook",
-				"echo",
-				"hello",
-			],
-			{ cwd: root },
-		);
+    const { stderr, exitCode } = await runCli(
+      [
+        "openapi",
+        "generate",
+        "-i",
+        specPath,
+        "-o",
+        outDir,
+        "-c",
+        "wx",
+        "--posthook",
+        "echo",
+        "hello",
+      ],
+      { cwd: root },
+    );
 
-		expect(exitCode).toBe(0);
-		expect(stderr).toContain("running: echo");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("running: echo");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("openapi generate with multiple config entries runs a shared posthook only once", async () => {
-	const root = makeTempDir();
-	try {
-		const specA = join(root, "spec-a.json");
-		const specB = join(root, "spec-b.json");
-		const markerPath = join(root, "posthook.log");
-		writeFileSync(specA, JSON.stringify(SAMPLE_SPEC, null, 2));
-		writeFileSync(specB, JSON.stringify(SAMPLE_SPEC, null, 2));
-		writeFileSync(
-			join(root, "package.json"),
-			JSON.stringify({ scripts: { "trace-hook": `sh -lc 'printf "1" >> ${markerPath}'` } }),
-		);
-		writeFileSync(
-			join(root, ".fizzy.yaml"),
-			`openapi:
+  const root = makeTempDir();
+  try {
+    const specA = join(root, "spec-a.json");
+    const specB = join(root, "spec-b.json");
+    const markerPath = join(root, "posthook.log");
+    writeFileSync(specA, JSON.stringify(SAMPLE_SPEC, null, 2));
+    writeFileSync(specB, JSON.stringify(SAMPLE_SPEC, null, 2));
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ scripts: { "trace-hook": `sh -lc 'printf "1" >> ${markerPath}'` } }),
+    );
+    writeFileSync(
+      join(root, ".fizzy.yaml"),
+      `openapi:
   posthook: trace-hook
   entries:
     - input: ${specA}
@@ -987,15 +987,15 @@ test("openapi generate with multiple config entries runs a shared posthook only 
       output: ${join(root, "api-b")}
       client: fetch
 `,
-		);
+    );
 
-		const { stderr, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
+    const { stderr, exitCode } = await runCli(["openapi", "generate"], { cwd: root });
 
-		expect(exitCode).toBe(0);
-		const marker = readFileSync(markerPath, "utf-8");
-		expect(marker).toBe("1");
-		expect((stderr.match(/running: bun run trace-hook/g) || []).length).toBe(1);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
+    expect(exitCode).toBe(0);
+    const marker = readFileSync(markerPath, "utf-8");
+    expect(marker).toBe("1");
+    expect((stderr.match(/running: bun run trace-hook/g) || []).length).toBe(1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

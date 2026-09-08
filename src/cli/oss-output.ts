@@ -5,10 +5,10 @@ export const formatObjectCount = (env: string, count: number): string => `${env}
 export const formatTruncatedObjects = (): string => "  ... (truncated, more objects available)";
 
 export const formatSyncSummary = (
-	env: string,
-	uploaded: number,
-	skipped: number,
-	duration: string,
+  env: string,
+  uploaded: number,
+  skipped: number,
+  duration: string,
 ): string => `${env} synced · ${uploaded} uploaded · ${skipped} skipped · ${duration}`;
 
 export const formatUploadedObject = (base: string, key: string): string => `    ${base}/${key}`;
@@ -22,7 +22,7 @@ export const formatStatusManifestEntries = (count: number): string => `manifest 
 export const formatStatusPendingUploads = (count: number): string => `pending uploads: ${count}`;
 
 export const formatStatusPendingDeletions = (count: number): string =>
-	`pending deletions: ${count}`;
+  `pending deletions: ${count}`;
 
 export const formatPendingUploadHeader = (): string => "\npending upload files:";
 
@@ -37,18 +37,18 @@ export const formatManifestPath = (manifestPath: string): string => `manifest: $
 export const formatOssScaffoldWritten = (): string => "OSS scaffold written to .fizzyx.yaml";
 
 export const formatOssConfigHint = (): string =>
-	"Edit endpoint, region, local_dir, and optionally bucket/remote_prefix in the file";
+  "Edit endpoint, region, local_dir, and optionally bucket/remote_prefix in the file";
 
 export const formatConfiguringKeys = (env: string): string => `Configuring keys for [${env}]:`;
 
 export const formatKeysMissingMessage = (): string =>
-	"Keys not provided — add them later with: fizzyx oss setup --env <name>";
+  "Keys not provided — add them later with: fizzyx oss setup --env <name>";
 
 export const formatCredentialsStored = (): string =>
-	"Credentials stored in OS keychain (service: fizzyx-oss)";
+  "Credentials stored in OS keychain (service: fizzyx-oss)";
 
 export const formatSetupUsage = (): string =>
-	"Usage: fizzyx oss setup --env <name> --endpoint <url> --region <region> --local-dir <path> [--bucket <name>] [--remote-prefix <prefix>]";
+  "Usage: fizzyx oss setup --env <name> --endpoint <url> --region <region> --local-dir <path> [--bucket <name>] [--remote-prefix <prefix>]";
 
 export const formatConfiguringOss = (env: string): string => `Configuring OSS [${env}]:`;
 
@@ -67,9 +67,9 @@ export const formatStoringCredentialsMessage = (): string => "Storing credential
 export const formatWritingOssConfigMessage = (): string => "Writing OSS config...";
 
 export const formatNoCredentialsMessage = (): string =>
-	"Access Key ID and Secret Access Key are required";
+  "Access Key ID and Secret Access Key are required";
 
 export const formatOssConfigWritten = (env: string, endpoint: string): string =>
-	`OSS ${env} config written to ${endpoint}`;
+  `OSS ${env} config written to ${endpoint}`;
 
 export const formatBlankLine = (): string => "";

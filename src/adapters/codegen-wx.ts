@@ -460,86 +460,86 @@ export async function downloadFile(
 `;
 
 const DEFAULT_WX_OPTIONS: GenFileOptions = {
-	apiName: "api.ts",
-	typesName: "types.ts",
-	runtimeName: "wx-request.ts",
+  apiName: "api.ts",
+  typesName: "types.ts",
+  runtimeName: "wx-request.ts",
 };
 
 export const wxGenerator: CodeGenerator = {
-	name: "wx",
-	info: {
-		name: "wx",
-		description: "WeChat Mini Program (wx.request / wx.uploadFile / wx.downloadFile)",
-	},
+  name: "wx",
+  info: {
+    name: "wx",
+    description: "WeChat Mini Program (wx.request / wx.uploadFile / wx.downloadFile)",
+  },
 
-	generate: (spec: ParsedSpec, output: string, options?: GenFileOptions) =>
-		Effect.gen(function* () {
-			try {
-				const opts = {
-					apiName: options?.apiName ?? DEFAULT_WX_OPTIONS.apiName,
-					typesName: options?.typesName ?? DEFAULT_WX_OPTIONS.typesName,
-					runtimeName: options?.runtimeName ?? DEFAULT_WX_OPTIONS.runtimeName,
-				} as Required<GenFileOptions>;
-				const files: GeneratedFile[] = [];
+  generate: (spec: ParsedSpec, output: string, options?: GenFileOptions) =>
+    Effect.gen(function* () {
+      try {
+        const opts = {
+          apiName: options?.apiName ?? DEFAULT_WX_OPTIONS.apiName,
+          typesName: options?.typesName ?? DEFAULT_WX_OPTIONS.typesName,
+          runtimeName: options?.runtimeName ?? DEFAULT_WX_OPTIONS.runtimeName,
+        } as Required<GenFileOptions>;
+        const files: GeneratedFile[] = [];
 
-				const typesCode = generateTypes(spec);
-				const hasTypes = spec.types && Object.keys(spec.types).length > 0;
+        const typesCode = generateTypes(spec);
+        const hasTypes = spec.types && Object.keys(spec.types).length > 0;
 
-				const typesFile = opts.typesName === false ? undefined : opts.typesName;
-				const typesImportPath = typesFile ? `./${typesFile.replace(/\.ts$/, "")}` : undefined;
+        const typesFile = opts.typesName === false ? undefined : opts.typesName;
+        const typesImportPath = typesFile ? `./${typesFile.replace(/\.ts$/, "")}` : undefined;
 
-				const runtimeFile = opts.runtimeName;
-				const runtimeImportPath = `./${runtimeFile.replace(/\.ts$/, "")}`;
+        const runtimeFile = opts.runtimeName;
+        const runtimeImportPath = `./${runtimeFile.replace(/\.ts$/, "")}`;
 
-				const hasUpload = spec.endpoints.some((e) => e.bodyContentType === "multipart");
-				const hasDownload = spec.endpoints.some((e) => e.responseContentType === "binary");
-				const valueExports: string[] = [
-					"configure",
-					"setToken",
-					"setHeaders",
-					"initToken",
-					"onError",
-					"requestRaw",
-				];
-				if (hasUpload) valueExports.push("uploadFile", "uploadFileRaw");
-				if (hasDownload) valueExports.push("downloadFile");
+        const hasUpload = spec.endpoints.some((e) => e.bodyContentType === "multipart");
+        const hasDownload = spec.endpoints.some((e) => e.responseContentType === "binary");
+        const valueExports: string[] = [
+          "configure",
+          "setToken",
+          "setHeaders",
+          "initToken",
+          "onError",
+          "requestRaw",
+        ];
+        if (hasUpload) valueExports.push("uploadFile", "uploadFileRaw");
+        if (hasDownload) valueExports.push("downloadFile");
 
-				const apiCode = generateApi(
-					spec,
-					{
-						runtimeModule: runtimeImportPath,
-						typeExports: [
-							"WxRequestConfig",
-							"Logger",
-							"TokenStorage",
-							"RequestHook",
-							"HookContext",
-						],
-						valueExports,
-						runtimeUploadImport: hasUpload ? "uploadFile" : undefined,
-						runtimeDownloadImport: hasDownload ? "downloadFile" : undefined,
-					},
-					typesImportPath,
-					hasTypes,
-				);
+        const apiCode = generateApi(
+          spec,
+          {
+            runtimeModule: runtimeImportPath,
+            typeExports: [
+              "WxRequestConfig",
+              "Logger",
+              "TokenStorage",
+              "RequestHook",
+              "HookContext",
+            ],
+            valueExports,
+            runtimeUploadImport: hasUpload ? "uploadFile" : undefined,
+            runtimeDownloadImport: hasDownload ? "downloadFile" : undefined,
+          },
+          typesImportPath,
+          hasTypes,
+        );
 
-				if (hasTypes && typesFile) {
-					files.push({ path: typesFile, content: typesCode });
-				}
+        if (hasTypes && typesFile) {
+          files.push({ path: typesFile, content: typesCode });
+        }
 
-				files.push({ path: runtimeFile, content: WX_RUNTIME_CODE });
+        files.push({ path: runtimeFile, content: WX_RUNTIME_CODE });
 
-				files.push({ path: opts.apiName, content: apiCode });
+        files.push({ path: opts.apiName, content: apiCode });
 
-				return files;
-			} catch (e) {
-				return yield* Effect.fail(
-					new CodegenError({
-						message: `wx codegen failed: ${e instanceof Error ? e.message : String(e)}`,
-						target: "wx",
-						cause: e,
-					}),
-				);
-			}
-		}),
+        return files;
+      } catch (e) {
+        return yield* Effect.fail(
+          new CodegenError({
+            message: `wx codegen failed: ${e instanceof Error ? e.message : String(e)}`,
+            target: "wx",
+            cause: e,
+          }),
+        );
+      }
+    }),
 };

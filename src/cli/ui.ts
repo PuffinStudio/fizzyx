@@ -12,19 +12,19 @@ const MAGENTA = "\x1b[35m";
 const CYAN = "\x1b[36m";
 
 export const ui = {
-	info: (msg: string): string => `${BLUE}ℹ${RESET} ${msg}`,
-	success: (msg: string): string => `${GREEN}✓${RESET} ${msg}`,
-	warn: (msg: string): string => `${YELLOW}⚠${RESET} ${msg}`,
-	error: (msg: string): string => `${RED}✗${RESET} ${msg}`,
-	highlight: (msg: string): string => `${BOLD}${msg}${RESET}`,
-	dim: (msg: string): string => `${DIM}${msg}${RESET}`,
-	cmd: (msg: string): string => `${CYAN}${msg}${RESET}`,
-	label: (msg: string): string => `${MAGENTA}${msg}${RESET}`,
+  info: (msg: string): string => `${BLUE}ℹ${RESET} ${msg}`,
+  success: (msg: string): string => `${GREEN}✓${RESET} ${msg}`,
+  warn: (msg: string): string => `${YELLOW}⚠${RESET} ${msg}`,
+  error: (msg: string): string => `${RED}✗${RESET} ${msg}`,
+  highlight: (msg: string): string => `${BOLD}${msg}${RESET}`,
+  dim: (msg: string): string => `${DIM}${msg}${RESET}`,
+  cmd: (msg: string): string => `${CYAN}${msg}${RESET}`,
+  label: (msg: string): string => `${MAGENTA}${msg}${RESET}`,
 
-	header: (msg: string): string => `${BOLD}${CYAN}${msg}${RESET}`,
+  header: (msg: string): string => `${BOLD}${CYAN}${msg}${RESET}`,
 
-	kv: (key: string, value: string | number): string =>
-		`  ${DIM}${key}:${RESET} ${BOLD}${value}${RESET}`,
+  kv: (key: string, value: string | number): string =>
+    `  ${DIM}${key}:${RESET} ${BOLD}${value}${RESET}`,
 };
 
 export const logInfo = (msg: string) => Console.log(ui.info(msg));
@@ -38,4 +38,4 @@ export const logKv = (key: string, value: string | number) => Console.log(ui.kv(
 export const logEmptyLine = () => Console.log("");
 
 export const withSpinner = <A, E, R>(message: string, effect: Effect.Effect<A, E, R>) =>
-	withSpinnerOriginal(message, effect, { showStatusLine: true });
+  withSpinnerOriginal(message, effect, { showStatusLine: true });

@@ -5,37 +5,37 @@ import { decodePlannerSnapshot, type PlannerSnapshot } from "../domain/planner-m
 import { resolvePlannerSnapshotCachePath } from "../adapters/app-paths";
 
 const readPlannerSnapshotCacheByPath = (
-	path: string,
+  path: string,
 ): Effect.Effect<PlannerSnapshot | null, FileError> =>
-	Effect.tryPromise({
-		try: async () => {
-			const file = Bun.file(path);
-			if (!(await file.exists())) return null;
-			return decodePlannerSnapshot(JSON.parse(await file.text()));
-		},
-		catch: (cause) => new FileError({ message: `Failed to read planner cache: ${String(cause)}` }),
-	});
+  Effect.tryPromise({
+    try: async () => {
+      const file = Bun.file(path);
+      if (!(await file.exists())) return null;
+      return decodePlannerSnapshot(JSON.parse(await file.text()));
+    },
+    catch: (cause) => new FileError({ message: `Failed to read planner cache: ${String(cause)}` }),
+  });
 
 export const loadPlannerSnapshotCache = (
-	account: string,
-	board: string,
+  account: string,
+  board: string,
 ): Effect.Effect<null | PlannerSnapshot, FileError> => {
-	const path = resolvePlannerSnapshotCachePath(account, board);
-	return Effect.gen(function* () {
-		const raw = yield* readPlannerSnapshotCacheByPath(path);
-		if (raw === null) return null;
-		return { ...raw, cache: "stale" as const };
-	});
+  const path = resolvePlannerSnapshotCachePath(account, board);
+  return Effect.gen(function* () {
+    const raw = yield* readPlannerSnapshotCacheByPath(path);
+    if (raw === null) return null;
+    return { ...raw, cache: "stale" as const };
+  });
 };
 
 export const writePlannerSnapshotCache = (
-	snapshot: PlannerSnapshot,
+  snapshot: PlannerSnapshot,
 ): Effect.Effect<void, FileError> =>
-	Effect.tryPromise({
-		try: async () => {
-			const path = resolvePlannerSnapshotCachePath(snapshot.account, snapshot.board);
-			await import("node:fs/promises").then((fs) => fs.mkdir(dirname(path), { recursive: true }));
-			await Bun.write(path, `${JSON.stringify({ ...snapshot, cache: "fresh" }, null, 2)}\n`);
-		},
-		catch: (cause) => new FileError({ message: `Failed to write planner cache: ${String(cause)}` }),
-	});
+  Effect.tryPromise({
+    try: async () => {
+      const path = resolvePlannerSnapshotCachePath(snapshot.account, snapshot.board);
+      await import("node:fs/promises").then((fs) => fs.mkdir(dirname(path), { recursive: true }));
+      await Bun.write(path, `${JSON.stringify({ ...snapshot, cache: "fresh" }, null, 2)}\n`);
+    },
+    catch: (cause) => new FileError({ message: `Failed to write planner cache: ${String(cause)}` }),
+  });

@@ -1,62 +1,62 @@
 export const BUNDLED_OPENAI_METADATA: Readonly<Record<string, string>> = {
-	"code-review": `interface:
+  "code-review": `interface:
   display_name: "Code Review"
   short_description: "Review a diff on standards and spec"
 `,
-	"codebase-design": `interface:
+  "codebase-design": `interface:
   display_name: "Codebase Design"
   short_description: "Vocabulary for deep-module design"
 `,
-	"coding-standards": `interface:
+  "coding-standards": `interface:
   display_name: "Coding Standards"
   short_description: "Apply style, quality, naming, and tool rules"
   default_prompt: "Use $coding-standards to implement this change according to the repository's conventions and required checks."
 `,
-	"diagnosing-bugs": `interface:
+  "diagnosing-bugs": `interface:
   display_name: "Diagnosing Bugs"
   short_description: "Diagnose hard bugs and regressions"
 `,
-	"domain-modeling": `interface:
+  "domain-modeling": `interface:
   display_name: "Domain Modeling"
   short_description: "Build and sharpen a domain model"
 `,
-	handoff: `interface:
+  handoff: `interface:
   display_name: "Handoff"
   short_description: "Compact a conversation into a handoff"
 policy:
   allow_implicit_invocation: false
 `,
-	"improve-codebase": `interface:
+  "improve-codebase": `interface:
   display_name: "Improve Codebase Architecture"
   short_description: "Find and grill architecture improvements"
 policy:
   allow_implicit_invocation: false
 `,
-	prototype: `interface:
+  prototype: `interface:
   display_name: "Prototype"
   short_description: "Prototype to answer a design question"
 `,
-	research: `interface:
+  research: `interface:
   display_name: "Research"
   short_description: "Research from high-trust sources"
 `,
-	tdd: `interface:
+  tdd: `interface:
   display_name: "TDD"
   short_description: "Test-driven red-green-refactor"
 `,
-	"to-prd": `interface:
+  "to-prd": `interface:
   display_name: "To PRD"
   short_description: "Turn a conversation into a PRD"
 policy:
   allow_implicit_invocation: false
 `,
-	"to-issues": `interface:
+  "to-issues": `interface:
   display_name: "To Issues"
   short_description: "Split a plan into tracer-bullet issues"
 policy:
   allow_implicit_invocation: false
 `,
-	triage: `interface:
+  triage: `interface:
   display_name: "Triage"
   short_description: "Move issues through triage roles"
 policy:

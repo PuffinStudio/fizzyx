@@ -439,13 +439,13 @@ configure({ baseUrl: "https://api.example.com", storageKey: "myapp_token" });
 
 // Or with custom logger + hooks
 configure({
-	baseUrl: "https://api.example.com",
-	storageKey: "tb_token",
-	logger: { error: myReporter, warn: () => {}, info: () => {}, debug: () => {} },
-	hooks: [
-		{ onError: (ctx) => wx.showToast({ title: ctx.message }) },
-		{ onSuccess: (ctx) => reportAnalytics(ctx) },
-	],
+  baseUrl: "https://api.example.com",
+  storageKey: "tb_token",
+  logger: { error: myReporter, warn: () => {}, info: () => {}, debug: () => {} },
+  hooks: [
+    { onError: (ctx) => wx.showToast({ title: ctx.message }) },
+    { onSuccess: (ctx) => reportAnalytics(ctx) },
+  ],
 });
 
 // Token auto-loads from storage. Explicit load if needed:
