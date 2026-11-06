@@ -1,5 +1,5 @@
 import $RefParser from "@apidevtools/json-schema-ref-parser";
-import { toPascalCase } from "../domain/codegen-utils";
+import { renderPropertyKey, toPascalCase } from "../domain/codegen-utils";
 import type {
   ParsedEndpoint,
   ParsedAdminConfig,
@@ -753,6 +753,17 @@ function schemaToTsType(
   seen: Set<Record<string, unknown>> = new Set(),
 ): string {
   if (seen.has(schema)) return "unknown";
+  if (schema.type === "null") return "null";
+  if (schema.const === null || ["string", "number", "boolean"].includes(typeof schema.const)) {
+    return JSON.stringify(schema.const);
+  }
+  if (Array.isArray(schema.enum)) {
+    const values = schema.enum.filter(
+      (value) => value === null || ["string", "number", "boolean"].includes(typeof value),
+    );
+    if (values.length === schema.enum.length && values.length > 0)
+      return values.map((value) => JSON.stringify(value)).join(" | ");
+  }
   const nextSeen = new Set(seen).add(schema);
   const typeUnion = Array.isArray(schema.type) ? schema.type : undefined;
   if (schema.nullable || typeUnion?.includes("null")) {
@@ -799,7 +810,8 @@ function schemaToTsType(
     case "array": {
       const items = schema.items as Record<string, unknown> | undefined;
       if (!items) return "unknown[]";
-      return `${schemaToTsType(items, resolveSchemaName, nextSeen)}[]`;
+      const itemType = schemaToTsType(items, resolveSchemaName, nextSeen);
+      return `${itemType.includes(" | ") || itemType.includes(" & ") ? `(${itemType})` : itemType}[]`;
     }
     case "object": {
       const props = schema.properties as Record<string, unknown> | undefined;
@@ -807,7 +819,7 @@ function schemaToTsType(
         const required = (schema.required as string[]) ?? [];
         const fields = Object.entries(props).map(
           ([k, v]) =>
-            `${k}${required.includes(k) ? "" : "?"}: ${schemaToTsType(v as Record<string, unknown>, resolveSchemaName, nextSeen)}`,
+            `${renderPropertyKey(k)}${required.includes(k) ? "" : "?"}: ${schemaToTsType(v as Record<string, unknown>, resolveSchemaName, nextSeen)}`,
         );
         return `{ ${fields.join("; ")} }`;
       }

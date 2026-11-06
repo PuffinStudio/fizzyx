@@ -51,6 +51,8 @@ export interface RequestHook {
 }
 
 export interface WxRequestConfig {
+  /** Optional application-owned JSON transport (for example an isolated cookie session). */
+  transport?: (method: HttpMethod, url: string, options: RequestOptions<unknown>) => Promise<unknown>
   /** API base URL (prepended to relative paths). */
   baseUrl?: string
   /** Default headers sent with every request. */
@@ -210,6 +212,7 @@ function hasHooks(): boolean {
  * Configure the client. Call once at app startup.
  */
 export function configure(config: WxRequestConfig) {
+  if (config.transport !== undefined) _config.transport = config.transport
   if (config.baseUrl !== undefined) _config.baseUrl = config.baseUrl
   if (config.timeout !== undefined) _config.timeout = config.timeout
   if (config.storageKey !== undefined) _config.storageKey = config.storageKey
@@ -266,6 +269,9 @@ export async function requestRaw<T>(
   url: string,
   options: RequestOptions<unknown> = {},
 ): Promise<T> {
+  if (_config.transport) {
+    return await _config.transport(method, url, options) as T
+  }
   const log = getLogger()
   const start = Date.now()
   const finalUrl = buildUrl(url, options.query)

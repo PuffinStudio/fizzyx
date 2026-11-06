@@ -461,6 +461,22 @@ setToken(null); // logout, clears storage
 - `Logger` controls **output** (console, file, sentry). Default: `console.error/warn/info/debug` with `[fizzyx]` prefix.
 - `RequestHook` fires **business callbacks** at lifecycle points (`onRequest`, `onSuccess`, `onError`). Use for toast, analytics, loading state.
 
+Applications that already own an isolated session can supply a JSON `transport` instead of
+using the generated native request and token storage:
+
+```ts
+configure({
+  transport: (method, path, options) => session.request(method, path, options),
+  responseExtractor: (value) => value,
+});
+```
+
+The transport receives the generated endpoint path, query, body and headers. It owns
+origin validation, authentication, logging, lifecycle hooks and errors. Transport failures
+are preserved rather than converted into generated native-request errors. The response
+extractor still runs on successful results; choose the identity extractor for APIs without
+an envelope. Upload and download retain their separate native implementations.
+
 ### Generated Endpoint API
 
 Each endpoint is a standalone export function with typed params:
