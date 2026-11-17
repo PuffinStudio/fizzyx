@@ -107,6 +107,12 @@ export interface DevConfig {
   checks?: DevChecksConfig;
   promotion?: DevPromotionConfig;
   staleAfterDays?: number;
+  /**
+   * Directory that `dev start --worktree` creates worktrees in, one sub-directory per
+   * branch. A relative path is resolved against the main checkout, whichever worktree the
+   * command runs from. Unset keeps them under `.git/fizzyx/worktrees`.
+   */
+  worktreeDir?: string;
   commit?: DevCommitConfig;
   branches?: Record<string, DevBranchMetadata>;
 }

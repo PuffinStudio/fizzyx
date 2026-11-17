@@ -496,7 +496,9 @@ export const startBranch = (
     const projectConfig = options.projectConfig ?? (yield* loadConfigOptional());
     const status = yield* getStatus(projectConfig);
 
-    if (status.dirty && !options.allowDirty) {
+    // A linked worktree is a separate directory: creating one neither touches nor carries
+    // the uncommitted changes here, so there is nothing for a dirty tree to endanger.
+    if (status.dirty && !options.allowDirty && !options.worktree) {
       return yield* new ValidationError({
         message: "Working tree is dirty. Commit, stash, or use --allow-dirty.",
       });
@@ -521,6 +523,7 @@ export const startBranch = (
         kind: options.kind,
         card: options.card,
         fromCurrent: options.fromCurrent,
+        worktreeDir: devConfig?.worktreeDir,
       });
     }
 
@@ -564,10 +567,11 @@ const startWorktree = (options: {
   kind: string;
   card?: string;
   fromCurrent?: boolean;
+  worktreeDir?: string;
 }): Effect.Effect<StartBranchResult, ValidationError, ConfigRepository> =>
   Effect.gen(function* () {
     const { branchName, base, exists } = options;
-    const worktreePath = yield* resolveWorktreePath(branchName);
+    const worktreePath = yield* resolveWorktreePath(branchName, options.worktreeDir);
 
     const worktrees = yield* listWorktrees();
     const existingForBranch = worktrees.find((w) => w.branch === branchName);
