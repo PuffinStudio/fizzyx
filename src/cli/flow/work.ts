@@ -15,7 +15,7 @@ import {
   formatWorkHeader,
   formatWorkSection,
 } from "../flow-output";
-import { flowJson } from "../flow-json";
+import { flowJson, leanCard } from "../flow-json";
 
 type WorkHealth = {
   tagIssues: number;
@@ -34,6 +34,7 @@ const handleWork = (config: {
   fresh: boolean;
   user: Option.Option<string>;
   json: boolean;
+  full: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
     const resolvedUser = Option.isSome(config.user) ? config.user.value : undefined;
@@ -54,8 +55,23 @@ const handleWork = (config: {
       }),
     );
     if (config.json) {
+      // The full result repeats the whole board cache, descriptions included, and then the
+      // same cards again under "mine" and "next".
+      const data = config.full
+        ? result
+        : {
+            user: { name: result.mineResult.name, userId: result.mineResult.userId },
+            board: {
+              ageSeconds: result.statusResult.age,
+              cards: result.statusResult.cache.cards.length,
+              notNow: result.statusResult.cache.notNow.length,
+            },
+            current: result.mineResult.cards.map(leanCard),
+            next: result.nextResult.card ? leanCard(result.nextResult.card) : null,
+            health: result.workHealth,
+          };
       yield* Console.log(
-        flowJson(result, `work summary for ${result.mineResult.name}`, [
+        flowJson(data, `work summary for ${result.mineResult.name}`, [
           {
             action: "show",
             cmd: "fizzyx flow show <card>",
@@ -196,6 +212,9 @@ export const flowWorkCmd = Command.make(
       Argument.optional,
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print work summary as JSON")),
+    full: Flag.boolean("full").pipe(
+      Flag.withDescription("With --json, include the whole board cache and every card field"),
+    ),
   },
   handleWork,
 ).pipe(Command.withDescription("Show the daily work summary"));

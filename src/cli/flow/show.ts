@@ -5,7 +5,7 @@ import { show } from "../../use-cases/flow-service";
 import { runWithFlowRuntimeEnv } from "../flow-workflow";
 import { ValidationError } from "../../domain/errors";
 import { formatLoadingCardDetailsMessage, formatTogglingStepMessage } from "../flow-output";
-import { flowJson } from "../flow-json";
+import { cardDetailJsonData, flowJson } from "../flow-json";
 
 type ToggleResult = {
   index: number;
@@ -18,6 +18,7 @@ const handleShow = (config: {
   check: Option.Option<number>;
   uncheck: Option.Option<number>;
   json: boolean;
+  full: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
     const checkIndex = Option.isSome(config.check) ? config.check.value : undefined;
@@ -71,18 +72,22 @@ const handleShow = (config: {
 
     if (config.json) {
       yield* Console.log(
-        flowJson(result, `Card #${result.card.number}: ${result.card.title}`, [
-          {
-            action: "comment",
-            cmd: `fizzyx flow comment ${result.card.number} <body>`,
-            description: "Add a note",
-          },
-          {
-            action: "move",
-            cmd: `fizzyx flow move ${result.card.number} <column>`,
-            description: "Move the card",
-          },
-        ]),
+        flowJson(
+          cardDetailJsonData(result, config.full),
+          `Card #${result.card.number}: ${result.card.title}`,
+          [
+            {
+              action: "comment",
+              cmd: `fizzyx flow comment ${result.card.number} <body>`,
+              description: "Add a note",
+            },
+            {
+              action: "move",
+              cmd: `fizzyx flow move ${result.card.number} <column>`,
+              description: "Move the card",
+            },
+          ],
+        ),
       );
       return;
     }
@@ -129,6 +134,9 @@ export const flowShowCmd = Command.make(
       ),
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print card and comments as JSON")),
+    full: Flag.boolean("full").pipe(
+      Flag.withDescription("With --json, also include the HTML form of the description"),
+    ),
   },
   handleShow,
 ).pipe(Command.withDescription("Show card details; toggle steps with --check/--uncheck"));

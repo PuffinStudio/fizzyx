@@ -3,12 +3,14 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { searchFlowCards } from "../../use-cases/flow-service";
 import { printCards } from "../render";
 import { runWithFlowRuntimeEnv } from "../flow-workflow";
-import { flowJson } from "../flow-json";
+import { cardsJsonData, flowJson } from "../flow-json";
+import { fullJsonFlag } from "./list";
 
 const handleSearch = (config: {
   query: string;
   allBoards: boolean;
   json: boolean;
+  full: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
     const cards = yield* runWithFlowRuntimeEnv("Searching cards...", (env) =>
@@ -16,9 +18,11 @@ const handleSearch = (config: {
     );
     yield* Console.log(
       config.json
-        ? flowJson(cards, `${cards.length} result(s) for ${JSON.stringify(config.query)}`, [
-            { action: "show", cmd: "fizzyx flow show <card>", description: "View a card" },
-          ])
+        ? flowJson(
+            cardsJsonData(cards, config.full),
+            `${cards.length} result(s) for ${JSON.stringify(config.query)}`,
+            [{ action: "show", cmd: "fizzyx flow show <card>", description: "View a card" }],
+          )
         : printCards(cards),
     );
   });
@@ -34,6 +38,7 @@ export const flowSearchCmd = Command.make(
       Flag.withDescription("Keep results from every account board"),
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print cards as JSON")),
+    full: fullJsonFlag,
   },
   handleSearch,
 ).pipe(Command.withDescription("Full-text search cards"));

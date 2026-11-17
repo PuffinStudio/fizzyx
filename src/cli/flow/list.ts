@@ -3,13 +3,14 @@ import { Command, Flag } from "effect/unstable/cli";
 import { listFlowCards } from "../../use-cases/flow-service";
 import { printCards } from "../render";
 import { runWithFlowRuntimeEnv } from "../flow-workflow";
-import { flowJson } from "../flow-json";
+import { cardsJsonData, flowJson } from "../flow-json";
 
 const handleList = (config: {
   indexedBy: Option.Option<string>;
   search: Option.Option<string>;
   all: boolean;
   json: boolean;
+  full: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
     const cards = yield* runWithFlowRuntimeEnv("Loading cards...", (env) =>
@@ -21,12 +22,16 @@ const handleList = (config: {
     );
     yield* Console.log(
       config.json
-        ? flowJson(cards, `${cards.length} card(s)`, [
+        ? flowJson(cardsJsonData(cards, config.full), `${cards.length} card(s)`, [
             { action: "show", cmd: "fizzyx flow show <card>", description: "View a card" },
           ])
         : printCards(cards),
     );
   });
+
+export const fullJsonFlag = Flag.boolean("full").pipe(
+  Flag.withDescription("With --json, include every card field (descriptions included)"),
+);
 
 export const flowListCmd = Command.make(
   "list",
@@ -41,6 +46,7 @@ export const flowListCmd = Command.make(
     ),
     all: Flag.boolean("all").pipe(Flag.withDescription("Request all matching cards")),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print cards as JSON")),
+    full: fullJsonFlag,
   },
   handleList,
 ).pipe(Command.withDescription("List cards on the configured board"));
