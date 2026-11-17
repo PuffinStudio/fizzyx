@@ -554,14 +554,17 @@ export const edit = (
 
     const parsed =
       input.description === undefined ? undefined : parseTemplateDescription(input.description);
-    if (parsed && parsed.templateSteps.length === 0) {
+    const card = parsed ? yield* env.api.showCard(number) : undefined;
+    // A task card must not lose its checklist to a description that forgot it. A card that
+    // never had steps (a document, a note written in the web UI) has no checklist to lose,
+    // so its description can be replaced as it is.
+    const existingStepCount = card?.steps?.length ?? 0;
+    if (parsed && parsed.templateSteps.length === 0 && existingStepCount > 0) {
       return yield* new ValidationError({
-        message:
-          "Card description must use the same draft format as `flow create` and include a `## Steps` task list.",
+        message: `Card #${number} has ${existingStepCount} step(s). Its description must keep a \`## Steps\` task list (see \`fizzyx flow edit ${number} --draft\`), otherwise the checklist would be deleted.`,
       });
     }
 
-    const card = parsed ? yield* env.api.showCard(number) : undefined;
     const metadata = parsed ? parsePlannerDescription(parsed.cardDescription).metadata : undefined;
     const legacySkillSuggestions = (parsed?.templateTags ?? [])
       .map((tag) => tag.trim().toLowerCase())

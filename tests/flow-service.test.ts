@@ -366,12 +366,44 @@ test("flow doctor accepts valid configured ids with custom column names", async 
   ]);
 });
 
-test("edit rejects descriptions that do not use the create draft format", async () => {
+const editApi = (steps: ReadonlyArray<{ id: string; content: string; completed: boolean }>) => {
+  const api = defaultApi();
+  const calls: string[] = [];
+  const descriptions: Array<string | undefined> = [];
+  api.showCard = () => Effect.succeed({ number: 42, title: "Card", steps });
+  api.updateCard = (_number, input) => {
+    calls.push("updateCard");
+    descriptions.push(input.description);
+    return Effect.succeed(undefined);
+  };
+  api.createStep = () => (calls.push("createStep"), Effect.succeed(undefined));
+  api.updateStep = () => (calls.push("updateStep"), Effect.succeed(undefined));
+  api.deleteStep = () => (calls.push("deleteStep"), Effect.succeed(undefined));
+  api.identity = () => Effect.succeed({ userId: "user-1", name: "User" });
+  api.listCards = () => Effect.succeed([]);
+  return { api, calls, descriptions };
+};
+
+test("edit refuses a description without steps for a card that has a checklist", async () => {
+  const { api, calls } = editApi([{ id: "step-1", content: "Keep me", completed: false }]);
+
   const result = await Effect.runPromise(
-    edit(makeEnv(defaultApi()), 42, { description: "## Goal\nShip it" }).pipe(Effect.flip),
+    edit(makeEnv(api), 42, { description: "## Goal\nShip it" }).pipe(Effect.flip),
   );
 
   expect(result).toBeInstanceOf(ValidationError);
+  expect(calls).toEqual([]);
+});
+
+test("edit replaces the description of a card that has no steps", async () => {
+  const { api, calls, descriptions } = editApi([]);
+
+  await Effect.runPromise(
+    edit(makeEnv(api), 42, { description: "# Operator guide\n\nHow to ship an order." }),
+  );
+
+  expect(calls).toEqual(["updateCard"]);
+  expect(descriptions[0]).toContain("How to ship an order.");
 });
 
 test("done blocks closing cards with unfinished steps", async () => {
