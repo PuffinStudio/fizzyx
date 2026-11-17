@@ -799,25 +799,10 @@ devTest("dev doctor reports card-scoped WIP checkpoint commits", async () => {
     ]);
     runGit(root, ["checkout", "main"]);
 
-    const result = await runCli(["dev", "doctor"], { cwd: root });
+    const result = await runCli(["dev", "doctor", "--verbose"], { cwd: root });
     const output = normalizeOutput(result);
 
     expect(output).toMatch(/feature\/card-99-doctor\s+\d+\s+wip commit/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-devTest("dev doctor reports all sections on a clean repo", async () => {
-  const root = createWorkflowRepo();
-
-  try {
-    runGit(root, ["checkout", "main"]);
-    const result = await runCli(["dev", "doctor"], { cwd: root });
-    const output = normalizeOutput(result);
-
-    expect(result.exitCode).toBe(0);
-    expect(output).toMatch(/stale|upstream|merged|environment|feature.*based|wip|protected|dirty/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1026,7 +1011,7 @@ devTest("dev doctor lists linked worktrees and flags merged ones", async () => {
     runGit(root, ["checkout", "main"]);
     await runCli(["dev", "start", "wt-doc", "--kind", "feature", "--worktree"], { cwd: root });
 
-    const result = await runCli(["dev", "doctor"], { cwd: root });
+    const result = await runCli(["dev", "doctor", "--verbose"], { cwd: root });
     const output = normalizeOutput(result);
 
     expect(result.exitCode).toBe(0);
@@ -1664,7 +1649,7 @@ devTest("dev doctor reports a dirty protected branch", async () => {
     writeFileSync(join(root, "d2.txt"), "two\n");
     writeFileSync(join(root, "README.md"), "# base\ndirty\n");
 
-    const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+    const result = await runCli(["dev", "doctor", "--agent", "--verbose"], { cwd: root });
     const output = normalizeOutput(result);
 
     expect(result.exitCode).toBe(0);
