@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Duration, Effect, Layer } from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import { ApiError, FileError } from "../domain/errors";
 import type {
@@ -33,6 +33,8 @@ export const Live = Layer.effect(FizzyApi)(
     return makeAuthenticatedFetchFizzyApi({ configRepo, config, initialToken: credentials.token });
   }),
 );
+
+const MAX_RATE_LIMIT_WAIT_SECONDS = 60;
 
 type JsonObject = Record<string, unknown>;
 type JsonValue = unknown;
@@ -114,9 +116,49 @@ export const makeFetchFizzyApi = (
     const response = toRecord(reason?.response) || toRecord(error?.response);
     const status = readFiniteNumber(response?.status);
     if (Number.isFinite(status)) {
-      return new ApiError({ message: `HTTP ${String(status)}`, status });
+      const retryAfter = Number(readString(toRecord(response?.headers)?.["retry-after"]));
+      return new ApiError({
+        message: `HTTP ${String(status)}`,
+        status,
+        ...(status === 429 && Number.isFinite(retryAfter) && retryAfter >= 0
+          ? { retryAfterSeconds: retryAfter }
+          : {}),
+      });
     }
     return new ApiError({ message: String(cause) });
+  };
+
+  /**
+   * Fizzy limits search for token callers (300 an hour per user) and answers 429 with
+   * `Retry-After`. Wait once when the server asks for a minute or less; anything longer, or
+   * a second refusal, is reported as what it is instead of being retried in a loop.
+   */
+  const withSearchRateLimit = <A>(
+    request: () => Effect.Effect<A, ApiError>,
+  ): Effect.Effect<A, ApiError> => {
+    const limited = (detail: string) =>
+      new ApiError({
+        status: 429,
+        message: `Fizzy is rate-limiting search for this token (HTTP 429). ${detail}`,
+      });
+    return request().pipe(
+      Effect.catch((failure) => {
+        if (failure.status !== 429) return Effect.fail(failure);
+        const wait = failure.retryAfterSeconds;
+        if (wait === undefined) return Effect.fail(limited("Try again later."));
+        if (wait > MAX_RATE_LIMIT_WAIT_SECONDS) {
+          return Effect.fail(limited(`Try again in ${wait}s.`));
+        }
+        return Effect.sleep(Duration.seconds(wait)).pipe(
+          Effect.flatMap(request),
+          Effect.mapError((again) =>
+            again.status === 429
+              ? limited(`Still limited after waiting ${wait}s; try again later.`)
+              : again,
+          ),
+        );
+      }),
+    );
   };
 
   const asVoid = <A>(effect: Effect.Effect<A, ApiError>): Effect.Effect<void, ApiError> =>
@@ -438,10 +480,16 @@ export const makeFetchFizzyApi = (
             paginate: true,
           })
         : FizzyEffect.listCards(accountParams, query);
-      return runGenerated(request).pipe(Effect.flatMap(decodeCards));
+      const run = () => runGenerated(request).pipe(Effect.flatMap(decodeCards));
+      // Only a filtered list counts as a search on the server.
+      return options?.terms?.length ? withSearchRateLimit(run) : run();
     },
     searchCards: (query) =>
-      runGenerated(FizzyEffect.searchCards(accountParams, { q: query })).pipe(
+      withSearchRateLimit(() =>
+        runGenerated(FizzyEffect.searchCards(accountParams, { q: query })),
+      ).pipe(
+        // A numeric query may be answered with the one card of that number, not a list.
+        Effect.map((value) => (isRecord(value) && "number" in value ? [value] : value)),
         Effect.flatMap(decodeCards),
       ),
     showCard: (number) =>
