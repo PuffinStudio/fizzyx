@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { readGitCommandOutput } from "./flow-git";
 import { AuthError, ValidationError } from "../domain/errors";
 import type { BoardCache, Card, ProjectConfig } from "../domain/models";
 import type { SetupProjectConfigInput } from "../ports/config-repository";
@@ -8,11 +7,7 @@ import { ensureFlowConfig } from "./flow-bootstrap";
 import { convertDescription, parseTemplateDescription } from "./flow-card-content";
 import { buildBoardUsers, resolveAssignableUser, resolveMineUser } from "./flow-user-resolution";
 import { makeFlowApiWithAuthRetry } from "./flow-auth";
-import {
-  buildNoteCommentBody,
-  buildStandardizedCommentBody,
-  getStandardizedCommentTemplate,
-} from "./flow-comment";
+import { buildNoteCommentBody, buildStandardizedCommentBody } from "./flow-comment";
 import {
   makeEnv,
   makeFlowEnv,
@@ -48,7 +43,7 @@ export type { Env, InitializedEnv };
 export { makeEnv, makeFlowEnv, makeFlowRuntimeEnv, bootstrapFlowConfig };
 export { analyzeDoctor, repairDoctor };
 export type { DoctorResult };
-export { buildNoteCommentBody, buildStandardizedCommentBody, getStandardizedCommentTemplate };
+export { buildNoteCommentBody, buildStandardizedCommentBody };
 
 export const setup = (input: SetupProjectConfigInput) =>
   Effect.gen(function* () {
@@ -425,39 +420,20 @@ export const done = (
       });
     }
 
-    const finalRef = ref || "done";
+    // The note is free text for the card's history. Closing never depends on it, and never
+    // on git: a card is finished when its work is, wherever the caller happens to stand.
+    const note = ref?.trim() || undefined;
     yield* transitionCard(
       env,
       number,
-      { kind: "close", ref: finalRef },
+      { kind: "close", ref: note },
       { refreshCache: () => syncBoard(env) },
     );
-    return completedSteps ? { number, ref: finalRef, completedSteps } : { number, ref: finalRef };
-  });
-
-export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
-  Effect.gen(function* () {
-    const cwd = options.cwd || process.cwd();
-    const status = yield* readGitCommandOutput(cwd, ["status", "--porcelain"]);
-    if (status !== "") {
-      return yield* new ValidationError({
-        message:
-          "Cannot auto-detect done ref with uncommitted changes. Commit first or pass an explicit ref.",
-      });
-    }
-
-    const [short, subject] = yield* Effect.all([
-      readGitCommandOutput(cwd, ["rev-parse", "--short", "HEAD"]),
-      readGitCommandOutput(cwd, ["log", "-1", "--format=%s"]),
-    ]);
-
-    if (short === "" || subject === "") {
-      return yield* new ValidationError({
-        message: "Cannot derive done ref from git. Pass an explicit ref.",
-      });
-    }
-
-    return `commit ${short}: ${subject}`;
+    return {
+      number,
+      ...(note ? { ref: note } : {}),
+      ...(completedSteps ? { completedSteps } : {}),
+    };
   });
 
 export const block = (env: InitializedEnv, number: number, reason: string) =>

@@ -1,6 +1,6 @@
 import { Console, Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
-import { done, resolveDoneRefFromGit } from "../../use-cases/flow-service";
+import { done } from "../../use-cases/flow-service";
 import { runWithFlowEnv } from "../flow-workflow";
 import {
   formatClosingCardMessage,
@@ -17,10 +17,9 @@ const handleDone = (config: {
   json: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
-    const explicitRef = Option.isSome(config.ref) ? config.ref.value : undefined;
-    const resolvedRef = explicitRef ?? (yield* resolveDoneRefFromGit());
+    const note = Option.getOrUndefined(config.ref);
     const result = yield* runWithFlowEnv(formatClosingCardMessage(), (env) =>
-      done(env, config.card, resolvedRef, { completeSteps: config.completeSteps }),
+      done(env, config.card, note, { completeSteps: config.completeSteps }),
     );
 
     if (config.json) {
@@ -47,8 +46,8 @@ export const flowDoneCmd = Command.make(
       Argument.withDescription("Card number"),
       Argument.withMetavar("CARD"),
     ),
-    ref: Argument.string("ref").pipe(
-      Argument.withDescription("Commit reference (SHA or message)"),
+    ref: Argument.string("note").pipe(
+      Argument.withDescription("Closing note recorded as a comment on the card"),
       Argument.optional,
     ),
     completeSteps: Flag.boolean("complete-steps").pipe(

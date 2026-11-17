@@ -17,7 +17,6 @@ import {
   buildNoteCommentBody,
   buildStandardizedCommentBody,
   convertDescription,
-  getStandardizedCommentTemplate,
   done,
   edit,
   addComment,
@@ -27,7 +26,6 @@ import {
   reopen,
   searchFlowCards,
   start,
-  resolveDoneRefFromGit,
   block,
   unblock,
   untriage,
@@ -374,70 +372,6 @@ test("edit rejects descriptions that do not use the create draft format", async 
   );
 
   expect(result).toBeInstanceOf(ValidationError);
-});
-
-const runGit = (cwd: string, args: ReadonlyArray<string>): void => {
-  const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "ignore", stderr: "ignore" });
-  if (proc.exitCode !== 0) {
-    throw new Error(`git ${args.join(" ")} failed`);
-  }
-};
-
-test("resolveDoneRefFromGit requires git metadata", async () => {
-  const dir = makeTempDir();
-
-  try {
-    let error: unknown;
-
-    try {
-      await Effect.runPromise(resolveDoneRefFromGit({ cwd: dir }));
-      error = undefined;
-    } catch (cause) {
-      error = cause;
-    }
-
-    expect(error).toBeInstanceOf(ValidationError);
-    if (error instanceof ValidationError) {
-      expect(String(error.message)).toContain("Pass an explicit ref");
-    }
-  } finally {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
-
-test("resolveDoneRefFromGit rejects dirty worktrees", async () => {
-  const dir = makeTempDir();
-
-  try {
-    runGit(dir, ["init"]);
-    writeFileSync(join(dir, "file.txt"), "initial\n");
-    runGit(dir, ["add", "file.txt"]);
-    runGit(dir, [
-      "-c",
-      "user.email=test@example.com",
-      "-c",
-      "user.name=Test",
-      "commit",
-      "-m",
-      "initial",
-    ]);
-    writeFileSync(join(dir, "file.txt"), "changed\n");
-
-    let error: unknown;
-    try {
-      await Effect.runPromise(resolveDoneRefFromGit({ cwd: dir }));
-      error = undefined;
-    } catch (cause) {
-      error = cause;
-    }
-
-    expect(error).toBeInstanceOf(ValidationError);
-    if (error instanceof ValidationError) {
-      expect(error.message).toContain("uncommitted changes");
-    }
-  } finally {
-    rmSync(dir, { force: true, recursive: true });
-  }
 });
 
 test("done blocks closing cards with unfinished steps", async () => {
@@ -1378,10 +1312,6 @@ test("buildNoteCommentBody renders safe multiline markdown for Fizzy rich text",
 
 test("buildNoteCommentBody preserves compact single-line note output", () => {
   expect(buildNoteCommentBody("ready <now>")).toBe("<p>note: ready &lt;now&gt;</p>");
-});
-
-test("getStandardizedCommentTemplate returns English placeholders", () => {
-  expect(getStandardizedCommentTemplate("done")).toBe("done: commit <sha>: <subject>");
 });
 
 test("done posts standardized escaped comment and closes card", async () => {

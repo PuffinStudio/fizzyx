@@ -52,8 +52,8 @@ export const formatStartedCard = (number: number): string => `started #${number}
 export const formatMovedCard = (number: number, column: string): string =>
   `moved #${number} to ${column}`;
 
-export const formatClosedCard = (number: number, ref: string): string =>
-  `closed #${number} (${ref})`;
+export const formatClosedCard = (number: number, note?: string): string =>
+  note ? `closed #${number} (${note})` : `closed #${number}`;
 
 export const formatAssignedCard = (number: number, users: string): string =>
   `assigned #${number} to ${users}`;

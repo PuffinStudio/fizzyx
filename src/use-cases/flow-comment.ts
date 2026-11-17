@@ -56,23 +56,3 @@ export const buildNoteCommentBody = (value: string): string => {
   }
   return `<p>note:</p>\n${rendered}`;
 };
-
-export const getStandardizedCommentTemplate = (kind: StandardizedCommentKind): string => {
-  if (kind === "done") {
-    return "done: commit <sha>: <subject>";
-  }
-
-  if (kind === "blocked") {
-    return "blocked: <reason; owner/decision needed>";
-  }
-
-  if (kind === "unblocked") {
-    return "unblocked: <resource/decision ready>";
-  }
-
-  if (kind === "handoff") {
-    return "handoff: <current state; next step>";
-  }
-
-  return "note: <brief note>";
-};
