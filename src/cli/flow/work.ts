@@ -2,7 +2,13 @@ import { Console, Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import type { Card, ProjectSkillsConfig } from "../../domain/models";
 import { printCards } from "../render";
-import { mine, nextOrStart, status } from "../../use-cases/flow-service";
+import {
+  mine,
+  nextOrStart,
+  status,
+  workStatus,
+  type WorkStatus,
+} from "../../use-cases/flow-service";
 import { runWithFlowEnv } from "../flow-workflow";
 import {
   formatLoadingWorkSummaryMessage,
@@ -35,9 +41,17 @@ const handleWork = (config: {
   user: Option.Option<string>;
   json: boolean;
   full: boolean;
+  agent: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
     const resolvedUser = Option.isSome(config.user) ? config.user.value : undefined;
+    if (config.agent) {
+      const summary = yield* runWithFlowEnv(formatLoadingWorkSummaryMessage(), (env) =>
+        workStatus(env, { fresh: config.fresh, user: resolvedUser }),
+      );
+      yield* Console.log(formatWorkStatus(summary));
+      return;
+    }
     const result = yield* runWithFlowEnv(formatLoadingWorkSummaryMessage(), (env) =>
       Effect.gen(function* () {
         const statusResult = yield* status(env, { fresh: config.fresh });
@@ -121,6 +135,27 @@ const handleWork = (config: {
       yield* Console.log(printCards(result.statusResult.cache.notNow, { systemColumn: "NOT_NOW" }));
     }
   });
+
+const MAX_STATUS_CARDS = 6;
+
+/** At most eight lines whatever the board holds: one per active card, then the next card. */
+export const formatWorkStatus = (summary: WorkStatus): string => {
+  const lines = [`in_progress: ${summary.inProgress.length}`];
+  for (const card of summary.inProgress.slice(0, MAX_STATUS_CARDS)) {
+    const progress =
+      card.total === 0
+        ? "no steps"
+        : card.nextStep
+          ? `${card.done}/${card.total}, next: ${card.nextStep}`
+          : `${card.done}/${card.total}, all steps done`;
+    lines.push(`  #${card.number} ${card.title} (${progress})`);
+  }
+  if (summary.inProgress.length > MAX_STATUS_CARDS) {
+    lines[lines.length - 1] += ` (+${summary.inProgress.length - MAX_STATUS_CARDS} more)`;
+  }
+  lines.push(summary.next ? `next: #${summary.next.number} ${summary.next.title}` : "next: none");
+  return lines.join("\n");
+};
 
 const analyzeWorkHealth = (
   cards: ReadonlyArray<Card>,
@@ -214,6 +249,11 @@ export const flowWorkCmd = Command.make(
     json: Flag.boolean("json").pipe(Flag.withDescription("Print work summary as JSON")),
     full: Flag.boolean("full").pipe(
       Flag.withDescription("With --json, include the whole board cache and every card field"),
+    ),
+    agent: Flag.boolean("agent").pipe(
+      Flag.withDescription(
+        "Compact status: your in-progress cards with their next unchecked step, and the next card",
+      ),
     ),
   },
   handleWork,

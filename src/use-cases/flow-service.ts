@@ -24,8 +24,10 @@ import {
 } from "./flow-env";
 import type { Env, InitializedEnv } from "./flow-env";
 import {
+  isInProgressColumn,
   isReadyColumn,
   isTodoColumn,
+  resolveInProgressColumnId,
   resolveReadyColumnId,
   resolveTodoColumnId,
 } from "./flow-workflow";
@@ -272,6 +274,65 @@ export const next = (env: InitializedEnv, options: { fresh: boolean }) =>
       (item) => item.column?.id === todoColumnId || isTodoColumn(item.column?.name),
     );
     return { user: result, card };
+  });
+
+export interface WorkStatus {
+  name: string;
+  inProgress: ReadonlyArray<{
+    number: number;
+    title: string;
+    done: number;
+    total: number;
+    nextStep?: string;
+  }>;
+  next?: { number: number; title: string };
+}
+
+/**
+ * What an agent needs at the start of a session and nothing else: the cards it is working
+ * on, the first unfinished step of each, and the card to pick up next.
+ */
+export const workStatus = (env: InitializedEnv, options: { fresh: boolean; user?: string }) =>
+  Effect.gen(function* () {
+    const cache = yield* ensureCache(env, options.fresh);
+    const { name, userId } = resolveMineUser(env.config, cache, options.user);
+    const inProgressId = resolveInProgressColumnId(
+      cache.columns,
+      env.config.flow.columns.inProgress,
+    );
+    const active = cache.cards.filter(
+      (card) =>
+        (card.column?.id === inProgressId || isInProgressColumn(card.column?.name)) &&
+        card.assignees?.some((assignee) => assignee.id === userId),
+    );
+    // The card list is not guaranteed to carry steps; the card itself always does.
+    const detailed = yield* Effect.forEach(
+      active,
+      (card) =>
+        card.steps?.length
+          ? Effect.succeed(card)
+          : env.api.showCard(card.number).pipe(Effect.catch(() => Effect.succeed(card))),
+      { concurrency: 5 },
+    );
+    const upcoming = yield* next(env, { fresh: false });
+    const result: WorkStatus = {
+      name,
+      inProgress: detailed.map((card) => {
+        const steps = card.steps ?? [];
+        return {
+          number: card.number,
+          title: card.title,
+          done: steps.filter((step) => step.completed).length,
+          total: steps.length,
+          nextStep: steps.find((step) => !step.completed)?.content,
+        };
+      }),
+      next:
+        upcoming.card && !active.some((card) => card.number === upcoming.card?.number)
+          ? { number: upcoming.card.number, title: upcoming.card.title }
+          : undefined,
+    };
+    return result;
   });
 
 export interface NextOrStartResult {
