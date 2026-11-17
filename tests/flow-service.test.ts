@@ -1,7 +1,4 @@
 import { Effect } from "effect";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test } from "bun:test";
 import type { BoardCache } from "../src/domain/models";
 import { ApiError, ConfigError, FileError, ValidationError } from "../src/domain/errors";
@@ -17,7 +14,6 @@ import {
   buildNoteCommentBody,
   buildStandardizedCommentBody,
   convertDescription,
-  getStandardizedCommentTemplate,
   done,
   edit,
   addComment,
@@ -27,7 +23,6 @@ import {
   reopen,
   searchFlowCards,
   start,
-  resolveDoneRefFromGit,
   block,
   unblock,
   untriage,
@@ -122,8 +117,6 @@ const makeCacheRepoFrom = (cache: BoardCache, age = 0) => ({
   write: () => Effect.succeed(undefined),
   ageSeconds: () => Effect.succeed(age),
 });
-
-const makeTempDir = (): string => mkdtempSync(join(tmpdir(), "fizzyx-cli-"));
 
 const draftDescription = (body: string): string => `${body}
 
@@ -368,76 +361,44 @@ test("flow doctor accepts valid configured ids with custom column names", async 
   ]);
 });
 
-test("edit rejects descriptions that do not use the create draft format", async () => {
+const editApi = (steps: ReadonlyArray<{ id: string; content: string; completed: boolean }>) => {
+  const api = defaultApi();
+  const calls: string[] = [];
+  const descriptions: Array<string | undefined> = [];
+  api.showCard = () => Effect.succeed({ number: 42, title: "Card", steps });
+  api.updateCard = (_number, input) => {
+    calls.push("updateCard");
+    descriptions.push(input.description);
+    return Effect.succeed(undefined);
+  };
+  api.createStep = () => (calls.push("createStep"), Effect.succeed(undefined));
+  api.updateStep = () => (calls.push("updateStep"), Effect.succeed(undefined));
+  api.deleteStep = () => (calls.push("deleteStep"), Effect.succeed(undefined));
+  api.identity = () => Effect.succeed({ userId: "user-1", name: "User" });
+  api.listCards = () => Effect.succeed([]);
+  return { api, calls, descriptions };
+};
+
+test("edit refuses a description without steps for a card that has a checklist", async () => {
+  const { api, calls } = editApi([{ id: "step-1", content: "Keep me", completed: false }]);
+
   const result = await Effect.runPromise(
-    edit(makeEnv(defaultApi()), 42, { description: "## Goal\nShip it" }).pipe(Effect.flip),
+    edit(makeEnv(api), 42, { description: "## Goal\nShip it" }).pipe(Effect.flip),
   );
 
   expect(result).toBeInstanceOf(ValidationError);
+  expect(calls).toEqual([]);
 });
 
-const runGit = (cwd: string, args: ReadonlyArray<string>): void => {
-  const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "ignore", stderr: "ignore" });
-  if (proc.exitCode !== 0) {
-    throw new Error(`git ${args.join(" ")} failed`);
-  }
-};
+test("edit replaces the description of a card that has no steps", async () => {
+  const { api, calls, descriptions } = editApi([]);
 
-test("resolveDoneRefFromGit requires git metadata", async () => {
-  const dir = makeTempDir();
+  await Effect.runPromise(
+    edit(makeEnv(api), 42, { description: "# Operator guide\n\nHow to ship an order." }),
+  );
 
-  try {
-    let error: unknown;
-
-    try {
-      await Effect.runPromise(resolveDoneRefFromGit({ cwd: dir }));
-      error = undefined;
-    } catch (cause) {
-      error = cause;
-    }
-
-    expect(error).toBeInstanceOf(ValidationError);
-    if (error instanceof ValidationError) {
-      expect(String(error.message)).toContain("Pass an explicit ref");
-    }
-  } finally {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
-
-test("resolveDoneRefFromGit rejects dirty worktrees", async () => {
-  const dir = makeTempDir();
-
-  try {
-    runGit(dir, ["init"]);
-    writeFileSync(join(dir, "file.txt"), "initial\n");
-    runGit(dir, ["add", "file.txt"]);
-    runGit(dir, [
-      "-c",
-      "user.email=test@example.com",
-      "-c",
-      "user.name=Test",
-      "commit",
-      "-m",
-      "initial",
-    ]);
-    writeFileSync(join(dir, "file.txt"), "changed\n");
-
-    let error: unknown;
-    try {
-      await Effect.runPromise(resolveDoneRefFromGit({ cwd: dir }));
-      error = undefined;
-    } catch (cause) {
-      error = cause;
-    }
-
-    expect(error).toBeInstanceOf(ValidationError);
-    if (error instanceof ValidationError) {
-      expect(error.message).toContain("uncommitted changes");
-    }
-  } finally {
-    rmSync(dir, { force: true, recursive: true });
-  }
+  expect(calls).toEqual(["updateCard"]);
+  expect(descriptions[0]).toContain("How to ship an order.");
 });
 
 test("done blocks closing cards with unfinished steps", async () => {
@@ -1378,10 +1339,6 @@ test("buildNoteCommentBody renders safe multiline markdown for Fizzy rich text",
 
 test("buildNoteCommentBody preserves compact single-line note output", () => {
   expect(buildNoteCommentBody("ready <now>")).toBe("<p>note: ready &lt;now&gt;</p>");
-});
-
-test("getStandardizedCommentTemplate returns English placeholders", () => {
-  expect(getStandardizedCommentTemplate("done")).toBe("done: commit <sha>: <subject>");
 });
 
 test("done posts standardized escaped comment and closes card", async () => {

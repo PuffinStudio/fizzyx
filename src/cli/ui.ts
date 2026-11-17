@@ -11,20 +11,29 @@ const BLUE = "\x1b[34m";
 const MAGENTA = "\x1b[35m";
 const CYAN = "\x1b[36m";
 
-export const ui = {
-  info: (msg: string): string => `${BLUE}ℹ${RESET} ${msg}`,
-  success: (msg: string): string => `${GREEN}✓${RESET} ${msg}`,
-  warn: (msg: string): string => `${YELLOW}⚠${RESET} ${msg}`,
-  error: (msg: string): string => `${RED}✗${RESET} ${msg}`,
-  highlight: (msg: string): string => `${BOLD}${msg}${RESET}`,
-  dim: (msg: string): string => `${DIM}${msg}${RESET}`,
-  cmd: (msg: string): string => `${CYAN}${msg}${RESET}`,
-  label: (msg: string): string => `${MAGENTA}${msg}${RESET}`,
+/**
+ * Colour is for a person at a terminal. Piped output is read by programs and agents, where
+ * escape codes are noise that has to be stripped or paid for.
+ */
+const colorEnabled = (): boolean => !process.env.NO_COLOR && Boolean(process.stdout?.isTTY);
 
-  header: (msg: string): string => `${BOLD}${CYAN}${msg}${RESET}`,
+const paint = (codes: string, text: string): string =>
+  colorEnabled() ? `${codes}${text}${RESET}` : text;
+
+export const ui = {
+  info: (msg: string): string => `${paint(BLUE, "ℹ")} ${msg}`,
+  success: (msg: string): string => `${paint(GREEN, "✓")} ${msg}`,
+  warn: (msg: string): string => `${paint(YELLOW, "⚠")} ${msg}`,
+  error: (msg: string): string => `${paint(RED, "✗")} ${msg}`,
+  highlight: (msg: string): string => paint(BOLD, msg),
+  dim: (msg: string): string => paint(DIM, msg),
+  cmd: (msg: string): string => paint(CYAN, msg),
+  label: (msg: string): string => paint(MAGENTA, msg),
+
+  header: (msg: string): string => paint(`${BOLD}${CYAN}`, msg),
 
   kv: (key: string, value: string | number): string =>
-    `  ${DIM}${key}:${RESET} ${BOLD}${value}${RESET}`,
+    `  ${paint(DIM, `${key}:`)} ${paint(BOLD, String(value))}`,
 };
 
 export const logInfo = (msg: string) => Console.log(ui.info(msg));

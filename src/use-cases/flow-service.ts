@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { readGitCommandOutput } from "./flow-git";
 import { AuthError, ValidationError } from "../domain/errors";
 import type { BoardCache, Card, ProjectConfig } from "../domain/models";
 import type { SetupProjectConfigInput } from "../ports/config-repository";
@@ -8,11 +7,7 @@ import { ensureFlowConfig } from "./flow-bootstrap";
 import { convertDescription, parseTemplateDescription } from "./flow-card-content";
 import { buildBoardUsers, resolveAssignableUser, resolveMineUser } from "./flow-user-resolution";
 import { makeFlowApiWithAuthRetry } from "./flow-auth";
-import {
-  buildNoteCommentBody,
-  buildStandardizedCommentBody,
-  getStandardizedCommentTemplate,
-} from "./flow-comment";
+import { buildNoteCommentBody, buildStandardizedCommentBody } from "./flow-comment";
 import {
   makeEnv,
   makeFlowEnv,
@@ -24,8 +19,10 @@ import {
 } from "./flow-env";
 import type { Env, InitializedEnv } from "./flow-env";
 import {
+  isInProgressColumn,
   isReadyColumn,
   isTodoColumn,
+  resolveInProgressColumnId,
   resolveReadyColumnId,
   resolveTodoColumnId,
 } from "./flow-workflow";
@@ -46,7 +43,7 @@ export type { Env, InitializedEnv };
 export { makeEnv, makeFlowEnv, makeFlowRuntimeEnv, bootstrapFlowConfig };
 export { analyzeDoctor, repairDoctor };
 export type { DoctorResult };
-export { buildNoteCommentBody, buildStandardizedCommentBody, getStandardizedCommentTemplate };
+export { buildNoteCommentBody, buildStandardizedCommentBody };
 
 export const setup = (input: SetupProjectConfigInput) =>
   Effect.gen(function* () {
@@ -274,6 +271,65 @@ export const next = (env: InitializedEnv, options: { fresh: boolean }) =>
     return { user: result, card };
   });
 
+export interface WorkStatus {
+  name: string;
+  inProgress: ReadonlyArray<{
+    number: number;
+    title: string;
+    done: number;
+    total: number;
+    nextStep?: string;
+  }>;
+  next?: { number: number; title: string };
+}
+
+/**
+ * What an agent needs at the start of a session and nothing else: the cards it is working
+ * on, the first unfinished step of each, and the card to pick up next.
+ */
+export const workStatus = (env: InitializedEnv, options: { fresh: boolean; user?: string }) =>
+  Effect.gen(function* () {
+    const cache = yield* ensureCache(env, options.fresh);
+    const { name, userId } = resolveMineUser(env.config, cache, options.user);
+    const inProgressId = resolveInProgressColumnId(
+      cache.columns,
+      env.config.flow.columns.inProgress,
+    );
+    const active = cache.cards.filter(
+      (card) =>
+        (card.column?.id === inProgressId || isInProgressColumn(card.column?.name)) &&
+        card.assignees?.some((assignee) => assignee.id === userId),
+    );
+    // The card list is not guaranteed to carry steps; the card itself always does.
+    const detailed = yield* Effect.forEach(
+      active,
+      (card) =>
+        card.steps?.length
+          ? Effect.succeed(card)
+          : env.api.showCard(card.number).pipe(Effect.catch(() => Effect.succeed(card))),
+      { concurrency: 5 },
+    );
+    const upcoming = yield* next(env, { fresh: false });
+    const result: WorkStatus = {
+      name,
+      inProgress: detailed.map((card) => {
+        const steps = card.steps ?? [];
+        return {
+          number: card.number,
+          title: card.title,
+          done: steps.filter((step) => step.completed).length,
+          total: steps.length,
+          nextStep: steps.find((step) => !step.completed)?.content,
+        };
+      }),
+      next:
+        upcoming.card && !active.some((card) => card.number === upcoming.card?.number)
+          ? { number: upcoming.card.number, title: upcoming.card.title }
+          : undefined,
+    };
+    return result;
+  });
+
 export interface NextOrStartResult {
   user: {
     name: string;
@@ -364,39 +420,20 @@ export const done = (
       });
     }
 
-    const finalRef = ref || "done";
+    // The note is free text for the card's history. Closing never depends on it, and never
+    // on git: a card is finished when its work is, wherever the caller happens to stand.
+    const note = ref?.trim() || undefined;
     yield* transitionCard(
       env,
       number,
-      { kind: "close", ref: finalRef },
+      { kind: "close", ref: note },
       { refreshCache: () => syncBoard(env) },
     );
-    return completedSteps ? { number, ref: finalRef, completedSteps } : { number, ref: finalRef };
-  });
-
-export const resolveDoneRefFromGit = (options: { cwd?: string } = {}) =>
-  Effect.gen(function* () {
-    const cwd = options.cwd || process.cwd();
-    const status = yield* readGitCommandOutput(cwd, ["status", "--porcelain"]);
-    if (status !== "") {
-      return yield* new ValidationError({
-        message:
-          "Cannot auto-detect done ref with uncommitted changes. Commit first or pass an explicit ref.",
-      });
-    }
-
-    const [short, subject] = yield* Effect.all([
-      readGitCommandOutput(cwd, ["rev-parse", "--short", "HEAD"]),
-      readGitCommandOutput(cwd, ["log", "-1", "--format=%s"]),
-    ]);
-
-    if (short === "" || subject === "") {
-      return yield* new ValidationError({
-        message: "Cannot derive done ref from git. Pass an explicit ref.",
-      });
-    }
-
-    return `commit ${short}: ${subject}`;
+    return {
+      number,
+      ...(note ? { ref: note } : {}),
+      ...(completedSteps ? { completedSteps } : {}),
+    };
   });
 
 export const block = (env: InitializedEnv, number: number, reason: string) =>
@@ -517,14 +554,17 @@ export const edit = (
 
     const parsed =
       input.description === undefined ? undefined : parseTemplateDescription(input.description);
-    if (parsed && parsed.templateSteps.length === 0) {
+    const card = parsed ? yield* env.api.showCard(number) : undefined;
+    // A task card must not lose its checklist to a description that forgot it. A card that
+    // never had steps (a document, a note written in the web UI) has no checklist to lose,
+    // so its description can be replaced as it is.
+    const existingStepCount = card?.steps?.length ?? 0;
+    if (parsed && parsed.templateSteps.length === 0 && existingStepCount > 0) {
       return yield* new ValidationError({
-        message:
-          "Card description must use the same draft format as `flow create` and include a `## Steps` task list.",
+        message: `Card #${number} has ${existingStepCount} step(s). Its description must keep a \`## Steps\` task list (see \`fizzyx flow edit ${number} --draft\`), otherwise the checklist would be deleted.`,
       });
     }
 
-    const card = parsed ? yield* env.api.showCard(number) : undefined;
     const metadata = parsed ? parsePlannerDescription(parsed.cardDescription).metadata : undefined;
     const legacySkillSuggestions = (parsed?.templateTags ?? [])
       .map((tag) => tag.trim().toLowerCase())

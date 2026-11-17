@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { FlowCardLanguage } from "../domain/models";
 
 export const AGENT_INSTRUCTIONS_FILE = "AGENTS.md";
 export const AGENT_INSTRUCTIONS_START = "<!-- fizzyx:dev-workflow:start -->";
@@ -7,31 +8,50 @@ export const AGENT_INSTRUCTIONS_END = "<!-- fizzyx:dev-workflow:end -->";
 
 export type AgentInstructionsAction = "created" | "updated" | "unchanged";
 
-export const AGENT_INSTRUCTIONS_SECTION = [
-  AGENT_INSTRUCTIONS_START,
-  "## FizzyX development workflow",
-  "",
-  "- Read this section before card-backed development. If `.agents/skills/dev-workflow/SKILL.md` exists, read it for the complete workflow.",
-  "- If `.agents/skills/coding-standards/SKILL.md` exists, apply it while implementing or reviewing code.",
-  "- Use `fizzyx flow` for remote Fizzy card and board state. Use `fizzyx dev` for local Git branches, checks, promotion, and cleanup.",
-  "- Start by running `fizzyx flow work` (or `fizzyx flow show <card>`) and `fizzyx dev status --agent`.",
-  "- Every `fizzyx flow` command accepts `--json` and every `fizzyx dev` command accepts `--agent`. Always use the machine-readable flag, parse the result, and follow the returned `next_action`/`breadcrumbs` instead of scraping human text.",
-  "- Treat the initial dirty files as user-owned. Run `fizzyx dev baseline accept` only after inspecting them.",
-  "- Start local work with `fizzyx dev start <slug> --kind <kind> --card <number>`, then move the remote card with `fizzyx flow start <number>`.",
-  "- Default to branching in place. Add `--worktree` to `fizzyx dev start` only for parallel or long-running work (concurrent cards/agents, keeping another branch checked out). Use `fizzyx dev start ... --worktree --agent` and read `worktree_path`/`next_action`, then `cd` into that path before any further `fizzyx dev` command.",
-  "- Board columns are project-defined. Inspect them with `fizzyx flow columns` and use `fizzyx flow move <card> <column-id-or-name>` for custom transitions. `flow review` is only a convenience for boards using the bundled REVIEW preset.",
-  "- Before reporting completion, run `fizzyx dev ready --agent`. Use `fizzyx flow done <card> <ref>` only after the required checks and deliverable reference exist.",
-  "- Use `fizzyx dev sync`; do not merge protected or aggregate branches by hand. Production promotion requires a dry run and explicit confirmation.",
-  "- Run `fizzyx dev cleanup` to preview cleanup. Never pass `--confirm-delete` or delete a remote branch unless the user explicitly requests it.",
-  AGENT_INSTRUCTIONS_END,
-].join("\n");
+const CARD_LANGUAGE_NAMES: Record<FlowCardLanguage, string> = {
+  en: "English",
+  "zh-CN": "Simplified Chinese (简体中文)",
+};
+
+export interface AgentInstructionsOptions {
+  /** `flow.card.language`; adds the one line about the language of card content. */
+  cardLanguage?: FlowCardLanguage;
+}
+
+/**
+ * The section is read at the start of every agent session, so it holds only what an agent
+ * must do differently because of FizzyX. Blank lines after the start marker and before the
+ * end marker are what Markdown formatters produce anyway; without them every `fizzyx init`
+ * and every format run undid each other.
+ */
+export const renderAgentInstructionsSection = (options: AgentInstructionsOptions = {}): string =>
+  [
+    AGENT_INSTRUCTIONS_START,
+    "",
+    "## FizzyX cards and branches",
+    "",
+    "- Work is done per card: one card per requirement, and its sub-tasks are the card's steps. Only the coordinating agent runs `fizzyx flow`; sub-agents never touch cards. `flow` prints compact text; add `--json` only to parse a field.",
+    '- Start of a session: `fizzyx flow work --agent`, then `fizzyx flow show <card>` and `fizzyx flow start <card>`. New card: `fizzyx flow create "<title>" --desc -` with a `## Steps` task list on stdin.',
+    "- Each sub-task gets its own worktree and branch: `fizzyx dev start <slug> --kind <fix|feature> --worktree --agent`, then work in the printed `worktree_path`, commit there and report the commit hashes. Never switch branches in the main checkout.",
+    "- The coordinator integrates those commits onto the base branch, runs the project's checks, ticks the step with `fizzyx flow show <card> --check <n>`, and closes the card with `fizzyx flow done <card>` once every step is ticked.",
+    "- `fizzyx dev doctor` reports branches whose commits are not on the base branch yet. Push, and delete branches or worktrees (`fizzyx dev cleanup --confirm-delete`), only when the user asks.",
+    ...(options.cardLanguage
+      ? [
+          `- Write card titles, descriptions, steps and comments in ${CARD_LANGUAGE_NAMES[options.cardLanguage]}. Commands, code, commit messages and branch names are unaffected.`,
+        ]
+      : []),
+    "",
+    AGENT_INSTRUCTIONS_END,
+  ].join("\n");
 
 export const syncAgentInstructions = (
   rootDir: string,
+  options: AgentInstructionsOptions = {},
 ): { action: AgentInstructionsAction; path: string } => {
+  const section = renderAgentInstructionsSection(options);
   const path = join(rootDir, AGENT_INSTRUCTIONS_FILE);
   if (!existsSync(path)) {
-    writeFileSync(path, `${AGENT_INSTRUCTIONS_SECTION}\n`, "utf8");
+    writeFileSync(path, `${section}\n`, "utf8");
     return { action: "created", path };
   }
 
@@ -42,7 +62,7 @@ export const syncAgentInstructions = (
 
   if (start >= 0 && end >= start) {
     const suffixStart = end + AGENT_INSTRUCTIONS_END.length;
-    next = `${current.slice(0, start)}${AGENT_INSTRUCTIONS_SECTION}${current.slice(suffixStart)}`;
+    next = `${current.slice(0, start)}${section}${current.slice(suffixStart)}`;
   } else {
     const separator =
       current.length === 0
@@ -52,7 +72,7 @@ export const syncAgentInstructions = (
           : current.endsWith("\n")
             ? "\n"
             : "\n\n";
-    next = `${current}${separator}${AGENT_INSTRUCTIONS_SECTION}\n`;
+    next = `${current}${separator}${section}\n`;
   }
 
   if (next === current) return { action: "unchanged", path };

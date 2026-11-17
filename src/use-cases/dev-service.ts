@@ -49,6 +49,8 @@ export interface DevReadyResult {
   ready: boolean;
   blockedReasons: ReadonlyArray<string>;
   checksRun: ReadonlyArray<CheckResult>;
+  /** False when the project configures no check commands for this mode: nothing was verified. */
+  checksConfigured: boolean;
   suggestedPromotion?: string;
 }
 
@@ -65,7 +67,7 @@ export interface PromotionCheck {
 
 export interface DoctorReport {
   staleBranches: ReadonlyArray<DoctorBranchInfo>;
-  noUpstreamBranches: ReadonlyArray<DoctorBranchInfo>;
+  localOnlyBranches: ReadonlyArray<DoctorBranchInfo>;
   mergedBranches: ReadonlyArray<DoctorBranchInfo>;
   environmentAhead: ReadonlyArray<DoctorBranchInfo>;
   wipOnReady: ReadonlyArray<DoctorBranchInfo>;
@@ -87,8 +89,6 @@ export interface GitCommand {
 type DevEffect<A> = Effect.Effect<A, ConfigError | FileError | ValidationError, ConfigRepository>;
 
 const WIP_COMMIT_GREP = "^wip[:(]";
-const AGENT_DIRTY_POLICY =
-  "Record dirty_files before editing. Commit or checkpoint only changes made in this task; do not commit pre-existing user changes without explicit approval.";
 
 const runGit = (
   args: ReadonlyArray<string>,
@@ -249,6 +249,7 @@ const resolveBaseRef = (
 ): Effect.Effect<ResolvedBase, ValidationError> =>
   Effect.gen(function* () {
     const name = baseBranchName(config);
+    yield* requireSafeBranchName(name, "Base branch");
     // Opt-out for repositories that deliberately track a local base branch.
     if (config?.dev?.syncFromRemote === false) return { name, ref: name };
     const remoteRef = `origin/${name}`;
@@ -407,11 +408,9 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
       `base: ${status.baseBranch}`,
       `dirty: ${status.dirty ? "yes" : "no"}`,
       `ahead: ${status.ahead}`,
-      `behind: ${status.behind}`,
       `behind_base: ${status.behindBase}`,
       `behind_upstream: ${status.behindUpstream}`,
       `has_upstream: ${status.hasUpstream ? "yes" : "no"}`,
-      `dirty_policy: ${AGENT_DIRTY_POLICY}`,
       `baseline: ${status.baselineAvailable ? "available" : "missing"}`,
     ];
     if (status.card) lines.push(`card: ${status.card}`);
@@ -496,7 +495,9 @@ export const startBranch = (
     const projectConfig = options.projectConfig ?? (yield* loadConfigOptional());
     const status = yield* getStatus(projectConfig);
 
-    if (status.dirty && !options.allowDirty) {
+    // A linked worktree is a separate directory: creating one neither touches nor carries
+    // the uncommitted changes here, so there is nothing for a dirty tree to endanger.
+    if (status.dirty && !options.allowDirty && !options.worktree) {
       return yield* new ValidationError({
         message: "Working tree is dirty. Commit, stash, or use --allow-dirty.",
       });
@@ -504,6 +505,7 @@ export const startBranch = (
 
     const productionBranch = getProductionBranch(projectConfig);
     const base = options.base ?? productionBranch;
+    yield* requireSafeBranchName(base, "Base branch");
 
     const devConfig = projectConfig?.dev;
     const prefix =
@@ -1025,6 +1027,7 @@ export const ready = (full?: boolean, squash?: boolean): DevEffect<DevReadyResul
       ready: blockedReasons.length === 0,
       blockedReasons,
       checksRun,
+      checksConfigured: checkCommands.length > 0,
       suggestedPromotion,
     };
   });
@@ -1043,6 +1046,12 @@ export const formatReady = (result: DevReadyResult, agent: boolean): string => {
         `next_action: Stage and commit/checkpoint only changes made in this task; do not commit pre-existing user changes without explicit approval.`,
       );
     }
+    if (!result.checksConfigured) {
+      // "ready: yes" with nothing run reads as "the checks passed". Say what it covers.
+      lines.push(
+        "checks: none configured (branch state only; run the project's own checks, or set dev.checks.ready)",
+      );
+    }
     for (const check of result.checksRun) {
       lines.push(`check: ${check.name} ${check.passed ? "passed" : "failed"}`);
       if (!check.passed && check.output) {
@@ -1058,7 +1067,11 @@ export const formatReady = (result: DevReadyResult, agent: boolean): string => {
 
   const lines: string[] = [];
   if (result.ready) {
-    lines.push("Branch is ready for promotion.");
+    lines.push(
+      result.checksConfigured
+        ? "Branch is ready for promotion."
+        : "Branch state is clean, but no checks are configured (dev.checks.ready), so nothing was run.",
+    );
   } else {
     lines.push("Branch is NOT ready:");
     for (const reason of result.blockedReasons) {
@@ -1372,23 +1385,167 @@ export const applyPromotion = (
     return results;
   });
 
-const getMergedBranches = (
+const toLines = (value: string): string[] =>
+  value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+interface BranchIntegration {
+  name: string;
+  /**
+   * True for branches in an explicit work role (feature or maintenance, including the
+   * configured `dev.branch_prefixes`). Only these may be deleted by `dev cleanup`; any other
+   * branch is analysed and reported, never removed.
+   */
+  deletable: boolean;
+  /**
+   * `merge`: the branch tip is an ancestor of the base. `cherry-pick`: every commit on the
+   * branch has a patch-equivalent commit on the base, which is how work lands when it is
+   * cherry-picked, rebased or squashed one-to-one instead of merged — ancestry never sees it.
+   */
+  integrated?: "merge" | "cherry-pick";
+  /** Commits whose change is not on the base and that no remote has: work only this clone holds. */
+  localOnly: number;
+  /** Commits (by hash) that neither the base nor any remote holds, whatever their content. */
+  unpublished: number;
+  /**
+   * Why a branch is not called integrated although nothing proves it holds unlanded work:
+   * git could not answer, or a landed commit was reverted on the base afterwards.
+   */
+  heldBack?: string;
+}
+
+/**
+ * A base name reaches git as an argument. Anything that is not a plain branch name is
+ * refused before that, so a configured value can never be read as an option.
+ */
+const requireSafeBranchName = (name: string, what: string): Effect.Effect<void, ValidationError> =>
+  Effect.gen(function* () {
+    const plain = /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/.test(name) && !name.includes("..");
+    const valid =
+      plain && (yield* runGitNoThrow(["check-ref-format", "--branch", name])).exitCode === 0;
+    if (!valid) {
+      return yield* new ValidationError({
+        message: `${what} '${name}' is not a valid branch name.`,
+      });
+    }
+  });
+
+/** The lines git printed, or undefined when git failed: a failure is never an empty answer. */
+const gitLines = (
+  args: ReadonlyArray<string>,
+): Effect.Effect<string[] | undefined, ValidationError> =>
+  runGitNoThrow(args).pipe(
+    Effect.map((result) => (result.exitCode === 0 ? toLines(result.stdout) : undefined)),
+    Effect.catch(() => Effect.succeed(undefined)),
+  );
+
+/**
+ * Where every local branch stands against `base`. Every question git cannot answer leaves
+ * the branch "not integrated": deletion follows from this, so doubt must keep the branch.
+ */
+const analyzeBranches = (
   base: string,
   config?: ProjectConfig,
-): Effect.Effect<ReadonlyArray<string>, ValidationError> =>
+): Effect.Effect<ReadonlyArray<BranchIntegration>, ValidationError> =>
   Effect.gen(function* () {
-    const stdout = yield* runGit(["branch", "--merged", base, "--format", "%(refname:short)"]);
-    if (!stdout) return [];
-    const branches = stdout
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    return branches.filter((branch) => {
-      if (branch === base || branch.startsWith("release/")) return false;
+    yield* requireSafeBranchName(base, "Base branch");
+    const all = toLines(yield* runGit(["branch", "--format", "%(refname:short)"]));
+    const merged = new Set(
+      toLines(yield* runGit(["branch", "--merged", base, "--format", "%(refname:short)"])),
+    );
+    const candidates = all.filter((branch) => {
+      // A detached HEAD is listed as "(HEAD detached at …)".
+      if (branch.startsWith("(") || branch === base || branch.startsWith("release/")) return false;
       const role = classifyBranch(branch, config?.dev);
-      return role === "feature" || role === "maintenance";
+      return role !== "protected" && role !== "environment";
     });
+
+    const analyze = (name: string): Effect.Effect<BranchIntegration, ValidationError> =>
+      Effect.gen(function* () {
+        const role = classifyBranch(name, config?.dev);
+        const deletable = role === "feature" || role === "maintenance";
+        if (merged.has(name)) {
+          return { name, deletable, integrated: "merge", localOnly: 0, unpublished: 0 };
+        }
+        const heldBack = (reason: string, unpublished = 0): BranchIntegration => ({
+          name,
+          deletable,
+          localOnly: 0,
+          unpublished,
+          heldBack: reason,
+        });
+
+        const cherry = yield* gitLines(["cherry", "--end-of-options", base, name]);
+        // `git cherry` skips merge commits, so a merge on the branch could carry a change it
+        // never reports. Such a branch is not called integrated.
+        const merges = yield* gitLines([
+          "rev-list",
+          "--merges",
+          "--end-of-options",
+          `${base}..${name}`,
+        ]);
+        const unpublishedCommits = yield* gitLines([
+          "rev-list",
+          "--not",
+          "--remotes",
+          "--not",
+          "--end-of-options",
+          name,
+          `^${base}`,
+        ]);
+        if (!cherry || !merges || !unpublishedCommits) {
+          return heldBack("git could not compare it with the base; treat it as unlanded work");
+        }
+        const unpublished = unpublishedCommits.length;
+        const missing = cherry.filter((line) => line.startsWith("+")).map((line) => line.slice(2));
+        if (missing.length > 0 || cherry.length === 0 || merges.length > 0) {
+          const local = new Set(unpublishedCommits);
+          return {
+            name,
+            deletable,
+            localOnly: missing.filter((sha) => local.has(sha)).length,
+            unpublished,
+          };
+        }
+
+        // Every commit has an equivalent on the base. That stops being true in effect if the
+        // base later reverted one of them: the change is gone again and lives only here.
+        const marked = yield* gitLines([
+          "rev-list",
+          "--cherry-mark",
+          "--right-only",
+          "--no-merges",
+          "--end-of-options",
+          `${name}...${base}`,
+        ]);
+        if (!marked) return heldBack("git could not list the matching base commits", unpublished);
+        for (const sha of marked.filter((line) => line.startsWith("=")).map((l) => l.slice(1))) {
+          const reverts = yield* gitLines([
+            "log",
+            "--format=%H",
+            "--fixed-strings",
+            "--grep",
+            `This reverts commit ${sha}`,
+            "--end-of-options",
+            `${sha}..${base}`,
+          ]);
+          if (!reverts) return heldBack("git could not search the base for reverts", unpublished);
+          if (reverts.length > 0) {
+            return heldBack(
+              `its commit ${sha.slice(0, 12)} was reverted on ${base} (${reverts[0]?.slice(0, 12)})`,
+              unpublished,
+            );
+          }
+        }
+        return { name, deletable, integrated: "cherry-pick", localOnly: 0, unpublished };
+      });
+
+    return yield* Effect.forEach(candidates, analyze, { concurrency: 8 });
   });
+
+const BACKUP_REF_PREFIX = "refs/fizzyx/deleted/";
 
 export const cleanup = (options?: {
   abandon?: boolean;
@@ -1404,7 +1561,21 @@ export const cleanup = (options?: {
     const onProtected = status.role === "protected";
 
     const currentBranch = status.currentBranch;
-    const mergedBranches = yield* getMergedBranches(productionBranch, projectConfig ?? undefined);
+    const integrated = (yield* analyzeBranches(
+      productionBranch,
+      projectConfig ?? undefined,
+    )).filter((branch) => branch.integrated);
+    // Deletion is fail-closed on the role: a prefix nobody configured is somebody's branch.
+    const pending = integrated.filter((branch) => branch.deletable);
+    const leftAlone = integrated.length - pending.length;
+    const leftAloneNote =
+      leftAlone > 0
+        ? ` ${leftAlone} integrated branch(es) with an unrecognised prefix are left alone; add the prefix to dev.branch_prefixes to clean them (fizzyx dev doctor --verbose lists them).`
+        : "";
+    const mergedBranches = pending.map((branch) => branch.name);
+    const cherryPicked = new Set(
+      pending.filter((branch) => branch.integrated === "cherry-pick").map((b) => b.name),
+    );
     const worktrees = yield* listWorktrees().pipe(Effect.catch(() => Effect.succeed([])));
     // The first entry is the main working tree; only linked worktrees block `git branch -d`.
     const linkedWorktrees = worktrees.slice(1);
@@ -1414,15 +1585,17 @@ export const cleanup = (options?: {
     const currentWorktreePath = resolve(process.cwd());
 
     if (!options?.confirmDelete) {
-      const pending =
-        mergedBranches.length > 0
-          ? ` ${mergedBranches
-              .map((b) =>
-                worktreeByBranch.has(b) ? `${b} (worktree: ${worktreeByBranch.get(b)})` : b,
-              )
-              .join(", ")}`
-          : " none";
-      return `Cleanup preview: ${mergedBranches.length} merged branch(es) pending deletion:${pending}. No branches deleted. Add --confirm-delete to delete local branches.`;
+      // The preview is the list of what --confirm-delete will remove, with the reason for each.
+      const describe = (branch: BranchIntegration): string => {
+        const reason =
+          branch.integrated === "merge"
+            ? "merged"
+            : `cherry-picked${branch.unpublished > 0 ? `, ${branch.unpublished} commit(s) on no remote` : ""}; a backup ref is kept`;
+        const worktree = worktreeByBranch.get(branch.name);
+        return `${branch.name} (${reason}${worktree ? `, worktree: ${worktree}` : ""})`;
+      };
+      const list = pending.length > 0 ? ` ${pending.map(describe).join(", ")}` : " none";
+      return `Cleanup preview: ${pending.length} merged branch(es) pending deletion:${list}.${leftAloneNote} No branches deleted. Add --confirm-delete to delete local branches.`;
     }
 
     if (!onProtected) {
@@ -1440,6 +1613,7 @@ export const cleanup = (options?: {
     }
     let deleted = 0;
     const skipped: string[] = [];
+    const backups: string[] = [];
     for (const branch of mergedBranches) {
       const worktreePath = worktreeByBranch.get(branch);
       if (worktreePath) {
@@ -1453,7 +1627,22 @@ export const cleanup = (options?: {
           continue;
         }
       }
-      const result = yield* runGit(["branch", "-d", branch]).pipe(
+      // `-d` only accepts ancestry. Patch equivalence is strong evidence, not proof (an
+      // amended pick, a hand-resolved conflict), so a cherry-picked branch is force-deleted
+      // only after its tip is pinned under a backup ref it can be restored from.
+      if (cherryPicked.has(branch)) {
+        const tip = yield* runGitNoThrow(["rev-parse", "--verify", `refs/heads/${branch}`]);
+        const pinned =
+          tip.exitCode === 0 &&
+          (yield* runGitNoThrow(["update-ref", `${BACKUP_REF_PREFIX}${branch}`, tip.stdout]))
+            .exitCode === 0;
+        if (!pinned) {
+          skipped.push(`${branch} (could not write its backup ref)`);
+          continue;
+        }
+        backups.push(branch);
+      }
+      const result = yield* runGit(["branch", cherryPicked.has(branch) ? "-D" : "-d", branch]).pipe(
         Effect.catch(() => Effect.succeed("")),
       );
       if (result) {
@@ -1484,7 +1673,13 @@ export const cleanup = (options?: {
 
     const skippedNote = skipped.length > 0 ? ` Skipped: ${skipped.join(", ")}.` : "";
     const nowOn = onProtected ? currentBranch : productionBranch;
-    return `Deleted ${deleted} local branch(es). Now on '${nowOn}'.${skippedNote}`;
+    const backupNote =
+      backups.length > 0
+        ? ` Cherry-picked branches were pinned before deletion: ${backups
+            .map((b) => `${BACKUP_REF_PREFIX}${b}`)
+            .join(", ")}. Restore one with 'git branch <name> ${BACKUP_REF_PREFIX}<name>'.`
+        : "";
+    return `Deleted ${deleted} local branch(es). Now on '${nowOn}'.${skippedNote}${backupNote}${leftAloneNote}`;
   });
 
 export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, ValidationError> =>
@@ -1492,6 +1687,9 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
     const devConfig = config?.dev;
     const staleAfterDays = devConfig?.staleAfterDays ?? 7;
     const productionBranch = getProductionBranch(config);
+    // Checked here, outside the tolerant catch below: a bad base must stop the audit, not
+    // turn into an empty report.
+    yield* requireSafeBranchName(productionBranch, "Base branch");
 
     const allBranches = yield* runGit(["branch", "--format", "%(refname:short)"]).pipe(
       Effect.catch(() => Effect.succeed("")),
@@ -1506,8 +1704,6 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
     const currentBranch = yield* getCurrentBranch().pipe(Effect.catch(() => Effect.succeed("")));
 
     const staleBranches: DoctorBranchInfo[] = [];
-    const noUpstreamBranches: DoctorBranchInfo[] = [];
-    const mergedBranches: DoctorBranchInfo[] = [];
     const environmentAhead: DoctorBranchInfo[] = [];
     const wipOnReady: DoctorBranchInfo[] = [];
     const protectedDirty: DoctorBranchInfo[] = [];
@@ -1529,16 +1725,6 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
         if (ageDays > staleAfterDays && role === "feature") {
           staleBranches.push({ name: branch, detail: `${Math.round(ageDays)} days old` });
         }
-      }
-
-      const hasUpstream = yield* runGit([
-        "rev-parse",
-        "--abbrev-ref",
-        "--symbolic-full-name",
-        `${branch}@{u}`,
-      ]).pipe(Effect.catch(() => Effect.succeed("")));
-      if (!hasUpstream) {
-        noUpstreamBranches.push({ name: branch, detail: "No upstream tracking" });
       }
 
       if (role === "environment") {
@@ -1617,15 +1803,31 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 
     // An unborn HEAD (or a production branch that does not exist locally) makes
     // `git branch --merged` fail outright; report nothing merged rather than dying.
-    const mergedList = yield* getMergedBranches(productionBranch, config).pipe(
-      Effect.catch(() => Effect.succeed([] as ReadonlyArray<string>)),
+    const analysis = yield* analyzeBranches(productionBranch, config).pipe(
+      Effect.catch(() => Effect.succeed([] as ReadonlyArray<BranchIntegration>)),
     );
-    const mergedSet = new Set(mergedList);
-    for (const b of mergedList) {
-      if (branchList.includes(b)) {
-        mergedBranches.push({ name: b, detail: `Merged into ${productionBranch}` });
-      }
-    }
+    const mergedBranches: DoctorBranchInfo[] = analysis
+      .filter((branch) => branch.integrated)
+      .map((branch) => ({
+        name: branch.name,
+        detail: `${
+          branch.integrated === "merge"
+            ? `Merged into ${productionBranch}`
+            : `Every commit is on ${productionBranch} (cherry-picked)`
+        }${branch.deletable ? "" : "; unrecognised prefix, so cleanup leaves it"}`,
+      }));
+    // Worktrees are flagged for cleanup only when cleanup would actually take them.
+    const mergedSet = new Set(
+      analysis.filter((branch) => branch.integrated && branch.deletable).map((b) => b.name),
+    );
+    const localOnlyBranches: DoctorBranchInfo[] = analysis
+      .filter((branch) => branch.localOnly > 0 || branch.heldBack)
+      .map((branch) => ({
+        name: branch.name,
+        detail: branch.heldBack
+          ? `not counted as integrated: ${branch.heldBack}`
+          : `${branch.localOnly} commit(s) on no remote and not on ${productionBranch}`,
+      }));
 
     const worktrees: DoctorBranchInfo[] = [];
     const linkedWorktrees = (yield* listWorktrees().pipe(
@@ -1644,7 +1846,7 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
 
     return {
       staleBranches,
-      noUpstreamBranches,
+      localOnlyBranches,
       mergedBranches,
       environmentAhead,
       wipOnReady,
@@ -1654,51 +1856,61 @@ export const doctor = (config?: ProjectConfig): Effect.Effect<DoctorReport, Vali
     };
   });
 
-export const formatDoctor = (report: DoctorReport, agent = false): string => {
-  if (agent) return formatDoctorAgent(report);
+/** Without --verbose only this many entries of the one always-listed section are printed. */
+const DOCTOR_DEFAULT_LIST_LIMIT = 10;
+
+const doctorSections = (
+  report: DoctorReport,
+): ReadonlyArray<{ key: string; title: string; items: ReadonlyArray<DoctorBranchInfo> }> => [
+  {
+    key: "local_only",
+    title: "Branches with commits on no remote and not on the base",
+    items: report.localOnlyBranches,
+  },
+  {
+    key: "merged",
+    title: "Integrated branches (pending human-confirmed deletion)",
+    items: report.mergedBranches,
+  },
+  {
+    key: "stale_branches",
+    title: "Stale branches (no activity > threshold)",
+    items: report.staleBranches,
+  },
+  {
+    key: "environment_ahead",
+    title: "Environment branches ahead of production",
+    items: report.environmentAhead,
+  },
+  {
+    key: "feature_on_env_base",
+    title: "Feature branches based on environment branches (should use production)",
+    items: report.featureOnEnvBase,
+  },
+  { key: "wip_commits", title: "WIP commits on feature branches", items: report.wipOnReady },
+  { key: "protected_dirty", title: "Protected branch dirty state", items: report.protectedDirty },
+  { key: "worktrees", title: "Linked worktrees", items: report.worktrees },
+];
+
+/**
+ * Counts by default. A repository with a hundred branches used to print a line per branch
+ * per section; the one list that is always worth reading is work that exists nowhere else.
+ */
+export const formatDoctor = (report: DoctorReport, agent = false, verbose = false): string => {
   const lines: string[] = [];
-  const addSection = (title: string, items: ReadonlyArray<DoctorBranchInfo>) => {
-    lines.push(`${title}:`);
-    if (items.length === 0) {
-      lines.push("  (none)");
-    } else {
-      for (const item of items) {
-        lines.push(`  ${item.name}  ${item.detail}`);
-      }
+  for (const { key, title, items } of doctorSections(report)) {
+    lines.push(agent ? `${key}: ${items.length}` : `${title}: ${items.length}`);
+    const shown = verbose
+      ? items
+      : key === "local_only"
+        ? items.slice(0, DOCTOR_DEFAULT_LIST_LIMIT)
+        : [];
+    for (const item of shown) {
+      lines.push(agent ? `  - ${item.name}: ${item.detail}` : `  ${item.name}  ${item.detail}`);
     }
-    lines.push("");
-  };
-
-  addSection("Stale branches (no activity > threshold)", report.staleBranches);
-  addSection("Branches without upstream tracking", report.noUpstreamBranches);
-  addSection("Merged branches (pending human-confirmed deletion)", report.mergedBranches);
-  addSection("Environment branches ahead of production", report.environmentAhead);
-  addSection(
-    "Feature branches based on environment branches (should use production)",
-    report.featureOnEnvBase,
-  );
-  addSection("WIP commits on feature branches", report.wipOnReady);
-  addSection("Protected branch dirty state", report.protectedDirty);
-  addSection("Linked worktrees", report.worktrees);
-
-  return lines.join("\n").trim();
-};
-
-const formatDoctorAgent = (report: DoctorReport): string => {
-  const sections: ReadonlyArray<readonly [string, ReadonlyArray<DoctorBranchInfo>]> = [
-    ["stale_branches", report.staleBranches],
-    ["no_upstream", report.noUpstreamBranches],
-    ["merged", report.mergedBranches],
-    ["environment_ahead", report.environmentAhead],
-    ["feature_on_env_base", report.featureOnEnvBase],
-    ["wip_commits", report.wipOnReady],
-    ["protected_dirty", report.protectedDirty],
-    ["worktrees", report.worktrees],
-  ];
-  const lines: string[] = [];
-  for (const [key, items] of sections) {
-    lines.push(`${key}: ${items.length}`);
-    for (const item of items) lines.push(`  - ${item.name}: ${item.detail}`);
+    if (key === "local_only" && shown.length < items.length) {
+      lines.push(`  (${items.length - shown.length} more; --verbose lists every section)`);
+    }
   }
   return lines.join("\n");
 };

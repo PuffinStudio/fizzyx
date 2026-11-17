@@ -7,6 +7,15 @@ export interface FlowTagConfig {
   phases: ReadonlyArray<string>;
 }
 
+/**
+ * Language of what is written to the Fizzy board: the built-in card template's guidance and
+ * the instruction given to agents about card titles, descriptions, steps and comments.
+ * It never changes CLI output, JSON keys, command names or the section headings FizzyX
+ * parses by name.
+ */
+export const FLOW_CARD_LANGUAGES = ["en", "zh-CN"] as const;
+export type FlowCardLanguage = (typeof FLOW_CARD_LANGUAGES)[number];
+
 export interface FlowConfig {
   columns: {
     todo: string;
@@ -113,6 +122,8 @@ export interface ProjectConfig {
   board?: string;
   dev?: DevConfig;
   flow?: FlowConfig;
+  /** `flow.card.language`; read even when the rest of `flow` is not configured yet. */
+  cardLanguage?: FlowCardLanguage;
   oss?: OssConfig;
   openapi?: OpenApiProjectConfig;
   skills?: ProjectSkillsConfig;

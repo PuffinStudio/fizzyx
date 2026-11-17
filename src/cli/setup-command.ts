@@ -9,7 +9,7 @@ import {
   syncWorkspaceInstructions,
   type WorkspaceMember,
 } from "../use-cases/workspace-instructions";
-import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../ports/config-repository";
+import { CONFIG_FILE, ConfigRepo, LEGACY_CONFIG_FILE } from "../ports/config-repository";
 import { renderTable } from "./render";
 import {
   formatInitializingWorkflowMessage,
@@ -166,7 +166,9 @@ const handleSetup = (config: {
             initialized.initializedConfig.flow.columns.inProgress,
           ),
         );
-        const agents = syncAgentInstructions(initialized.initializedConfig.rootDir);
+        const agents = syncAgentInstructions(initialized.initializedConfig.rootDir, {
+          cardLanguage: initialized.initializedConfig.cardLanguage,
+        });
         yield* Console.log(formatAgentInstructionsSynced(agents.action, agents.path));
         return;
       }
@@ -180,7 +182,12 @@ const handleSetup = (config: {
       setup({ board: config.boardId.value }),
     );
     yield* logSuccess(formatSetupCreatedConfig(configResult.configPath));
-    const agents = syncAgentInstructions(configResult.rootDir);
+    const written = yield* (yield* ConfigRepo)
+      .loadProjectConfigOptional()
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+    const agents = syncAgentInstructions(configResult.rootDir, {
+      cardLanguage: written?.cardLanguage,
+    });
     yield* Console.log(formatAgentInstructionsSynced(agents.action, agents.path));
   });
 

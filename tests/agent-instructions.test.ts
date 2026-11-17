@@ -18,8 +18,6 @@ test("creates AGENTS.md with the FizzyX workflow", () => {
 
     expect(result.action).toBe("created");
     expect(content).toContain(AGENT_INSTRUCTIONS_START);
-    expect(content).toContain("fizzyx dev status --agent");
-    expect(content).toContain("fizzyx flow move");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -61,6 +59,42 @@ test("appends the FizzyX workflow to an unmarked AGENTS.md", () => {
     expect(result.action).toBe("updated");
     expect(content).toStartWith("# Existing agent rules\n\n");
     expect(content).toContain(AGENT_INSTRUCTIONS_START);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const bullets = (text: string) => text.split("\n").filter((line) => line.startsWith("- "));
+
+test("adds the card-language instruction only when a language is configured", () => {
+  const root = makeRoot();
+  const path = join(root, "AGENTS.md");
+  try {
+    syncAgentInstructions(root);
+    const without = bullets(readFileSync(path, "utf8"));
+
+    const result = syncAgentInstructions(root, { cardLanguage: "zh-CN" });
+    const withLanguage = bullets(readFileSync(path, "utf8"));
+
+    expect(result.action).toBe("updated");
+    expect(withLanguage.slice(0, without.length)).toEqual(without);
+    expect(withLanguage).toHaveLength(without.length + 1);
+    expect(withLanguage.at(-1)).toContain("简体中文");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("blank lines inside the markers survive, so a formatter and the next sync agree", () => {
+  const root = makeRoot();
+  const path = join(root, "AGENTS.md");
+  try {
+    syncAgentInstructions(root);
+    const lines = readFileSync(path, "utf8").split("\n");
+
+    expect(lines[lines.indexOf(AGENT_INSTRUCTIONS_START) + 1]).toBe("");
+    expect(lines[lines.indexOf(AGENT_INSTRUCTIONS_END) - 1]).toBe("");
+    expect(syncAgentInstructions(root).action).toBe("unchanged");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

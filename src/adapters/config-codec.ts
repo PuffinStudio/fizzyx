@@ -1,4 +1,5 @@
 import { ConfigError, FileError } from "../domain/errors";
+import { FLOW_CARD_LANGUAGES } from "../domain/models";
 import type {
   Credentials,
   DevBranchMetadata,
@@ -8,6 +9,7 @@ import type {
   DevConfig,
   DevEnvironmentBranchConfig,
   DevPromotionConfig,
+  FlowCardLanguage,
   FlowConfig,
   FlowTagConfig,
   OssConfig,
@@ -28,7 +30,7 @@ import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-rep
 
 export const DEFAULT_ACCOUNT = "1";
 export const DEFAULT_API_URL = "https://fizzy.puffin.studio";
-const DEFAULT_WIP_LIMIT = 5;
+const DEFAULT_WIP_LIMIT = 20;
 const DEFAULT_CACHE_TTL_SECONDS = 900;
 
 export const parseProjectConfig = (
@@ -45,33 +47,25 @@ export const parseProjectConfig = (
   const oss = parseOssConfig(raw.oss);
   const openapi = parseOpenapiConfig(raw.openapi);
   const skills = parseProjectSkillsConfig(raw.skills);
-  if (!board) {
-    return {
-      apiUrl,
-      account,
-      board: undefined,
-      dev,
-      flow,
-      oss,
-      openapi,
-      skills,
-      configPath,
-      rootDir,
-    };
-  }
-
+  const cardLanguage = parseCardLanguage(raw.flow);
   return {
     apiUrl,
     account,
     board,
     dev,
     flow,
+    ...(cardLanguage ? { cardLanguage } : {}),
     oss,
     openapi,
     skills,
     configPath,
     rootDir,
   };
+};
+
+const parseCardLanguage = (rawFlow: unknown): FlowCardLanguage | undefined => {
+  const language = stringValue(objectValue(objectValue(rawFlow).card).language);
+  return FLOW_CARD_LANGUAGES.find((candidate) => candidate === language);
 };
 
 export const renderProjectConfig = (input: SetupProjectConfigInput, existingText = ""): string => {
@@ -92,6 +86,10 @@ export const renderProjectConfig = (input: SetupProjectConfigInput, existingText
   const existingFlowTags = objectValue(existingFlow.tags);
   if (Object.keys(existingFlowTags).length > 0) {
     flow.tags = existingFlowTags;
+  }
+  const existingCardLanguage = parseCardLanguage(existingFlow);
+  if (existingCardLanguage) {
+    flow.card = { language: existingCardLanguage };
   }
 
   const ordered: YamlObject = {};
@@ -896,8 +894,11 @@ export const serializeProjectConfig = (config: ProjectConfig): string => {
     }
   }
 
-  if (config.flow) {
-    ordered.flow = renderFlowConfig(config.flow);
+  if (config.flow || config.cardLanguage) {
+    ordered.flow = {
+      ...(config.flow ? renderFlowConfig(config.flow) : {}),
+      ...(config.cardLanguage ? { card: { language: config.cardLanguage } } : {}),
+    };
   }
 
   if (config.oss) {

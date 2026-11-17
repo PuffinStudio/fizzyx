@@ -507,7 +507,7 @@ test("flow create --draft writes a local card draft", async () => {
     expect(exitCode).toBe(0);
     expect(draftPath).toContain("/fizzyx/drafts/");
     expect(draftPath).toMatch(/card-.+\.md$/);
-    expect(draft).toContain("## Suggested Skills");
+    expect(draft).toContain("## Steps");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -974,9 +974,7 @@ test("flow work suggests default skills from card type without skill config", as
     });
 
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("git guardrail: fizzyx dev status --agent");
-    expect(stdout).toContain("suggested skills: dev-workflow, diagnosing-bugs, tdd");
-    expect(stdout).toContain("coding-standards");
+    expect(stdout).toContain("suggested skills: dev-workflow, diagnosing-bugs\n");
 
     api.stop();
   } finally {
@@ -1053,7 +1051,7 @@ test("init bootstraps missing flow in legacy config", async () => {
     expect(result.stdout).toContain("flow configured:");
     expect(result.stdout).toContain("AGENTS.md created:");
     const agentsPath = join(projectDir, "AGENTS.md");
-    expect(readFileSync(agentsPath, "utf8")).toContain("fizzyx dev status --agent");
+    expect(readFileSync(agentsPath, "utf8")).toContain("fizzyx:dev-workflow:start");
     writeFileSync(agentsPath, `# Existing project rules\n\n${readFileSync(agentsPath, "utf8")}`);
 
     const second = await runCli(["init"], {

@@ -33,9 +33,7 @@ export const formatNextAutoStartSummary = (number: number): string =>
   `started #${number} and now moving to execution`;
 
 export const formatNextActionHint = (number: number): string =>
-  ["git guardrail: fizzyx dev status --agent", `quick action: fizzyx flow start ${number}`].join(
-    "\n",
-  );
+  `quick action: fizzyx flow start ${number}`;
 
 export const formatCompleteStepsSummary = (updatedCount: number, number: number): string => {
   const plural = updatedCount === 1 ? "" : "s";
@@ -52,8 +50,8 @@ export const formatStartedCard = (number: number): string => `started #${number}
 export const formatMovedCard = (number: number, column: string): string =>
   `moved #${number} to ${column}`;
 
-export const formatClosedCard = (number: number, ref: string): string =>
-  `closed #${number} (${ref})`;
+export const formatClosedCard = (number: number, note?: string): string =>
+  note ? `closed #${number} (${note})` : `closed #${number}`;
 
 export const formatAssignedCard = (number: number, users: string): string =>
   `assigned #${number} to ${users}`;

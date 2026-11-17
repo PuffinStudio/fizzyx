@@ -83,7 +83,7 @@ test("setupProjectConfig writes flow section without card language", async () =>
 
     const text = await Bun.file(configPath).text();
     expect(text).not.toContain("card:");
-    expect(text).toContain("wip_limit: 5");
+    expect(text).toContain("wip_limit: 20");
     expect(text).toContain("cache_ttl: 900");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -154,7 +154,7 @@ flow:
     const config = await Effect.runPromise(repo.loadProjectConfig());
 
     expect(config.flow).toBeDefined();
-    expect(config.flow!.wipLimit).toBe(5);
+    expect(config.flow!.wipLimit).toBe(20);
     expect(config.flow!.cacheTtlSeconds).toBe(900);
   } finally {
     process.chdir(originalCwd);
@@ -187,7 +187,7 @@ flow:
     const config = await Effect.runPromise(repo.loadProjectConfig());
 
     expect(config.flow).toBeDefined();
-    expect(config.flow!.wipLimit).toBe(5);
+    expect(config.flow!.wipLimit).toBe(20);
   } finally {
     process.chdir(originalCwd);
     rmSync(root, { recursive: true, force: true });

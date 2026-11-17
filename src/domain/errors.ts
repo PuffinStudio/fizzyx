@@ -11,6 +11,8 @@ export class AuthError extends Data.TaggedError("AuthError")<{
 export class ApiError extends Data.TaggedError("ApiError")<{
   message: string;
   status?: number;
+  /** The server's `Retry-After` on a 429, in seconds. */
+  retryAfterSeconds?: number;
 }> {}
 
 export class ValidationError extends Data.TaggedError("ValidationError")<{

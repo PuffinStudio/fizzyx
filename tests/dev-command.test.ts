@@ -173,8 +173,6 @@ devTest("dev status --agent reports branch role, branch, dirty files, and blocke
     expect(output).toContain("feature");
     expect(output).toContain("dirty:");
     expect(output).toMatch(/blockers?|dirty[ _]files?/);
-    expect(output).toContain("dirty_policy:");
-    expect(output).toContain("only changes made in this task");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -799,25 +797,10 @@ devTest("dev doctor reports card-scoped WIP checkpoint commits", async () => {
     ]);
     runGit(root, ["checkout", "main"]);
 
-    const result = await runCli(["dev", "doctor"], { cwd: root });
+    const result = await runCli(["dev", "doctor", "--verbose"], { cwd: root });
     const output = normalizeOutput(result);
 
     expect(output).toMatch(/feature\/card-99-doctor\s+\d+\s+wip commit/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-devTest("dev doctor reports all sections on a clean repo", async () => {
-  const root = createWorkflowRepo();
-
-  try {
-    runGit(root, ["checkout", "main"]);
-    const result = await runCli(["dev", "doctor"], { cwd: root });
-    const output = normalizeOutput(result);
-
-    expect(result.exitCode).toBe(0);
-    expect(output).toMatch(/stale|upstream|merged|environment|feature.*based|wip|protected|dirty/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1026,7 +1009,7 @@ devTest("dev doctor lists linked worktrees and flags merged ones", async () => {
     runGit(root, ["checkout", "main"]);
     await runCli(["dev", "start", "wt-doc", "--kind", "feature", "--worktree"], { cwd: root });
 
-    const result = await runCli(["dev", "doctor"], { cwd: root });
+    const result = await runCli(["dev", "doctor", "--verbose"], { cwd: root });
     const output = normalizeOutput(result);
 
     expect(result.exitCode).toBe(0);
@@ -1454,8 +1437,6 @@ devTest("dev status counts behind_base against the remote base with no upstream"
     expect(output).toContain("has_upstream: no");
     expect(output).toContain("behind_base: 1");
     expect(output).toContain("behind_upstream: 0");
-    // `behind` stays an alias of behind_base.
-    expect(output).toContain("behind: 1");
 
     const ready = await runCli(["dev", "ready", "--agent"], { cwd: work });
     expect(ready.exitCode).not.toBe(0);
@@ -1664,7 +1645,7 @@ devTest("dev doctor reports a dirty protected branch", async () => {
     writeFileSync(join(root, "d2.txt"), "two\n");
     writeFileSync(join(root, "README.md"), "# base\ndirty\n");
 
-    const result = await runCli(["dev", "doctor", "--agent"], { cwd: root });
+    const result = await runCli(["dev", "doctor", "--agent", "--verbose"], { cwd: root });
     const output = normalizeOutput(result);
 
     expect(result.exitCode).toBe(0);

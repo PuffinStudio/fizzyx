@@ -1,10 +1,9 @@
 import type { ParsedEndpoint, ParsedSpec, ParsedTypeDef } from "../domain/openapi-models";
-import { toFnName, toPascalCase } from "../domain/codegen-utils";
+import { renderPropertyKey, toFnName, toPascalCase } from "../domain/codegen-utils";
+
+export { renderPropertyKey } from "../domain/codegen-utils";
 
 const TS_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-export const renderPropertyKey = (name: string): string =>
-  TS_IDENTIFIER.test(name) ? name : JSON.stringify(name);
 
 export const renderPropertyAccess = (objectName: string, propertyName: string): string =>
   TS_IDENTIFIER.test(propertyName)

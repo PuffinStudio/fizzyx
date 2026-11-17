@@ -17,7 +17,7 @@ export type CardTransition =
   | { kind: "start" }
   | { kind: "ready" }
   | { kind: "review" }
-  | { kind: "close"; ref: string }
+  | { kind: "close"; ref?: string }
   | { kind: "block"; reason: string }
   | { kind: "unblock"; reason: string }
   | { kind: "reopen" }
@@ -173,9 +173,11 @@ export const transitionCard = (
     case "close":
       return Effect.gen(function* () {
         yield* env.api.closeCard(number);
-        yield* env.api
-          .comment(number, buildStandardizedCommentBody("done", transition.ref))
-          .pipe(Effect.catch(() => Effect.succeed(undefined)));
+        if (transition.ref) {
+          yield* env.api
+            .comment(number, buildStandardizedCommentBody("done", transition.ref))
+            .pipe(Effect.catch(() => Effect.succeed(undefined)));
+        }
         yield* bestEffortRefresh(options.refreshCache);
         return { number, action: "close", ref: transition.ref };
       });

@@ -15,9 +15,9 @@ bun add -g @puffinstudio/fizzyx
 Use `.fizzyx.yaml` as the project config file for board and workflow settings.
 
 ```sh
-fizzyx flow work
-fizzyx flow list [--indexed-by <lane>] [--search <terms>] [--json]
-fizzyx flow search "<query>" [--all-boards] [--json]
+fizzyx flow work [--agent]
+fizzyx flow list [--indexed-by <lane>] [--search <terms>] [--json [--full]]
+fizzyx flow search "<query>" [--all-boards] [--json [--full]]
 fizzyx flow columns
 fizzyx flow create --draft
 fizzyx flow create "<title>" --desc <draft-path>
@@ -27,11 +27,11 @@ fizzyx flow edit <card> [--title "<title>"] [--desc <file|->]
 fizzyx flow assign <card> <user>
 fizzyx flow comment <card> "<single-line body>"
 fizzyx flow comment <card> --body-file <markdown-file|->
-fizzyx flow show <card>
+fizzyx flow show <card> [--check <n> | --uncheck <n>] [--json [--full]]
 fizzyx flow move <card> <column-id-or-name>
 fizzyx flow start <card>
 fizzyx flow review <card>
-fizzyx flow done <card> "commit <sha>: <subject>"
+fizzyx flow done <card> ["<closing note>"] [--complete-steps]
 fizzyx flow reopen <card>
 fizzyx flow block <card> "<reason>"
 fizzyx flow unblock <card> "<reason>"
@@ -40,7 +40,9 @@ fizzyx flow doctor
 fizzyx flow repair
 ```
 
-`flow done` requires all steps to be complete and closes the card into Done.
+`flow done` requires all steps to be complete (or `--complete-steps`) and closes the card. It needs no commit or branch reference and never reads git; the optional second argument is a free-text note recorded as a `done:` comment.
+`flow work --agent` prints at most eight lines: your in-progress cards with their step progress and next unchecked step, then the next card.
+`flow edit` requires a `## Steps` list only for a card that already has steps; a document card without steps can be updated from any description.
 `flow create` expects the standard draft shape with a `## Steps` task list; generate it with `flow create --draft` instead of passing plain text.
 `flow create` does not assign by default. Use `--assign <user>` while creating or `flow assign <card> <user>` afterwards.
 Drafts are stored outside the worktree in Git-local state (or the user state directory outside a Git repository). `flow edit <card> --draft` rebuilds one from the remote card.
@@ -49,7 +51,9 @@ Drafts are stored outside the worktree in Git-local state (or the user state dir
 `flow move` also accepts the Fizzy system targets `maybe`/`triage` and `not-now`; closing remains guarded by `flow done`.
 `flow list` filters cards on the configured board, while `flow search` uses Fizzy full-text search and filters results back to the project board unless `--all-boards` is passed. `flow comment` records a standardized note and renders safe Markdown as Fizzy rich text; use `--body-file -` for multiline stdin.
 `flow reopen`, `flow unblock`, and `flow untriage` provide the inverse lifecycle actions. Unblock returns the card to the configured default column; untriage returns it to Fizzy's system Maybe state.
-High-frequency flow commands accept `--json` and return an `ok`/`data`/`summary` envelope with next-action breadcrumbs for agents.
+Flow commands print compact text by default, which is the cheapest form for an agent to read. High-frequency commands also accept `--json` and return a single-line `ok`/`data`/`summary` envelope with next-action breadcrumbs. Card lists in JSON are lean (`number`, `title`, `column`, `assignees`, `steps: { done, total }`) and `flow show --json` carries the description once; add `--full` for every field.
+Set `flow.card.language: zh-CN` in `.fizzyx.yaml` to have the built-in card template and the generated `AGENTS.md` instruction ask for card content in Simplified Chinese (default `en`). Headings such as `## Steps` stay English, CLI output is unaffected, and a project-local `.agents/skills/fizzyx/CARD_TEMPLATE.md` still wins.
+`flow.wip_limit` (default 20) caps the in-progress cards of the token's user on the board.
 Normal flow commands never create or rename board columns. When `flow:` is missing, explicit `fizzyx init` installs the bundled preset; custom boards can map their existing default and in-progress column IDs in `.fizzyx.yaml` and use `flow move` for all other transitions.
 `flow improve` is retained as a deprecated compatibility alias; use `fizzyx skill run improve-codebase` for the actual codebase workflow.
 
@@ -60,14 +64,12 @@ project instructions are preserved, and repeated initialization does not duplica
 Agent loop for card-backed code work:
 
 ```sh
-fizzyx flow work
+fizzyx flow work --agent                 # what is in progress, what is next
 fizzyx flow show <card>
-fizzyx dev status --agent
-fizzyx dev start <slug> --kind <feature|fix|hotfix|ops|chore|docs> --card <card>
 fizzyx flow start <card>
-fizzyx dev ready --agent
-fizzyx flow review <card>
-fizzyx flow done <card> "commit <sha>: <subject>"
+fizzyx dev start <slug> --kind <feature|fix|hotfix|ops|chore|docs> --worktree --agent   # one worktree per sub-task; cd to worktree_path
+fizzyx flow show <card> --check <n>      # tick a step once its work is on the base branch
+fizzyx flow done <card>
 ```
 
 Use `fizzyx skill ...` for bundled skills and project pins. Use flow commands for repair and health checks.
@@ -88,8 +90,13 @@ fizzyx dev baseline <show|accept>
 fizzyx dev ready [--agent] [--full]
 fizzyx dev promote <source> --to <environment|main> --dry-run
 fizzyx dev cleanup [--confirm-delete]
-fizzyx dev doctor
+fizzyx dev doctor [--agent] [--verbose]
 ```
+
+`dev start --worktree` creates the branch in `.git/fizzyx/worktrees/<branch>` and works from a checkout with uncommitted changes, which it never touches.
+`dev doctor` prints section counts and names only the branches holding commits that are on no remote and not on the base (`local_only`); `--verbose` lists every section. It recognises branches whose commits were cherry-picked onto the base as integrated.
+`dev cleanup` previews exactly which branches `--confirm-delete` would remove and why. Only work-role branches (built-in prefixes or `dev.branch_prefixes`) are deleted; a cherry-picked branch is pinned at `refs/fizzyx/deleted/<branch>` first and can be restored with `git branch <branch> refs/fizzyx/deleted/<branch>`.
+`dev ready` prints `checks: none configured` when the project sets no `dev.checks.ready`, because it then verifies branch state only.
 
 Branch/card associations live in local Git config. Unchanged pre-existing worktree files may be accepted with `dev baseline accept`; readiness receipts are stored under `.git/fizzyx/` and are invalidated when HEAD changes. `.fizzyx.yaml` remains shared project policy only.
 
@@ -460,6 +467,22 @@ setToken(null); // logout, clears storage
 
 - `Logger` controls **output** (console, file, sentry). Default: `console.error/warn/info/debug` with `[fizzyx]` prefix.
 - `RequestHook` fires **business callbacks** at lifecycle points (`onRequest`, `onSuccess`, `onError`). Use for toast, analytics, loading state.
+
+Applications that already own an isolated session can supply a JSON `transport` instead of
+using the generated native request and token storage:
+
+```ts
+configure({
+  transport: (method, path, options) => session.request(method, path, options),
+  responseExtractor: (value) => value,
+});
+```
+
+The transport receives the generated endpoint path, query, body and headers. It owns
+origin validation, authentication, logging, lifecycle hooks and errors. Transport failures
+are preserved rather than converted into generated native-request errors. The response
+extractor still runs on successful results; choose the identity extractor for APIs without
+an envelope. Upload and download retain their separate native implementations.
 
 ### Generated Endpoint API
 
