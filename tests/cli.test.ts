@@ -1053,7 +1053,7 @@ test("init bootstraps missing flow in legacy config", async () => {
     expect(result.stdout).toContain("flow configured:");
     expect(result.stdout).toContain("AGENTS.md created:");
     const agentsPath = join(projectDir, "AGENTS.md");
-    expect(readFileSync(agentsPath, "utf8")).toContain("fizzyx dev status --agent");
+    expect(readFileSync(agentsPath, "utf8")).toContain("fizzyx:dev-workflow:start");
     writeFileSync(agentsPath, `# Existing project rules\n\n${readFileSync(agentsPath, "utf8")}`);
 
     const second = await runCli(["init"], {

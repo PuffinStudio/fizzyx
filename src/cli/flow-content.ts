@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { dirname, join } from "node:path";
 import { ConfigRepo, type ConfigRepository } from "../ports/config-repository";
-import type { Card } from "../domain/models";
+import type { Card, FlowCardLanguage } from "../domain/models";
 import { resolveDraftDirectory } from "../adapters/git-dev-state";
 import { markdownishText } from "../use-cases/flow-card-content";
 
@@ -91,8 +91,20 @@ export const loadFlowWorkflowContent = (): Effect.Effect<string, Error, ConfigRe
 export const loadFlowSkillContent = (): Effect.Effect<string, Error, ConfigRepository> =>
   resolveFlowFile(FLOW_SKILL_FILE_PATH, getBuiltinSkill);
 
+const loadCardLanguage = (): Effect.Effect<FlowCardLanguage, never, ConfigRepository> =>
+  Effect.flatMap(ConfigRepo, (configRepo) =>
+    configRepo.loadProjectConfigOptional().pipe(
+      Effect.catchDefect(() => Effect.succeed(undefined)),
+      Effect.catch(() => Effect.succeed(undefined)),
+      Effect.map((projectConfig) => projectConfig?.cardLanguage ?? "en"),
+    ),
+  );
+
+/** A project-local CARD_TEMPLATE.md wins; otherwise the built-in one in `flow.card.language`. */
 export const loadFlowTemplateContent = (): Effect.Effect<string, Error, ConfigRepository> =>
-  resolveFlowFile(FLOW_TEMPLATE_FILE_PATH, () => getBuiltinTemplate());
+  Effect.flatMap(loadCardLanguage(), (language) =>
+    resolveFlowFile(FLOW_TEMPLATE_FILE_PATH, () => getBuiltinTemplate(language)),
+  );
 
 export const createFlowDraft = (
   input: FlowDraftInput = {},
@@ -467,8 +479,50 @@ const getBuiltinSkill = (): string =>
     '- fizzyx flow block <card> "<reason>"',
   ].join("\n");
 
-const getBuiltinTemplate = (): string =>
-  `## Tags
+/**
+ * Only the guidance text is translated. The headings stay English in every language because
+ * `flow create` and `flow edit` find `## Tags`, `## Steps`, `## Inputs Needed` and
+ * `## Suggested Skills` by name.
+ */
+const BUILTIN_TEMPLATE_ZH_CN = `## Tags
+- priority:p2
+- type:chore
+- area:<所属模块>
+- phase:<所处阶段>
+
+## Goal
+这张卡片要交付的结果，用一两句话写清楚，写给不了解背景的人看。
+
+## Context
+- 需求来源、相关页面或流程、已知的前提。
+
+## Acceptance Criteria
+- [ ] 用户能看到、能操作的行为
+- [ ] 出错、为空、加载中的表现
+- [ ] 已实际验证（写明验证路径）
+
+## Inputs Needed
+- 还缺的设计、接口或业务决定；没有就删掉这一节。
+
+## Constraints
+- 架构、安全、性能上的限制。
+- 不要把会变化的执行状态写成标签。
+
+## Plan
+- 确认范围和阻塞点。
+- 用最小的改动实现。
+- 验证后再关闭卡片。
+
+## Steps
+
+- [ ] 确认目标、背景和约束
+- [ ] 实现并提交
+- [ ] 验证并运行项目检查`;
+
+export const getBuiltinTemplate = (language: FlowCardLanguage = "en"): string =>
+  language === "zh-CN" ? BUILTIN_TEMPLATE_ZH_CN : BUILTIN_TEMPLATE_EN;
+
+const BUILTIN_TEMPLATE_EN = `## Tags
 - priority:p2
 - type:chore
 - area:<project-area>
