@@ -184,18 +184,11 @@ export interface WorktreeInfo {
   branch?: string;
 }
 
-export const resolveWorktreePath = (
-  branch: string,
-  worktreeDir?: string,
-): Effect.Effect<string, ValidationError> =>
+export const resolveWorktreePath = (branch: string): Effect.Effect<string, ValidationError> =>
   Effect.gen(function* () {
     const commonDir = yield* requireGit(["rev-parse", "--git-common-dir"]);
     const absoluteCommon = resolve(process.cwd(), commonDir);
-    if (!worktreeDir) return join(absoluteCommon, "fizzyx", "worktrees", safeName(branch));
-    // The common git dir is the main checkout's `.git`, so its parent is the same directory
-    // from every linked worktree: a relative `worktree_dir` means one place, not one per
-    // worktree the command happens to be run from.
-    return join(resolve(dirname(absoluteCommon), worktreeDir), safeName(branch));
+    return join(absoluteCommon, "fizzyx", "worktrees", safeName(branch));
   });
 
 export const listWorktrees = (): Effect.Effect<ReadonlyArray<WorktreeInfo>, ValidationError> =>

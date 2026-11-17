@@ -169,9 +169,6 @@ const renderDevConfig = (dev: DevConfig): YamlObject => {
     result.promotion = renderDevPromotionConfig(dev.promotion);
   }
 
-  if (dev.worktreeDir) {
-    result.worktree_dir = dev.worktreeDir;
-  }
   if (dev.staleAfterDays !== undefined) {
     result.stale_after_days = dev.staleAfterDays;
   }
@@ -459,8 +456,6 @@ const parseDevConfig = (raw: unknown): DevConfig | undefined => {
   if (checks) parsed.checks = checks;
   if (promotion) parsed.promotion = promotion;
   if (staleAfterDays !== undefined) parsed.staleAfterDays = staleAfterDays;
-  const worktreeDir = stringValue(dev.worktree_dir);
-  if (worktreeDir) parsed.worktreeDir = worktreeDir;
   if (commit) parsed.commit = commit;
   if (branches) parsed.branches = branches;
 

@@ -8,13 +8,11 @@ const handle = (config: {
   force: boolean;
   confirmDelete: boolean;
   agent: boolean;
-  verbose: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
     const result = yield* cleanup({
       abandon: config.abandon || config.force,
       confirmDelete: config.confirmDelete,
-      verbose: config.verbose,
     });
     if (config.agent) {
       yield* Console.log(
@@ -37,9 +35,6 @@ export const devCleanupCmd = Command.make(
     ),
     agent: Flag.boolean("agent").pipe(
       Flag.withDescription("Machine-readable output for AI agents"),
-    ),
-    verbose: Flag.boolean("verbose").pipe(
-      Flag.withDescription("Name every branch in the preview, however many there are"),
     ),
   },
   handle,
