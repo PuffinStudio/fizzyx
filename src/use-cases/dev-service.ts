@@ -49,6 +49,8 @@ export interface DevReadyResult {
   ready: boolean;
   blockedReasons: ReadonlyArray<string>;
   checksRun: ReadonlyArray<CheckResult>;
+  /** False when the project configures no check commands for this mode: nothing was verified. */
+  checksConfigured: boolean;
   suggestedPromotion?: string;
 }
 
@@ -87,8 +89,6 @@ export interface GitCommand {
 type DevEffect<A> = Effect.Effect<A, ConfigError | FileError | ValidationError, ConfigRepository>;
 
 const WIP_COMMIT_GREP = "^wip[:(]";
-const AGENT_DIRTY_POLICY =
-  "Record dirty_files before editing. Commit or checkpoint only changes made in this task; do not commit pre-existing user changes without explicit approval.";
 
 const runGit = (
   args: ReadonlyArray<string>,
@@ -407,11 +407,9 @@ export const formatStatus = (status: DevStatus, agent: boolean): string => {
       `base: ${status.baseBranch}`,
       `dirty: ${status.dirty ? "yes" : "no"}`,
       `ahead: ${status.ahead}`,
-      `behind: ${status.behind}`,
       `behind_base: ${status.behindBase}`,
       `behind_upstream: ${status.behindUpstream}`,
       `has_upstream: ${status.hasUpstream ? "yes" : "no"}`,
-      `dirty_policy: ${AGENT_DIRTY_POLICY}`,
       `baseline: ${status.baselineAvailable ? "available" : "missing"}`,
     ];
     if (status.card) lines.push(`card: ${status.card}`);
@@ -1029,6 +1027,7 @@ export const ready = (full?: boolean, squash?: boolean): DevEffect<DevReadyResul
       ready: blockedReasons.length === 0,
       blockedReasons,
       checksRun,
+      checksConfigured: checkCommands.length > 0,
       suggestedPromotion,
     };
   });
@@ -1047,6 +1046,12 @@ export const formatReady = (result: DevReadyResult, agent: boolean): string => {
         `next_action: Stage and commit/checkpoint only changes made in this task; do not commit pre-existing user changes without explicit approval.`,
       );
     }
+    if (!result.checksConfigured) {
+      // "ready: yes" with nothing run reads as "the checks passed". Say what it covers.
+      lines.push(
+        "checks: none configured (branch state only; run the project's own checks, or set dev.checks.ready)",
+      );
+    }
     for (const check of result.checksRun) {
       lines.push(`check: ${check.name} ${check.passed ? "passed" : "failed"}`);
       if (!check.passed && check.output) {
@@ -1062,7 +1067,11 @@ export const formatReady = (result: DevReadyResult, agent: boolean): string => {
 
   const lines: string[] = [];
   if (result.ready) {
-    lines.push("Branch is ready for promotion.");
+    lines.push(
+      result.checksConfigured
+        ? "Branch is ready for promotion."
+        : "Branch state is clean, but no checks are configured (dev.checks.ready), so nothing was run.",
+    );
   } else {
     lines.push("Branch is NOT ready:");
     for (const reason of result.blockedReasons) {

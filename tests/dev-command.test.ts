@@ -173,8 +173,6 @@ devTest("dev status --agent reports branch role, branch, dirty files, and blocke
     expect(output).toContain("feature");
     expect(output).toContain("dirty:");
     expect(output).toMatch(/blockers?|dirty[ _]files?/);
-    expect(output).toContain("dirty_policy:");
-    expect(output).toContain("only changes made in this task");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1439,8 +1437,6 @@ devTest("dev status counts behind_base against the remote base with no upstream"
     expect(output).toContain("has_upstream: no");
     expect(output).toContain("behind_base: 1");
     expect(output).toContain("behind_upstream: 0");
-    // `behind` stays an alias of behind_base.
-    expect(output).toContain("behind: 1");
 
     const ready = await runCli(["dev", "ready", "--agent"], { cwd: work });
     expect(ready.exitCode).not.toBe(0);
