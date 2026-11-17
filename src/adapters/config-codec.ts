@@ -28,7 +28,7 @@ import type { OssSetupInput, SetupProjectConfigInput } from "../ports/config-rep
 
 export const DEFAULT_ACCOUNT = "1";
 export const DEFAULT_API_URL = "https://fizzy.puffin.studio";
-const DEFAULT_WIP_LIMIT = 5;
+const DEFAULT_WIP_LIMIT = 20;
 const DEFAULT_CACHE_TTL_SECONDS = 900;
 
 export const parseProjectConfig = (
