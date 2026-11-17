@@ -1,7 +1,4 @@
 import { Effect } from "effect";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test } from "bun:test";
 import type { BoardCache } from "../src/domain/models";
 import { ApiError, ConfigError, FileError, ValidationError } from "../src/domain/errors";
@@ -120,8 +117,6 @@ const makeCacheRepoFrom = (cache: BoardCache, age = 0) => ({
   write: () => Effect.succeed(undefined),
   ageSeconds: () => Effect.succeed(age),
 });
-
-const makeTempDir = (): string => mkdtempSync(join(tmpdir(), "fizzyx-cli-"));
 
 const draftDescription = (body: string): string => `${body}
 

@@ -30,10 +30,10 @@ type WorkHealth = {
 };
 
 const DEFAULT_SKILLS_BY_TYPE: Record<string, ReadonlyArray<string>> = {
-  bug: ["dev-workflow", "diagnosing-bugs", "tdd", "coding-standards"],
+  bug: ["dev-workflow", "diagnosing-bugs"],
   blocker: ["dev-workflow", "diagnosing-bugs"],
-  feature: ["dev-workflow", "to-prd", "tdd", "coding-standards"],
-  chore: ["dev-workflow", "tdd", "coding-standards"],
+  feature: ["dev-workflow", "to-prd"],
+  chore: ["dev-workflow"],
 };
 
 const handleWork = (config: {

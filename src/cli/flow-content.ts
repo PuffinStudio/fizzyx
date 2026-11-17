@@ -546,9 +546,6 @@ What outcome this card should deliver.
 - Architectural/security/performance constraints.
 - Do not persist mutable execution state as tags.
 
-## Suggested Skills
-- tdd
-
 ## Plan
 - Confirm scope and blockers.
 - Implement with minimal surface area.
