@@ -401,6 +401,75 @@ test("edit replaces the description of a card that has no steps", async () => {
   expect(descriptions[0]).toContain("How to ship an order.");
 });
 
+// A card on a fake board whose taggings endpoint toggles, like Fizzy's.
+const remoteCardApi = (initial: { title: string; tags: string[] }) => {
+  const api = defaultApi();
+  const state = { ...initial, tags: [...initial.tags], description: "" };
+  const tagCalls: string[] = [];
+  api.showCard = () =>
+    Effect.succeed({
+      number: 42,
+      title: state.title,
+      tags: [...state.tags],
+      steps: [{ id: "step-1", content: "Finish work", completed: false }],
+    });
+  api.updateCard = (_number, input) => {
+    if (input.title !== undefined) state.title = input.title;
+    if (input.description !== undefined) state.description = input.description;
+    return Effect.succeed(undefined);
+  };
+  api.tagCard = (_number, tag) => {
+    tagCalls.push(tag);
+    state.tags = state.tags.includes(tag)
+      ? state.tags.filter((existing) => existing !== tag)
+      : [...state.tags, tag];
+    return Effect.succeed(undefined);
+  };
+  api.identity = () => Effect.succeed({ userId: "user-1", name: "User" });
+  api.listCards = () => Effect.succeed([]);
+  return { api, state, tagCalls };
+};
+
+test("edit sets the draft tags exactly and is idempotent", async () => {
+  const { api, state, tagCalls } = remoteCardApi({
+    title: "Card",
+    tags: ["priority:p1", "type:bug", "area:api", "needs-design"],
+  });
+  const description = draftDescription(`## Tags
+- priority:p1
+- type:bug
+- phase:integration
+
+## Goal
+Ship it`);
+
+  await Effect.runPromise(edit(makeEnv(api), 42, { description }));
+  expect(state.tags.toSorted()).toEqual(
+    ["needs-design", "phase:integration", "priority:p1", "type:bug"].toSorted(),
+  );
+  expect(tagCalls.toSorted()).toEqual(["area:api", "phase:integration"]);
+
+  tagCalls.length = 0;
+  await Effect.runPromise(edit(makeEnv(api), 42, { description }));
+  expect(tagCalls).toEqual([]);
+  expect(state.tags).toHaveLength(4);
+});
+
+test("edit applies the draft title line as the title, not as description", async () => {
+  const { api, state } = remoteCardApi({ title: "Old title", tags: [] });
+  const description = draftDescription(`# New title
+
+## Tags
+
+## Goal
+Ship it`);
+
+  await Effect.runPromise(edit(makeEnv(api), 42, { description }));
+
+  expect(state.title).toBe("New title");
+  expect(state.description).toBe("<h2>Goal</h2>\n<p>Ship it</p>");
+});
+
 test("done blocks closing cards with unfinished steps", async () => {
   const calls: string[] = [];
   const api = defaultApi();
@@ -1033,6 +1102,31 @@ Keep Fizzy UI readable.`);
     "depends_on:123",
     "blocks:456",
   ]);
+});
+
+test("add takes the title from the draft title line", async () => {
+  const createCardInputs: Array<{ title: string; description: string }> = [];
+  const api = defaultApi();
+  api.identity = () => Effect.succeed({ userId: "identity-id", name: "Identity" });
+  api.listCards = () => Effect.succeed([]);
+  api.createCard = (input) => {
+    createCardInputs.push(input);
+    return Effect.succeed({ number: 104, title: input.title, description: input.description });
+  };
+  api.triageCard = () => Effect.succeed(undefined);
+  api.tagCard = () => Effect.succeed(undefined);
+  api.createStep = () => Effect.succeed(undefined);
+  api.showCard = () =>
+    Effect.succeed({ number: 104, title: "Draft title", column: { id: "todo-id", name: "TODO" } });
+
+  await Effect.runPromise(
+    add(makeEnv(api), {
+      description: draftDescription("# Draft title\n\n## Tags\n- priority:p2\n\n## Goal\nShip it"),
+    }),
+  );
+
+  expect(createCardInputs[0]!.title).toBe("Draft title");
+  expect(createCardInputs[0]!.description).toBe("<h2>Goal</h2>\n<p>Ship it</p>");
 });
 
 test("add converts skill tags and --skill input into Suggested Skills", async () => {

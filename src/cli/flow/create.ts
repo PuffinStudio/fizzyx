@@ -39,8 +39,8 @@ const handleCreate = (config: {
       return;
     }
 
-    if (!title || Option.isNone(config.desc)) {
-      yield* Console.log("usage: fizzyx flow create <title> --desc <file|-> [--assign <user>]");
+    if (Option.isNone(config.desc)) {
+      yield* Console.log("usage: fizzyx flow create [title] --desc <file|-> [--assign <user>]");
       return yield* Effect.fail(new Error("description input is required"));
     }
 
@@ -70,7 +70,7 @@ export const flowCreateCmd = Command.make(
   "create",
   {
     title: Argument.string("title").pipe(
-      Argument.withDescription("Card title; required unless --draft is used"),
+      Argument.withDescription("Card title; defaults to the draft's `# <title>` line"),
       Argument.optional,
     ),
     desc: Flag.string("desc").pipe(

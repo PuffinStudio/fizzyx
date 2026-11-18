@@ -479,7 +479,7 @@ export const add = (
   env: InitializedEnv,
   input: {
     assignee?: string;
-    title: string;
+    title?: string;
     description: string;
     suggestedSkills?: ReadonlyArray<string>;
   },
@@ -490,6 +490,13 @@ export const add = (
     }
 
     const parsed = parseTemplateDescription(input.description);
+    const title = input.title?.trim() || parsed.title;
+    if (!title) {
+      return yield* new ValidationError({
+        message:
+          "Card title is required: pass it as an argument or start the draft with `# <title>`",
+      });
+    }
     const metadata = parsePlannerDescription(parsed.cardDescription).metadata;
     const legacySkillSuggestions = parsed.templateTags
       .map((tag) => tag.trim().toLowerCase())
@@ -506,20 +513,14 @@ export const add = (
       parsed.cardDescription,
       legacySkillSuggestions.concat(input.suggestedSkills ?? []),
     );
-    const tags = mergeTags(
-      parsed.templateTags.filter((tag) => {
-        const normalized = tag.trim().toLowerCase();
-        return !normalized.startsWith("api_status:") && !normalized.startsWith("skill:");
-      }),
-      tagsFromMetadata(metadata),
-    );
+    const tags = draftTags(parsed.templateTags, metadata);
     const assigneeId = input.assignee
       ? resolveAssignableUser(yield* ensureCache(env, false), input.assignee)
       : undefined;
     const columns = yield* env.api.listColumns();
     const todoColumnId = resolveTodoColumnId(columns, env.config.flow.columns.todo);
     const card = yield* env.api.createCard({
-      title: input.title,
+      title,
       description: convertDescription(cardDescription),
       board: env.config.board,
     });
@@ -574,23 +575,27 @@ export const edit = (
     const cardDescription = parsed
       ? addSuggestedSkills(parsed.cardDescription, legacySkillSuggestions)
       : undefined;
+    const nextTitle = title ?? (parsed?.title !== card?.title ? parsed?.title : undefined);
 
     yield* env.api.updateCard(number, {
-      ...(title === undefined ? {} : { title }),
+      ...(nextTitle === undefined ? {} : { title: nextTitle }),
       ...(cardDescription === undefined
         ? {}
         : { description: convertDescription(cardDescription) }),
     });
 
     if (parsed && metadata) {
-      const tags = mergeTags(
-        parsed.templateTags.filter((tag) => {
-          const normalized = tag.trim().toLowerCase();
-          return !normalized.startsWith("api_status:") && !normalized.startsWith("skill:");
-        }),
-        tagsFromMetadata(metadata),
-      );
-      yield* Effect.forEach(tags, (tag) => env.api.tagCard(number, tag));
+      // Fizzy's taggings endpoint toggles a tag, so only call it for tags whose state changes.
+      // A `## Tags` section is the card's full set of draft-managed tags; tags it cannot
+      // express (no `key:value` shape, legacy `skill:`/`api_status:`) are left alone.
+      const wanted = draftTags(parsed.templateTags, metadata);
+      const present = card?.tags ?? [];
+      const presentKeys = new Set(present.map(normalizeTag));
+      const toAdd = wanted.filter((tag) => !presentKeys.has(tag));
+      const toRemove = parsed.hasTagsSection
+        ? present.filter((tag) => isDraftManagedTag(tag) && !wanted.includes(normalizeTag(tag)))
+        : [];
+      yield* Effect.forEach(toAdd.concat(toRemove), (tag) => env.api.tagCard(number, tag));
 
       const existingSteps = card?.steps ?? [];
       const sharedCount = Math.min(existingSteps.length, parsed.templateSteps.length);
@@ -632,6 +637,23 @@ const tagsFromMetadata = (metadata: PlannerMetadata): ReadonlyArray<string> => {
   for (const blocked of metadata.blocks) tags.push(`blocks:${blocked}`);
   return tags;
 };
+
+const normalizeTag = (tag: string): string => tag.trim().toLowerCase();
+
+const isDraftManagedTag = (tag: string): boolean => {
+  const normalized = normalizeTag(tag);
+  return (
+    /^[a-z_]+:[^\s]+$/.test(normalized) &&
+    !normalized.startsWith("api_status:") &&
+    !normalized.startsWith("skill:")
+  );
+};
+
+const draftTags = (
+  templateTags: ReadonlyArray<string>,
+  metadata: PlannerMetadata,
+): ReadonlyArray<string> =>
+  mergeTags(templateTags.filter(isDraftManagedTag), tagsFromMetadata(metadata));
 
 const mergeTags = (...groups: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<string> =>
   Array.from(

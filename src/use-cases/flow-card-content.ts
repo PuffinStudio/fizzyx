@@ -1,7 +1,11 @@
 import type { Card } from "../domain/models";
 
 export interface ParsedTemplateDescription {
+  /** The draft's leading `# <title>` line, which is never part of the description. */
+  title?: string;
   cardDescription: string;
+  /** True when the draft has a `## Tags` section, so its tags are the card's full tag set. */
+  hasTagsSection: boolean;
   templateTags: ReadonlyArray<string>;
   templateSteps: FlowContentStep[];
 }
@@ -99,13 +103,23 @@ export const parseTemplateDescription = (description: string): ParsedTemplateDes
   if (!sawTemplate && !sawTags) {
     return {
       cardDescription: description,
+      hasTagsSection: false,
       templateTags: [],
       templateSteps: [],
     };
   }
 
+  const firstLine = cardLines.findIndex((line) => line.trim() !== "");
+  const titleMatch = firstLine === -1 ? null : /^#\s+(.+)$/.exec(cardLines[firstLine]!.trim());
+  if (titleMatch) cardLines.splice(0, firstLine + 1);
+
   return {
-    cardDescription: cardLines.join("\n").replace(/\n+$/, "").trimEnd(),
+    ...(titleMatch ? { title: titleMatch[1]!.trim() } : {}),
+    cardDescription: cardLines
+      .join("\n")
+      .replace(/^\s*\n/, "")
+      .trimEnd(),
+    hasTagsSection: sawTags,
     templateTags: parseTemplateTags(tagLines.join("\n")),
     templateSteps: parseDoneWhen(templateLines.join("\n")),
   };
