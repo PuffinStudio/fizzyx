@@ -1,5 +1,11 @@
 # @puffinstudio/fizzyx
 
+## 1.5.1
+
+### Patch Changes
+
+- [#5](https://github.com/PuffinStudio/fizzyx/pull/5) [`cb22229`](https://github.com/PuffinStudio/fizzyx/commit/cb22229564163c0eb604c9d755a6790d531e381c) Thanks [@ryuhzk](https://github.com/ryuhzk)! - `flow edit --desc` now sets the card's tags to the draft's `## Tags` section instead of toggling them, so running the same edit twice gives the same result. A leading `# <title>` line in a `flow create` or `flow edit` draft is used as the card title and no longer ends up in the description.
+
 ## 1.5.0
 
 ### Minor Changes
