@@ -139,6 +139,19 @@ test("images outside the Markdown directory or without an image extension are re
   expect(uploads.map((file) => file.filename)).toEqual(["secret.png"]);
 });
 
+test("a FIFO named like an image is refused instead of blocking the read", async () => {
+  const dir = tempDir();
+  expect(Bun.spawnSync(["mkfifo", join(dir, "pipe.png")]).exitCode).toBe(0);
+  const { api, posted } = fakeApi();
+
+  const error = await Effect.runPromise(
+    Effect.flip(addComment(env(api), 7, "![p](pipe.png)", { baseDir: dir })),
+  );
+
+  expect(error.message).toContain(`not a file or larger than 20 MB: ${join(dir, "pipe.png")}`);
+  expect(posted).toEqual([]);
+}, 2000);
+
 test("highlights map to Fizzy's stored editor markup, outside code only", async () => {
   const { api, posted } = fakeApi();
 
