@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { ApiError, ValidationError } from "../domain/errors";
@@ -126,9 +127,10 @@ const isInside = (root: string, path: string): boolean => {
 const realpathOrUndefined = (path: string) =>
   Effect.promise(() => realpath(path).catch(() => undefined));
 
-// Size check and read go through one handle, so they see the same file.
+// Size check and read go through one handle, so they see the same file. O_NONBLOCK
+// keeps a FIFO from hanging the open; the isFile check then rejects it.
 const readSmallFile = async (path: string): Promise<Uint8Array | undefined> => {
-  const handle = await open(path, "r");
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size > MAX_IMAGE_BYTES) return undefined;
