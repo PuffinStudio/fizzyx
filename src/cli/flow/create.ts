@@ -2,7 +2,7 @@ import { Console, Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { add } from "../../use-cases/flow-service";
 import { createFlowDraft } from "../flow-content";
-import { readDescription } from "../flow-input";
+import { markdownBaseDir, readDescription } from "../flow-input";
 import { runWithFlowEnv } from "../flow-workflow";
 import { formatCreatingCardMessage } from "../flow-output";
 import { flowJson } from "../flow-json";
@@ -53,6 +53,7 @@ const handleCreate = (config: {
           title,
           description,
           suggestedSkills: config.skill,
+          baseDir: markdownBaseDir(desc),
         });
       }),
     );
@@ -74,7 +75,9 @@ export const flowCreateCmd = Command.make(
       Argument.optional,
     ),
     desc: Flag.string("desc").pipe(
-      Flag.withDescription("Description file path ('-' for stdin)"),
+      Flag.withDescription(
+        "Description file path ('-' for stdin); supports ![caption](image.png) uploads and ==highlights==",
+      ),
       Flag.optional,
     ),
     draft: Flag.boolean("draft").pipe(Flag.withDescription("Create a local card draft")),

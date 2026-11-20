@@ -32,6 +32,12 @@ export interface FizzyApi {
     commentId: string,
     body: string,
   ) => Effect.Effect<void, ApiError>;
+  /** Direct-uploads an image and returns its Action Text attachable sgid. */
+  uploadImage: (file: {
+    filename: string;
+    contentType: string;
+    bytes: Uint8Array;
+  }) => Effect.Effect<string, ApiError>;
   closeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
   reopenCard: (number: CardNumber) => Effect.Effect<void, ApiError>;
   postponeCard: (number: CardNumber) => Effect.Effect<void, ApiError>;

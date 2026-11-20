@@ -1,4 +1,5 @@
 import type { Card } from "../domain/models";
+import { hasRichMarkdown } from "./rich-text";
 
 export interface ParsedTemplateDescription {
   /** The draft's leading `# <title>` line, which is never part of the description. */
@@ -370,7 +371,7 @@ export const convertDescription = (input: string): string => {
 };
 
 const looksLikeMarkdownDescription = (input: string): boolean =>
-  /^#{1,6}\s+\S/m.test(input) || /^\s*[-*]\s+\S/m.test(input);
+  /^#{1,6}\s+\S/m.test(input) || /^\s*[-*]\s+\S/m.test(input) || hasRichMarkdown(input);
 
 const extractStandardFrontmatter = (
   input: string,

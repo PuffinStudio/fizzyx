@@ -1,4 +1,7 @@
 import { Effect } from "effect";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
 import type { BoardCache } from "../src/domain/models";
 import { ApiError, ConfigError, FileError, ValidationError } from "../src/domain/errors";
@@ -175,6 +178,37 @@ test("edit applies the create draft format and replaces remote steps", async () 
   expect(stepUpdates).toEqual([{ stepId: "step-1", content: "New step", completed: true }]);
   expect(stepCreates).toEqual([]);
   expect(stepDeletes).toEqual([[42, "step-2"]]);
+});
+
+test("edit uploads description images and highlights plain-paragraph descriptions", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fizzyx-edit-"));
+  writeFileSync(join(dir, "plan.png"), new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0]));
+  const api = defaultApi();
+  const descriptions: Array<string | undefined> = [];
+  api.updateCard = (_number, input) => {
+    descriptions.push(input.description);
+    return Effect.succeed(undefined);
+  };
+  api.uploadImage = () => Effect.succeed("sgid-9");
+  api.showCard = () => Effect.succeed({ number: 42, title: "T", steps: [] });
+  api.createStep = () => Effect.succeed(undefined);
+  api.identity = () => Effect.succeed({ userId: "user-1", name: "User" });
+  api.listCards = () => Effect.succeed([]);
+
+  try {
+    await Effect.runPromise(
+      edit(makeEnv(api), 42, {
+        description: "答案：==A=={text:red}\n\n![方案](plan.png)\n\n## Steps\n- [ ] Ship",
+        baseDir: dir,
+      }),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  expect(descriptions).toEqual([
+    '<p>答案：<mark style="color:var(--highlight-3);">A</mark></p>\n<action-text-attachment sgid="sgid-9" content-type="image/png" filename="plan.png" caption="方案"></action-text-attachment>',
+  ]);
 });
 
 test("move targets a custom column by exact name", async () => {

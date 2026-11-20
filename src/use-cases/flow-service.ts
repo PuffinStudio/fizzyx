@@ -7,7 +7,12 @@ import { ensureFlowConfig } from "./flow-bootstrap";
 import { convertDescription, parseTemplateDescription } from "./flow-card-content";
 import { buildBoardUsers, resolveAssignableUser, resolveMineUser } from "./flow-user-resolution";
 import { makeFlowApiWithAuthRetry } from "./flow-auth";
-import { buildNoteCommentBody, buildStandardizedCommentBody } from "./flow-comment";
+import {
+  buildNoteCommentBody,
+  buildPlainCommentBody,
+  buildStandardizedCommentBody,
+} from "./flow-comment";
+import { renderRichText } from "./rich-text";
 import {
   makeEnv,
   makeFlowEnv,
@@ -194,25 +199,49 @@ export const searchFlowCards = (env: Env, query: string, options?: { allBoards?:
     return cards.filter((card) => card.board?.id === env.config.board);
   });
 
-export const addComment = (env: Env, number: number, body: string) =>
+export interface RichBodyOptions {
+  /** Directory that relative image paths resolve against (defaults to cwd). */
+  baseDir?: string;
+}
+
+export interface CommentOptions extends RichBodyOptions {
+  /** Leave out the standard `note:` prefix. */
+  noPrefix?: boolean;
+}
+
+const richText = (env: Env, html: string, options: RichBodyOptions | undefined) =>
+  renderRichText(html, {
+    baseDir: options?.baseDir ?? process.cwd(),
+    uploadImage: env.api.uploadImage,
+  });
+
+export const addComment = (env: Env, number: number, body: string, options?: CommentOptions) =>
   Effect.gen(function* () {
     const normalized = body.trim();
     if (!normalized) return yield* new ValidationError({ message: "Comment body is required" });
-    yield* env.api.comment(number, buildNoteCommentBody(normalized));
+    const html = options?.noPrefix
+      ? buildPlainCommentBody(normalized)
+      : buildNoteCommentBody(normalized);
+    yield* env.api.comment(number, yield* richText(env, html, options));
     return { number, body: normalized };
   });
 
-export const editComment = (env: Env, number: number, commentId: string, body: string) =>
+export const editComment = (
+  env: Env,
+  number: number,
+  commentId: string,
+  body: string,
+  options?: CommentOptions,
+) =>
   Effect.gen(function* () {
     const normalizedId = commentId.trim();
     const normalized = body.trim();
     if (!normalizedId) return yield* new ValidationError({ message: "Comment id is required" });
     if (!normalized) return yield* new ValidationError({ message: "Comment body is required" });
-    yield* env.api.updateComment(
-      number,
-      normalizedId,
-      buildStandardizedCommentBody("note", normalized),
-    );
+    const html = options?.noPrefix
+      ? buildPlainCommentBody(normalized)
+      : buildStandardizedCommentBody("note", normalized);
+    yield* env.api.updateComment(number, normalizedId, yield* richText(env, html, options));
     return { number, commentId: normalizedId, body: normalized };
   });
 
@@ -482,7 +511,7 @@ export const add = (
     title?: string;
     description: string;
     suggestedSkills?: ReadonlyArray<string>;
-  },
+  } & RichBodyOptions,
 ) =>
   Effect.gen(function* () {
     if (!env.config.board) {
@@ -517,11 +546,13 @@ export const add = (
     const assigneeId = input.assignee
       ? resolveAssignableUser(yield* ensureCache(env, false), input.assignee)
       : undefined;
+    // Images upload before the card exists, so a bad path leaves no half-made card.
+    const description = yield* richText(env, convertDescription(cardDescription), input);
     const columns = yield* env.api.listColumns();
     const todoColumnId = resolveTodoColumnId(columns, env.config.flow.columns.todo);
     const card = yield* env.api.createCard({
       title,
-      description: convertDescription(cardDescription),
+      description,
       board: env.config.board,
     });
     yield* env.api.triageCard(card.number, todoColumnId);
@@ -540,7 +571,7 @@ export const add = (
 export const edit = (
   env: InitializedEnv,
   number: number,
-  input: { title?: string; description?: string },
+  input: { title?: string; description?: string } & RichBodyOptions,
 ) =>
   Effect.gen(function* () {
     const title = input.title?.trim();
@@ -576,12 +607,14 @@ export const edit = (
       ? addSuggestedSkills(parsed.cardDescription, legacySkillSuggestions)
       : undefined;
     const nextTitle = title ?? (parsed?.title !== card?.title ? parsed?.title : undefined);
+    const description =
+      cardDescription === undefined
+        ? undefined
+        : yield* richText(env, convertDescription(cardDescription), input);
 
     yield* env.api.updateCard(number, {
       ...(nextTitle === undefined ? {} : { title: nextTitle }),
-      ...(cardDescription === undefined
-        ? {}
-        : { description: convertDescription(cardDescription) }),
+      ...(description === undefined ? {} : { description }),
     });
 
     if (parsed && metadata) {

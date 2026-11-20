@@ -27,6 +27,8 @@ fizzyx flow edit <card> [--title "<title>"] [--desc <file|->]
 fizzyx flow assign <card> <user>
 fizzyx flow comment <card> "<single-line body>"
 fizzyx flow comment <card> --body-file <markdown-file|->
+fizzyx flow comment <card> "<body>" --attach <image> [--attach <image>]
+fizzyx flow comment <card> --edit <comment-id> --body-file <markdown-file> [--no-prefix]
 fizzyx flow show <card> [--check <n> | --uncheck <n>] [--json [--full]]
 fizzyx flow move <card> <column-id-or-name>
 fizzyx flow start <card>
@@ -50,6 +52,25 @@ Drafts are stored outside the worktree in Git-local state (or the user state dir
 `flow columns` lists the real columns and IDs on the configured board. `flow move` is the column-agnostic primitive for custom Fizzy boards. `flow start` uses the configured `in_progress` column; `flow review` is a convenience command for the built-in REVIEW preset.
 `flow move` also accepts the Fizzy system targets `maybe`/`triage` and `not-now`; closing remains guarded by `flow done`.
 `flow list` filters cards on the configured board, while `flow search` uses Fizzy full-text search and filters results back to the project board unless `--all-boards` is passed. `flow comment` records a standardized note and renders safe Markdown as Fizzy rich text; use `--body-file -` for multiline stdin.
+`flow comment --no-prefix` posts the body exactly as written, without the standard `note:` prefix.
+
+### Images and highlights
+
+Comments (`flow comment`, including `--edit`) and card descriptions (`flow create --desc`, `flow edit --desc`) accept two extras in their Markdown:
+
+```markdown
+![Cart recommendations](shots/cart.png)
+
+Answer: ==A== yellow highlight (Fizzy's default)
+Decision: ==ship Friday=={green} coloured highlight
+Confirmed: ==A=={text:red} coloured text, as the Fizzy editor's text colour
+```
+
+- A local image (`png`, `jpg`/`jpeg`, `gif`, `webp`) is uploaded to Fizzy and embedded as an attachment; the alt text becomes its caption. Paths resolve relative to the Markdown file, or to the current directory for `-`/stdin and inline bodies; absolute paths work too. Encode spaces as `%20`. `http(s)` images are left untouched. `--attach <file>` appends images to a comment without editing the Markdown.
+- Every file is checked before anything is uploaded or posted: a missing file or a non-image fails the command and nothing is posted.
+- Colours: `yellow`, `orange`, `red`, `magenta`, `purple`, `blue`, `green`, `sand`, `gray`. `{colour}` sets the highlight background, `{text:colour}` sets the text colour. They are written as the same `<mark>` markup the Fizzy editor stores, so they render in light and dark themes and stay editable in Fizzy. Highlights are not applied inside code.
+- `flow edit --draft` rebuilds the draft as plain text, so images and highlights already on a card are not carried into the draft; re-add them in the draft before applying it.
+
 `flow reopen`, `flow unblock`, and `flow untriage` provide the inverse lifecycle actions. Unblock returns the card to the configured default column; untriage returns it to Fizzy's system Maybe state.
 Flow commands print compact text by default, which is the cheapest form for an agent to read. High-frequency commands also accept `--json` and return a single-line `ok`/`data`/`summary` envelope with next-action breadcrumbs. Card lists in JSON are lean (`number`, `title`, `column`, `assignees`, `steps: { done, total }`) and `flow show --json` carries the description once; add `--full` for every field.
 Set `flow.card.language: zh-CN` in `.fizzyx.yaml` to have the built-in card template and the generated `AGENTS.md` instruction ask for card content in Simplified Chinese (default `en`). Headings such as `## Steps` stay English, CLI output is unaffected, and a project-local `.agents/skills/fizzyx/CARD_TEMPLATE.md` still wins.
