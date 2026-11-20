@@ -146,12 +146,12 @@ test("highlights map to Fizzy's stored editor markup, outside code only", async 
     addComment(
       env(api),
       7,
-      "选 ==A== / ==已确认=={green} / ==A=={text:red}\n\n`==code==` a == b == c",
+      "选 ==A== / ==已确认=={green} / ==A=={text:red}\n\n`==code==` a == b == c, if (a==b && c==d)",
     ),
   );
 
   expect(posted).toEqual([
-    '<p>note: 选 <mark style="background-color:var(--highlight-bg-1);">A</mark> / <mark style="background-color:var(--highlight-bg-7);">已确认</mark> / <mark style="color:var(--highlight-3);">A</mark></p>\n<p><code>==code==</code> a == b == c</p>',
+    '<p>note: 选 <mark style="background-color:var(--highlight-bg-1);">A</mark> / <mark style="background-color:var(--highlight-bg-7);">已确认</mark> / <mark style="color:var(--highlight-3);">A</mark></p>\n<p><code>==code==</code> a == b == c, if (a==b &amp;&amp; c==d)</p>',
   ]);
 });
 

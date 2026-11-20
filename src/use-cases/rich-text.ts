@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { realpath } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { ApiError, ValidationError } from "../domain/errors";
 
@@ -40,7 +40,8 @@ const HIGHLIGHT_COLORS = [
 ];
 
 // `==text==`, optionally followed by `{red}` (background) or `{text:red}` (text colour).
-const HIGHLIGHT = /==(?=\S)([^=]*?\S)==(?:\{([^}\n]*)\})?/g;
+// Not glued to ASCII words or `=`, so code-like `a==b && c==d` stays as written.
+const HIGHLIGHT = /(?<![\w=])==(?=\S)([^=]*?\S)==(?:\{([^}\n]*)\}|(?![\w=]))/g;
 
 const highlightStyle = (spec: string | undefined): string | undefined => {
   const match = (spec ?? "yellow")
@@ -125,6 +126,18 @@ const isInside = (root: string, path: string): boolean => {
 const realpathOrUndefined = (path: string) =>
   Effect.promise(() => realpath(path).catch(() => undefined));
 
+// Size check and read go through one handle, so they see the same file.
+const readSmallFile = async (path: string): Promise<Uint8Array | undefined> => {
+  const handle = await open(path, "r");
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > MAX_IMAGE_BYTES) return undefined;
+    return new Uint8Array(await handle.readFile());
+  } finally {
+    await handle.close();
+  }
+};
+
 // Markdown can come from anywhere, so an image path is a file read on the user's
 // behalf: it must be an image, inside the Markdown's directory (symlinks resolved)
 // unless the user opted out, and of a sane size — never a stray ~/.ssh key or .env.
@@ -154,12 +167,11 @@ const readImages = (paths: ReadonlyArray<string>, options: RichTextOptions) =>
         );
         continue;
       }
-      const file = Bun.file(real);
-      if (file.size > MAX_IMAGE_BYTES) {
-        problems.push(`image larger than 20 MB: ${path}`);
+      const bytes = yield* Effect.promise(() => readSmallFile(real));
+      if (!bytes) {
+        problems.push(`not a file or larger than 20 MB: ${path}`);
         continue;
       }
-      const bytes = yield* Effect.promise(() => file.bytes());
       const contentType = sniffImageType(bytes);
       if (!contentType) {
         problems.push(`not a PNG, JPEG, GIF or WebP image: ${path}`);
@@ -229,4 +241,5 @@ export const renderRichText = (
 
 /** True when Markdown uses image or highlight syntax that needs rendering. */
 export const hasRichMarkdown = (markdown: string): boolean =>
-  /!\[[^\]\n]*\]\([^)\s]+/.test(markdown) || /==(?=\S)[^=\n]*?\S==/.test(markdown);
+  /!\[[^\]\n]*\]\([^)\s]+/.test(markdown) ||
+  /(?<![\w=])==(?=\S)[^=\n]*?\S==(?![\w=])/.test(markdown);
