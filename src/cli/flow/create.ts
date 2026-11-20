@@ -2,7 +2,7 @@ import { Console, Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { add } from "../../use-cases/flow-service";
 import { createFlowDraft } from "../flow-content";
-import { readDescription } from "../flow-input";
+import { markdownBaseDir, readDescription } from "../flow-input";
 import { runWithFlowEnv } from "../flow-workflow";
 import { formatCreatingCardMessage } from "../flow-output";
 import { flowJson } from "../flow-json";
@@ -13,6 +13,7 @@ const handleCreate = (config: {
   draft: boolean;
   assign: Option.Option<string>;
   skill: ReadonlyArray<string>;
+  allowOutside: boolean;
   json: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
@@ -53,6 +54,8 @@ const handleCreate = (config: {
           title,
           description,
           suggestedSkills: config.skill,
+          baseDir: markdownBaseDir(desc),
+          allowOutside: config.allowOutside,
         });
       }),
     );
@@ -74,7 +77,9 @@ export const flowCreateCmd = Command.make(
       Argument.optional,
     ),
     desc: Flag.string("desc").pipe(
-      Flag.withDescription("Description file path ('-' for stdin)"),
+      Flag.withDescription(
+        "Description file path ('-' for stdin); supports ![caption](image.png) uploads and ==highlights==",
+      ),
       Flag.optional,
     ),
     draft: Flag.boolean("draft").pipe(Flag.withDescription("Create a local card draft")),
@@ -85,6 +90,11 @@ export const flowCreateCmd = Command.make(
     skill: Flag.string("skill").pipe(
       Flag.withDescription("Suggested skill to add to the card body"),
       Flag.atLeast(0),
+    ),
+    allowOutside: Flag.boolean("allow-image-paths-outside").pipe(
+      Flag.withDescription(
+        "Allow Markdown images from outside the Markdown file's directory (or cwd for stdin)",
+      ),
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
   },

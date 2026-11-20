@@ -1,7 +1,7 @@
 import { Console, Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { edit } from "../../use-cases/flow-service";
-import { readDescription } from "../flow-input";
+import { markdownBaseDir, readDescription } from "../flow-input";
 import { formatEditingCardMessage } from "../flow-output";
 import { runWithFlowEnv } from "../flow-workflow";
 import { createCardEditDraft } from "../flow-content";
@@ -13,6 +13,7 @@ const handleEdit = (config: {
   title: Option.Option<string>;
   desc: Option.Option<string>;
   draft: boolean;
+  allowOutside: boolean;
   json: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
@@ -43,7 +44,12 @@ const handleEdit = (config: {
       ? yield* readDescription(config.desc.value)
       : undefined;
     const number = yield* runWithFlowEnv(formatEditingCardMessage(), (env) =>
-      edit(env, config.card, { title, description }),
+      edit(env, config.card, {
+        title,
+        description,
+        baseDir: markdownBaseDir(Option.getOrUndefined(config.desc)),
+        allowOutside: config.allowOutside,
+      }),
     );
     yield* Console.log(
       config.json
@@ -63,11 +69,18 @@ export const flowEditCmd = Command.make(
     ),
     title: Flag.string("title").pipe(Flag.withDescription("New card title"), Flag.optional),
     desc: Flag.string("desc").pipe(
-      Flag.withDescription("New description file path ('-' for stdin)"),
+      Flag.withDescription(
+        "New description file path ('-' for stdin); supports ![caption](image.png) uploads and ==highlights==",
+      ),
       Flag.optional,
     ),
     draft: Flag.boolean("draft").pipe(
       Flag.withDescription("Rebuild a standard edit draft from the remote card"),
+    ),
+    allowOutside: Flag.boolean("allow-image-paths-outside").pipe(
+      Flag.withDescription(
+        "Allow Markdown images from outside the Markdown file's directory (or cwd for stdin)",
+      ),
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
   },

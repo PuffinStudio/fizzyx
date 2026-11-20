@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Duration, Effect, Layer } from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import { ApiError, FileError } from "../domain/errors";
@@ -443,6 +444,54 @@ export const makeFetchFizzyApi = (
   const createColumn = (name: string): Effect.Effect<JsonValue, ApiError> =>
     runGenerated(FizzyEffect.createColumn(boardParams, { name }));
 
+  // Rails Active Storage direct upload: register the blob, then PUT the bytes to
+  // the returned URL with exactly the headers it asks for (no bearer token: the
+  // URL may point at an object store).
+  const uploadImage: FizzyApi["uploadImage"] = (file) =>
+    Effect.gen(function* () {
+      const checksum = createHash("md5").update(file.bytes).digest("base64");
+      const blob = toRecord(
+        yield* runGenerated(
+          execute<unknown>("POST", `/${config.account}/rails/active_storage/direct_uploads`, {
+            body: {
+              blob: {
+                filename: file.filename,
+                byte_size: file.bytes.byteLength,
+                checksum,
+                content_type: file.contentType,
+              },
+            },
+          }),
+        ),
+      );
+      const directUpload = toRecord(blob?.direct_upload);
+      const sgid = readString(blob?.attachable_sgid);
+      const url = readString(directUpload?.url);
+      if (!sgid || !url) {
+        return yield* new ApiError({ message: "direct upload response missing sgid or URL" });
+      }
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(toRecord(directUpload?.headers) ?? {})) {
+        if (typeof value === "string") headers[name] = value;
+      }
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch(new URL(url, config.apiUrl), {
+            method: "PUT",
+            headers,
+            body: new Blob([file.bytes as Uint8Array<ArrayBuffer>]),
+          }),
+        catch: (cause) => new ApiError({ message: `upload failed: ${String(cause)}` }),
+      });
+      if (!response.ok) {
+        return yield* new ApiError({
+          message: `upload failed: HTTP ${response.status}`,
+          status: response.status,
+        });
+      }
+      return sgid;
+    });
+
   return {
     identity: () => runGenerated(FizzyEffect.getMyIdentity()).pipe(Effect.flatMap(decodeIdentity)),
     listBoards: () =>
@@ -560,6 +609,7 @@ export const makeFetchFizzyApi = (
           FizzyEffect.updateComment({ ...accountParams, cardNumber: number, commentId }, { body }),
         ),
       ),
+    uploadImage,
     closeCard: (number) =>
       asVoid(runGenerated(FizzyEffect.closeCard({ ...accountParams, cardNumber: number }))),
     reopenCard: (number) =>

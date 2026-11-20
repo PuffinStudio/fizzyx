@@ -443,6 +443,73 @@ test("updateComment sends the official PATCH request", async () => {
   expect(JSON.parse(summary.bodyText)).toEqual({ body: "fixed" });
 });
 
+test("uploadImage registers the blob with size and MD5, then PUTs bytes with only the signed headers", async () => {
+  const bytes = new TextEncoder().encode("hello");
+  const { calls, result } = await withMockFetchSequence(
+    [
+      jsonResponse({
+        attachable_sgid: "sgid-1",
+        direct_upload: {
+          url: "https://store.example.com/upload/abc",
+          headers: { "Content-Type": "image/png", "Content-MD5": "XUFAKrxLKna5cZ2REBfFkg==" },
+        },
+      }),
+      new Response(null, { status: 204 }),
+    ],
+    () =>
+      Effect.runPromise(
+        makeFetchFizzyApi(makeConfig(), "token").uploadImage({
+          filename: "shot.png",
+          contentType: "image/png",
+          bytes,
+        }),
+      ),
+  );
+
+  expect(result).toBe("sgid-1");
+  const register = await getFetchCallSummary(calls[0]!);
+  expect(register.method).toBe("POST");
+  expect(register.url).toBe("https://api.example.com/acme/rails/active_storage/direct_uploads");
+  expect(JSON.parse(register.bodyText)).toEqual({
+    blob: {
+      filename: "shot.png",
+      byte_size: 5,
+      checksum: "XUFAKrxLKna5cZ2REBfFkg==",
+      content_type: "image/png",
+    },
+  });
+  const put = await getFetchCallSummary(calls[1]!);
+  expect(put.method).toBe("PUT");
+  expect(put.url).toBe("https://store.example.com/upload/abc");
+  expect(Object.fromEntries(put.headers)).toEqual({
+    "content-type": "image/png",
+    "content-md5": "XUFAKrxLKna5cZ2REBfFkg==",
+  });
+  expect(put.bodyText).toBe("hello");
+});
+
+test("uploadImage fails when the byte upload is rejected", async () => {
+  const { result } = await withMockFetchSequence(
+    [
+      jsonResponse({ attachable_sgid: "sgid-1", direct_upload: { url: "/disk/abc", headers: {} } }),
+      new Response("denied", { status: 403 }),
+    ],
+    () =>
+      Effect.runPromise(
+        Effect.flip(
+          makeFetchFizzyApi(makeConfig(), "token").uploadImage({
+            filename: "shot.png",
+            contentType: "image/png",
+            bytes: new Uint8Array([1]),
+          }),
+        ),
+      ),
+  );
+
+  expect(result).toBeInstanceOf(ApiError);
+  expect(result.status).toBe(403);
+});
+
 test("createStep sends official step body", async () => {
   const config = makeConfig();
   const response = jsonResponse({});

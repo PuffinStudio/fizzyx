@@ -49,8 +49,12 @@ const sanitizeMarkdownUrls = (html: string): string =>
     safeMarkdownUrl(value) ? attribute : "",
   );
 
+/** Safe Markdown comment body without the `note:` prefix. */
+export const buildPlainCommentBody = (value: string): string =>
+  sanitizeMarkdownUrls(Bun.markdown.html(escapeHtml(value)).trim());
+
 export const buildNoteCommentBody = (value: string): string => {
-  const rendered = sanitizeMarkdownUrls(Bun.markdown.html(escapeHtml(value)).trim());
+  const rendered = buildPlainCommentBody(value);
   if (rendered.startsWith("<p>")) {
     return rendered.replace("<p>", "<p>note: ");
   }
