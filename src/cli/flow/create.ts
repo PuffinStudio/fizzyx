@@ -13,6 +13,7 @@ const handleCreate = (config: {
   draft: boolean;
   assign: Option.Option<string>;
   skill: ReadonlyArray<string>;
+  allowOutside: boolean;
   json: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
@@ -54,6 +55,7 @@ const handleCreate = (config: {
           description,
           suggestedSkills: config.skill,
           baseDir: markdownBaseDir(desc),
+          allowOutside: config.allowOutside,
         });
       }),
     );
@@ -88,6 +90,11 @@ export const flowCreateCmd = Command.make(
     skill: Flag.string("skill").pipe(
       Flag.withDescription("Suggested skill to add to the card body"),
       Flag.atLeast(0),
+    ),
+    allowOutside: Flag.boolean("allow-image-paths-outside").pipe(
+      Flag.withDescription(
+        "Allow Markdown images from outside the Markdown file's directory (or cwd for stdin)",
+      ),
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
   },

@@ -21,6 +21,7 @@ const handleComment = (config: {
   edit: Option.Option<string>;
   attach: ReadonlyArray<string>;
   noPrefix: boolean;
+  allowOutside: boolean;
   json: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
@@ -38,6 +39,8 @@ const handleComment = (config: {
     const options = {
       baseDir: markdownBaseDir(Option.getOrUndefined(config.bodyFile)),
       noPrefix: config.noPrefix,
+      allowOutside: config.allowOutside,
+      allowedPaths: config.attach,
     };
     const editId = Option.getOrUndefined(config.edit);
     const editing = editId !== undefined;
@@ -88,6 +91,11 @@ export const flowCommentCmd = Command.make(
     ),
     noPrefix: Flag.boolean("no-prefix").pipe(
       Flag.withDescription("Post the body as written, without the 'note:' prefix"),
+    ),
+    allowOutside: Flag.boolean("allow-image-paths-outside").pipe(
+      Flag.withDescription(
+        "Allow Markdown images from outside the Markdown file's directory (or cwd for stdin)",
+      ),
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
   },

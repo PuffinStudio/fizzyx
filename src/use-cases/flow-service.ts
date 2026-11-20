@@ -200,8 +200,12 @@ export const searchFlowCards = (env: Env, query: string, options?: { allBoards?:
   });
 
 export interface RichBodyOptions {
-  /** Directory that relative image paths resolve against (defaults to cwd). */
+  /** Directory images resolve against and must stay inside (defaults to cwd). */
   baseDir?: string;
+  /** Allow images from outside `baseDir`. */
+  allowOutside?: boolean;
+  /** Image files named directly by the user (`--attach`). */
+  allowedPaths?: ReadonlyArray<string>;
 }
 
 export interface CommentOptions extends RichBodyOptions {
@@ -212,6 +216,8 @@ export interface CommentOptions extends RichBodyOptions {
 const richText = (env: Env, html: string, options: RichBodyOptions | undefined) =>
   renderRichText(html, {
     baseDir: options?.baseDir ?? process.cwd(),
+    allowOutside: options?.allowOutside,
+    allowedPaths: options?.allowedPaths,
     uploadImage: env.api.uploadImage,
   });
 

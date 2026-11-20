@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { basename, isAbsolute, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { ApiError, ValidationError } from "../domain/errors";
 
 export interface ImageFile {
@@ -9,11 +10,19 @@ export interface ImageFile {
 }
 
 export interface RichTextOptions {
-  /** Directory that relative image paths resolve against. */
+  /** Directory that relative image paths resolve against, and that images must stay inside. */
   baseDir: string;
+  /** Lets images come from anywhere, not just `baseDir` (explicit opt-in). */
+  allowOutside?: boolean;
+  /** Files the user named directly (e.g. `--attach`), allowed wherever they are. */
+  allowedPaths?: ReadonlyArray<string>;
   /** Uploads one image and returns the Action Text attachable sgid. */
   uploadImage: (file: ImageFile) => Effect.Effect<string, ApiError>;
 }
+
+export const OUTSIDE_IMAGES_FLAG = "--allow-image-paths-outside";
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 // Fizzy's editor (Lexxy) palette, in the editor's order: colour N is stored as
 // var(--highlight-N) / var(--highlight-bg-N), so it follows the light/dark theme
@@ -108,19 +117,49 @@ const localPath = (src: string, baseDir: string): string => {
   return isAbsolute(decoded) ? decoded : resolve(baseDir, decoded);
 };
 
-const readImages = (paths: ReadonlyArray<string>) =>
+const isInside = (root: string, path: string): boolean => {
+  const rel = relative(root, path);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
+
+const realpathOrUndefined = (path: string) =>
+  Effect.promise(() => realpath(path).catch(() => undefined));
+
+// Markdown can come from anywhere, so an image path is a file read on the user's
+// behalf: it must be an image, inside the Markdown's directory (symlinks resolved)
+// unless the user opted out, and of a sane size — never a stray ~/.ssh key or .env.
+const readImages = (paths: ReadonlyArray<string>, options: RichTextOptions) =>
   Effect.gen(function* () {
+    const root = (yield* realpathOrUndefined(options.baseDir)) ?? options.baseDir;
+    const allowed = new Set<string>();
+    for (const path of options.allowedPaths ?? []) {
+      const real = yield* realpathOrUndefined(resolve(path));
+      if (real) allowed.add(real);
+    }
     const problems: string[] = [];
     const files = new Map<string, ImageFile>();
     for (const path of paths) {
-      const file = Bun.file(path);
-      const bytes = (yield* Effect.promise(() => file.exists()))
-        ? yield* Effect.promise(() => file.bytes())
-        : undefined;
-      if (!bytes) {
+      if (!IMAGE_EXTENSIONS.has(extname(path).toLowerCase())) {
+        problems.push(`not a .png, .jpg, .jpeg, .gif or .webp file: ${path}`);
+        continue;
+      }
+      const real = yield* realpathOrUndefined(path);
+      if (!real) {
         problems.push(`image not found: ${path}`);
         continue;
       }
+      if (!options.allowOutside && !allowed.has(real) && !isInside(root, real)) {
+        problems.push(
+          `image outside ${root}: ${path} (pass ${OUTSIDE_IMAGES_FLAG} to allow images from other directories)`,
+        );
+        continue;
+      }
+      const file = Bun.file(real);
+      if (file.size > MAX_IMAGE_BYTES) {
+        problems.push(`image larger than 20 MB: ${path}`);
+        continue;
+      }
+      const bytes = yield* Effect.promise(() => file.bytes());
       const contentType = sniffImageType(bytes);
       if (!contentType) {
         problems.push(`not a PNG, JPEG, GIF or WebP image: ${path}`);
@@ -149,7 +188,7 @@ const embedLocalImages = (html: string, options: RichTextOptions) =>
     if (sources.length === 0) return html;
 
     const paths = [...new Set(sources.map((src) => localPath(src, options.baseDir)))];
-    const files = yield* readImages(paths);
+    const files = yield* readImages(paths, options);
     const sgids = new Map<string, string>();
     for (const [path, file] of files) {
       const sgid = yield* options.uploadImage(file).pipe(

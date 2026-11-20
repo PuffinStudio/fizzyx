@@ -13,6 +13,7 @@ const handleEdit = (config: {
   title: Option.Option<string>;
   desc: Option.Option<string>;
   draft: boolean;
+  allowOutside: boolean;
   json: boolean;
 }): Effect.Effect<void, any, any> =>
   Effect.gen(function* () {
@@ -47,6 +48,7 @@ const handleEdit = (config: {
         title,
         description,
         baseDir: markdownBaseDir(Option.getOrUndefined(config.desc)),
+        allowOutside: config.allowOutside,
       }),
     );
     yield* Console.log(
@@ -74,6 +76,11 @@ export const flowEditCmd = Command.make(
     ),
     draft: Flag.boolean("draft").pipe(
       Flag.withDescription("Rebuild a standard edit draft from the remote card"),
+    ),
+    allowOutside: Flag.boolean("allow-image-paths-outside").pipe(
+      Flag.withDescription(
+        "Allow Markdown images from outside the Markdown file's directory (or cwd for stdin)",
+      ),
     ),
     json: Flag.boolean("json").pipe(Flag.withDescription("Print the result as JSON")),
   },
